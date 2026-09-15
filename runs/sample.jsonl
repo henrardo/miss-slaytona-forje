@@ -1,0 +1,9 @@
+{"t": 0.0, "type": "RUN_START", "run_id": "sample", "swarm_size": 1, "files": ["cfp/models/speaker.py"]}
+{"t": 0.05, "type": "FILE_CLAIMED", "swarm": "warm", "agent": 1, "file": "cfp/models/speaker.py"}
+{"t": 0.08, "type": "MEMORY_READ", "swarm": "warm", "agent": 1, "file": "cfp/models/speaker.py", "hit_count": 0, "pattern_names": [], "source_agents": []}
+{"t": 0.10, "type": "ATTEMPT_START", "swarm": "warm", "agent": 1, "file": "cfp/models/speaker.py", "attempt": 1}
+{"t": 0.42, "type": "ATTEMPT_DONE", "swarm": "warm", "agent": 1, "file": "cfp/models/speaker.py", "attempt": 1, "exit_code": 0, "prompt_tokens": 1800, "completion_tokens": 420}
+{"t": 0.43, "type": "FILE_DONE", "swarm": "warm", "agent": 1, "file": "cfp/models/speaker.py", "success": true, "attempts": 1, "total_tokens": 2220}
+{"t": 0.45, "type": "MEMORY_WRITE", "swarm": "warm", "agent": 1, "patterns": ["P1_VALIDATOR", "P6_IMPLICIT_OPTIONAL"], "entity_ids": ["ent-1", "ent-2"], "merged": false}
+{"t": 0.50, "type": "METRICS", "cache_hit_rate": 0.42, "sandboxes_live": 0, "tokens_by_swarm": {"warm": 2220, "cold": 0}}
+{"t": 0.60, "type": "RUN_END", "totals": {"warm": {"passed": 1, "attempts": 1, "tokens": 2220}}, "per_swarm_summary": {}}

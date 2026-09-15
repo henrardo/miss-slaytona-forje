@@ -1,0 +1,81 @@
+=== run 63  00:02:22 ===
+  run=63 | traces_at_start=4 | warm_best=0 | cold_best=0 | warm_att=5 | cold_att=4 | graphrag_calls=55 | mem_calls=0 | containment=ok
+=== run 64  00:12:30 ===
+  run=64 | traces_at_start=9 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=55 | mem_calls=0 | containment=ok
+=== run 65  00:22:39 ===
+  run=65 | traces_at_start=13 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=55 | mem_calls=0 | containment=ok
+=== run 66  00:32:47 ===
+  run=66 | traces_at_start=17 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=65 | mem_calls=0 | containment=ok
+=== run 67  00:42:58 ===
+  run=67 | traces_at_start=21 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=55 | mem_calls=0 | containment=ok
+=== run 68  00:53:07 ===
+  run=68 | traces_at_start=25 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=45 | mem_calls=0 | containment=ok
+=== run 69  01:03:16 ===
+  run=69 | traces_at_start=29 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=40 | mem_calls=0 | containment=ok
+=== run 70  01:13:24 ===
+  run=70 | traces_at_start=33 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=65 | mem_calls=0 | containment=ok
+=== run 71  01:23:34 ===
+  run=71 | traces_at_start=37 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=45 | mem_calls=0 | containment=ok
+=== run 72  01:33:43 ===
+  run=72 | traces_at_start=41 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 73  01:43:52 ===
+  run=73 | traces_at_start=45 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=45 | mem_calls=0 | containment=ok
+=== run 74  01:54:01 ===
+  run=74 | traces_at_start=49 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=40 | mem_calls=0 | containment=ok
+=== run 75  02:04:10 ===
+  run=75 | traces_at_start=53 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 76  02:14:19 ===
+  run=76 | traces_at_start=57 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=55 | mem_calls=0 | containment=ok
+=== run 77  02:24:28 ===
+  run=77 | traces_at_start=61 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 78  02:34:37 ===
+  run=78 | traces_at_start=65 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 79  02:44:47 ===
+  run=79 | traces_at_start=69 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 80  02:54:56 ===
+  run=80 | traces_at_start=73 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=60 | mem_calls=0 | containment=ok
+=== run 81  03:05:05 ===
+  run=81 | traces_at_start=77 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=45 | mem_calls=0 | containment=ok
+=== run 82  03:15:14 ===
+  run=82 | traces_at_start=81 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=55 | mem_calls=0 | containment=ok
+=== run 83  03:25:23 ===
+  run=83 | traces_at_start=85 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=65 | mem_calls=0 | containment=ok
+=== run 84  03:35:32 ===
+  run=84 | traces_at_start=89 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=45 | mem_calls=0 | containment=ok
+=== run 85  03:45:41 ===
+  run=85 | traces_at_start=93 | warm_best=0 | cold_best=0 | warm_att=7 | cold_att=4 | graphrag_calls=45 | mem_calls=0 | containment=ok
+=== run 86  03:55:50 ===
+  run=86 | traces_at_start=100 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=70 | mem_calls=0 | containment=ok
+=== run 87  04:05:59 ===
+  run=87 | traces_at_start=104 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=45 | mem_calls=0 | containment=ok
+=== run 88  04:16:08 ===
+  run=88 | traces_at_start=108 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 89  04:26:17 ===
+  run=89 | traces_at_start=112 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=60 | mem_calls=0 | containment=ok
+=== run 90  04:36:26 ===
+  run=90 | traces_at_start=116 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=45 | mem_calls=0 | containment=ok
+=== run 91  04:46:35 ===
+  run=91 | traces_at_start=120 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 92  04:56:43 ===
+  run=92 | traces_at_start=124 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=65 | mem_calls=0 | containment=ok
+=== run 93  05:06:52 ===
+  run=93 | traces_at_start=128 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=65 | mem_calls=0 | containment=ok
+=== run 94  05:17:01 ===
+  run=94 | traces_at_start=132 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=55 | mem_calls=0 | containment=ok
+=== run 95  05:27:09 ===
+  run=95 | traces_at_start=136 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=60 | mem_calls=0 | containment=ok
+=== run 96  05:37:18 ===
+  run=96 | traces_at_start=140 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=55 | mem_calls=0 | containment=ok
+=== run 97  05:47:27 ===
+  run=97 | traces_at_start=144 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 98  05:57:36 ===
+  run=98 | traces_at_start=148 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=60 | mem_calls=0 | containment=ok
+=== run 99  06:07:45 ===
+  run=99 | traces_at_start=152 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 100  06:17:54 ===
+  run=100 | traces_at_start=156 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=45 | mem_calls=0 | containment=ok
+=== run 101  06:28:04 ===
+  run=101 | traces_at_start=160 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=70 | mem_calls=0 | containment=ok
+=== run 102  06:38:13 ===
+  run=102 | traces_at_start=164 | warm_best=0 | cold_best=0 | warm_att=4 | cold_att=4 | graphrag_calls=50 | mem_calls=0 | containment=ok
+=== run 103  06:48:22 ===

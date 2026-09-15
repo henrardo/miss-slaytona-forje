@@ -1,0 +1,15 @@
+# Hand-declared self-hosted provider/model, appended after `vibe mcp add`'s
+# mcp_servers block by orchestrator/vibe_agent.py's render_config(). Shape
+# confirmed against Mistral's own docs (docs.mistral.ai/vibe/code/cli/offline-models):
+# api_style="openai" + backend="generic" targets any OpenAI-compatible
+# endpoint, which is exactly what SGLang's /v1/chat/completions is.
+[[providers]]
+name = "sglang"
+api_base = "{{SGLANG_BASE_URL}}/v1"
+api_style = "openai"
+backend = "generic"
+
+[[models]]
+name = "{{SGLANG_MODEL}}"
+provider = "sglang"
+alias = "devstral-local"

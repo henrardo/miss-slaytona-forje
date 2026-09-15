@@ -1,0 +1,13 @@
+# fixture/ is a real codebase, not a synthetic one: sabuhish/fastapi-mail
+# https://github.com/sabuhish/fastapi-mail/pull/195 ("Pydantic v2 migration"),
+# a real, human-authored, merged migration. `fastapi_mail/` here is checked
+# out at the pre-migration commit (fab70e4); `tests/` and
+# `reference_v2/fastapi_mail/` are checked out at the merge commit
+# (c15d24e) -- the actual, working post-migration state, used as the
+# success oracle and the ground-truth answer respectively. Nothing here is
+# hand-tagged with which v1/v2 patterns appear where; the agent is given the
+# whole codebase and one instruction, exactly as a real user would.
+target_version: "pydantic>=2.0,<3.0"
+package_path: fastapi_mail
+tests_path: tests
+test_command: "python -m pytest tests -q"

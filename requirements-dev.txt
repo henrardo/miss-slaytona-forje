@@ -1,0 +1,16 @@
+pyyaml
+websockets
+pytest
+daytona
+python-dotenv
+neo4j-agent-memory
+
+# neo4j-agent-memory's extraction pipeline runs SpacyEntityExtractor as one
+# of its stages. Without spaCy that stage logs "failed" and is skipped, so
+# entities are never mined out of message text and the long-term half of the
+# warm swarm's memory is quietly degraded -- which is the exact capability
+# this demo exists to measure. Installed explicitly rather than left to
+# chance. (GLiNEREntityExtractor is a second, optional stage; it is a much
+# heavier dependency and the pipeline runs correctly without it.)
+spacy
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl

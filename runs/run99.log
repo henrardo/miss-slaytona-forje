@@ -1,0 +1,94 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/15/26 06:07:59] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 1435 chars -- working
+[09/15/26 06:08:14] INFO     Starting MCP server                transport.py:242
+                             'neo4j-agent-memory' with                          
+                             transport 'stdio'                                  
+  MCP neo4j-agent-memory: memory_search, memory_get_context, memory_store_message, memory_add_entity, memory_add_preference, memory_add_fact, memory_get_conversation, memory_list_sessions, memory_get_entity, memory_export_graph, memory_create_relationship, memory_start_trace, memory_record_step, memory_complete_trace, memory_get_observations, graph_query
+  MCP neo4j-agent-memory: memory_get_context answered 1193 chars -- working
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      graph, 4.0.3                                │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/15/26 06:08:18] INFO     Starting MCP server 'graph' with   transport.py:242
+                             transport 'stdio'                                  
+  MCP graph: reasoning, entities
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/15/26 06:08:19] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 1982 chars -- working
+  graph at start: {'Message': 210, 'ReasoningTrace': 152, 'Entity': 141, 'Object': 96, 'Organization': 21, 'Person': 17, 'Document': 17, 'ReasoningStep': 13, 'ToolCall': 13, 'Tool': 7, 'Conversation': 5, 'Location': 4, 'Geopolitical': 3, 'Event': 3, 'Date': 3, 'Product': 3, 'Group': 2, 'User': 1, 'Email': 1, 'Facility': 1}
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py:189: UserWarning: The `resume_download` argument is deprecated and ignored in `snapshot_download`. Downloads always resume whenever possible.
+  warnings.warn(
+  baseline: 0 tests passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+
+============================================================
+WARM (shared memory):  0/4 agents converged | 70 LLM calls | 931800 prompt + 4031 completion = 935831 tokens
+COLD (no memory):      0/4 agents converged | 87 LLM calls | 949072 prompt + 4245 completion = 953317 tokens
+token_ratio (cold/warm): 1.019
+
+progress (neither swarm converging makes this the comparable measure):
+  warm  errors cleared: best 0, total 0 | best tests passing 0 | 4 attempts | 233,958 tokens/attempt
+  cold  errors cleared: best 0, total 0 | best tests passing 0 | 4 attempts | 238,329 tokens/attempt
+wall-clock: 541.7s
+GPU cost (this run, $0.49/hr): $0.0737
+event log: runs/m4-1789448867.jsonl

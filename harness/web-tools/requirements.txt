@@ -1,0 +1,9 @@
+# Deps for harness/web-tools/server.py, which runs in its OWN venv
+# (harness/web-tools/.venv) and must never be installed into harness/.venv:
+# fastmcp needs mcp>=2, mistral-vibe pins mcp==1.28.1, and the upgrade breaks
+# Vibe's MCP subsystem outright. See server.py's module docstring.
+#
+#   cd harness/web-tools && uv venv .venv \
+#     && VIRTUAL_ENV=$PWD/.venv uv pip install -r requirements.txt
+fastmcp
+openai

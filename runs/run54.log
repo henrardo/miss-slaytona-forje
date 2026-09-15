@@ -1,0 +1,147 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/14/26 17:56:53] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 1180 chars -- working
+/Users/t6w652j6ft/.cache/uv/archive-v0/B29rjz_pFPVrDDSdGtonj/lib/python3.12/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/Users/t6w652j6ft/.cache/uv/archive-v0/B29rjz_pFPVrDDSdGtonj/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+  from ._compat import httpx2
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 2.14.7                                │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      neo4j-agent-memory                        │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          ✨ FastMCP 3.0 is coming!                           │
+│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          🎉 Update available: 4.0.3                          │
+│                      Run: pip install --upgrade fastmcp                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+LLM extractor not available, skipping: No llm adapter available for provider 'openai'.
+
+Install one of the following:
+  pip install 'neo4j-agent-memory[openai]'      # native adapter
+  pip install 'neo4j-agent-memory[litellm]'  # universal adapter (recommended)
+[09/14/26 17:57:05] INFO     Starting MCP server                  server.py:2506
+                             'neo4j-agent-memory' with transport                
+                             'stdio'                                            
+  MCP neo4j-agent-memory: memory_search, memory_get_context, memory_store_message, memory_add_entity, memory_add_preference, memory_add_fact, memory_get_conversation, memory_list_sessions, memory_get_entity, memory_export_graph, memory_create_relationship, memory_start_trace, memory_record_step, memory_complete_trace, memory_get_observations, graph_query
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 7255.13it/s]
+  MCP neo4j-agent-memory: memory_get_context answered 9625 chars -- working
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/14/26 17:57:12] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 2096 chars -- working
+  graph at start: {'Entity': 187, 'Message': 165, 'Object': 150, 'ReasoningStep': 142, 'ToolCall': 142, 'Organization': 23, 'Document': 19, 'ReasoningTrace': 10, 'Person': 8, 'Email': 6, 'Conversation': 5, 'Tool': 5, 'Product': 3, 'Location': 3, 'Event': 3, 'Date': 3, 'Geographic': 2, 'User': 1, 'Group': 1, 'Address': 1}
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 11536.19it/s]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/neo4j_agent_memory/embeddings/sentence_transformers.py:57: FutureWarning: The `get_sentence_embedding_dimension` method has been renamed to `get_embedding_dimension`.
+  self._dimensions = self._model.get_sentence_embedding_dimension()
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py:189: UserWarning: The `resume_download` argument is deprecated and ignored in `snapshot_download`. Downloads always resume whenever possible.
+  warnings.warn(
+  baseline: 0 tests passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 392 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 448 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 558 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 559 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 551 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 502 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 571 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 596 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 418 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 412 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 415 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 419 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 570 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 480 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 581 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 499 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 459 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+
+============================================================
+WARM (shared memory):  0/4 agents converged | 256 LLM calls | 4093797 prompt + 20483 completion = 4114280 tokens
+COLD (no memory):      0/4 agents converged | 304 LLM calls | 4477537 prompt + 22919 completion = 4500456 tokens
+token_ratio (cold/warm): 1.094
+
+progress (neither swarm converging makes this the comparable measure):
+  warm  errors cleared: best 1, total 3 | best tests passing 32 | 9 attempts | 457,142 tokens/attempt
+  cold  errors cleared: best 4, total 13 | best tests passing 3 | 24 attempts | 187,519 tokens/attempt
+wall-clock: 541.9s
+GPU cost (this run, $0.49/hr): $0.0738
+event log: runs/m4-1789405003.jsonl

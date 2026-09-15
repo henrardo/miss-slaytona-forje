@@ -1,0 +1,29 @@
+=== run 44 starting 15:52:48 --reset-memory ===
+  [run 44] WARM (shared memory):  0/4 agents converged | 314 LLM calls | 4142309 prompt + 26841 completion = 4169150 tokens
+  [run 44] COLD (no memory):      0/4 agents converged | 318 LLM calls | 3633636 prompt + 26031 completion = 3659667 tokens
+  [run 44] token_ratio (cold/warm): 0.878
+  [run 44]   warm  errors cleared: best 1, total 4 | best tests passing 2 | 8 attempts | 521,144 tokens/attempt
+  [run 44]   cold  errors cleared: best 5, total 12 | best tests passing 3 | 23 attempts | 159,116 tokens/attempt
+  [run 44] wall-clock: 641.7s
+=== run 45 starting 16:04:26 (accumulated) ===
+  [run 45] WARM (shared memory):  0/4 agents converged | 233 LLM calls | 3090127 prompt + 27970 completion = 3118097 tokens
+  [run 45] COLD (no memory):      0/4 agents converged | 334 LLM calls | 3761808 prompt + 28402 completion = 3790210 tokens
+  [run 45] token_ratio (cold/warm): 1.216
+  [run 45]   warm  errors cleared: best 2, total 4 | best tests passing 2 | 10 attempts | 311,810 tokens/attempt
+  [run 45]   cold  errors cleared: best 4, total 12 | best tests passing 3 | 28 attempts | 135,365 tokens/attempt
+  [run 45] wall-clock: 569.2s
+=== run 46 starting 16:14:56 (accumulated) ===
+  [run 46] WARM (shared memory):  0/4 agents converged | 239 LLM calls | 2999619 prompt + 32413 completion = 3032032 tokens
+  [run 46] COLD (no memory):      0/4 agents converged | 300 LLM calls | 3345488 prompt + 30036 completion = 3375524 tokens
+  [run 46] token_ratio (cold/warm): 1.113
+  [run 46]   warm  errors cleared: best 1, total 4 | best tests passing 0 | 8 attempts | 379,004 tokens/attempt
+  [run 46]   cold  errors cleared: best 3, total 10 | best tests passing 3 | 22 attempts | 153,433 tokens/attempt
+  [run 46] wall-clock: 577.5s
+=== run 47 starting 16:25:27 (accumulated) ===
+  [run 47] WARM (shared memory):  0/4 agents converged | 253 LLM calls | 3242840 prompt + 31409 completion = 3274249 tokens
+  [run 47] COLD (no memory):      0/4 agents converged | 376 LLM calls | 4072282 prompt + 27197 completion = 4099479 tokens
+  [run 47] token_ratio (cold/warm): 1.252
+  [run 47]   warm  errors cleared: best 1, total 4 | best tests passing 0 | 8 attempts | 409,281 tokens/attempt
+  [run 47]   cold  errors cleared: best 3, total 10 | best tests passing 3 | 21 attempts | 195,213 tokens/attempt
+  [run 47] wall-clock: 602.6s
+=== series complete 16:36:26 ===

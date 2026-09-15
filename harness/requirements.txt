@@ -1,0 +1,16 @@
+# The harness venv (harness/.venv). Install with:
+#   cd harness && uv venv .venv && VIRTUAL_ENV=$PWD/.venv uv pip install -r requirements.txt
+#
+# Vibe and NOTHING ELSE. Two rules, both learned the hard way:
+#
+# 1. Never hand-edit site-packages. A previous session patched
+#    vibe/core/llm/format.py to return tool_choice="required", which made it
+#    impossible for the agent loop to ever end a turn. See README.md and
+#    harness/id_fix_proxy.py.
+#
+# 2. Never install anything else in here. `mistral-vibe` pins mcp==1.28.1;
+#    adding a package that wants mcp>=2 silently upgrades it and Vibe's MCP
+#    subsystem stops importing, taking every MCP server with it. MCP servers
+#    are separate processes -- they get their own venvs
+#    (see harness/web-tools/).
+mistral-vibe

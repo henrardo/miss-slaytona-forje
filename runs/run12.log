@@ -1,0 +1,122 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/14/26 00:00:20] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+/Users/t6w652j6ft/.cache/uv/archive-v0/stZJDwAjmd3TgwG8OW_rv/lib/python3.12/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/Users/t6w652j6ft/.cache/uv/archive-v0/stZJDwAjmd3TgwG8OW_rv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
+  from ._compat import httpx2
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 2.14.7                                │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      neo4j-agent-memory                        │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          ✨ FastMCP 3.0 is coming!                           │
+│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          🎉 Update available: 4.0.3                          │
+│                      Run: pip install --upgrade fastmcp                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+LLM extractor not available, skipping: No llm adapter available for provider 'openai'.
+
+Install one of the following:
+  pip install 'neo4j-agent-memory[openai]'      # native adapter
+  pip install 'neo4j-agent-memory[litellm]'  # universal adapter (recommended)
+[09/14/26 00:00:22] INFO     Starting MCP server                  server.py:2506
+                             'neo4j-agent-memory' with transport                
+                             'stdio'                                            
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/14/26 00:00:23] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Received notification from DBMS server: <GqlStatusObject gql_status='01N52', status_description='warn: property key does not exist. The property `observation` does not exist. Verify that the spelling is correct.', position=<SummaryInputPosition line=4, column=76, offset=193>, raw_classification='UNRECOGNIZED', classification=<NotificationClassification.UNRECOGNIZED: 'UNRECOGNIZED'>, raw_severity='WARNING', severity=<NotificationSeverity.WARNING: 'WARNING'>, diagnostic_record={'_classification': 'UNRECOGNIZED', '_severity': 'WARNING', '_position': {'offset': 193, 'line': 4, 'column': 76}, 'OPERATION': '', 'OPERATION_CODE': '0', 'CURRENT_SCHEMA': '/'}> for query: '\n            MATCH (rt:ReasoningTrace {id: $id})-[:HAS_STEP]->(s:ReasoningStep)\n            WHERE s.embedding IS NULL\n            RETURN s.id AS id, s.thought AS thought, s.action AS action, s.observation AS observation\n            '
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Received notification from DBMS server: <GqlStatusObject gql_status='01N52', status_description='warn: property key does not exist. The property `observation` does not exist. Verify that the spelling is correct.', position=<SummaryInputPosition line=4, column=76, offset=193>, raw_classification='UNRECOGNIZED', classification=<NotificationClassification.UNRECOGNIZED: 'UNRECOGNIZED'>, raw_severity='WARNING', severity=<NotificationSeverity.WARNING: 'WARNING'>, diagnostic_record={'_classification': 'UNRECOGNIZED', '_severity': 'WARNING', '_position': {'offset': 193, 'line': 4, 'column': 76}, 'OPERATION': '', 'OPERATION_CODE': '0', 'CURRENT_SCHEMA': '/'}> for query: '\n            MATCH (rt:ReasoningTrace {id: $id})-[:HAS_STEP]->(s:ReasoningStep)\n            WHERE s.embedding IS NULL\n            RETURN s.id AS id, s.thought AS thought, s.action AS action, s.observation AS observation\n            '
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Received notification from DBMS server: <GqlStatusObject gql_status='01N52', status_description='warn: property key does not exist. The property `observation` does not exist. Verify that the spelling is correct.', position=<SummaryInputPosition line=4, column=76, offset=193>, raw_classification='UNRECOGNIZED', classification=<NotificationClassification.UNRECOGNIZED: 'UNRECOGNIZED'>, raw_severity='WARNING', severity=<NotificationSeverity.WARNING: 'WARNING'>, diagnostic_record={'_classification': 'UNRECOGNIZED', '_severity': 'WARNING', '_position': {'offset': 193, 'line': 4, 'column': 76}, 'OPERATION': '', 'OPERATION_CODE': '0', 'CURRENT_SCHEMA': '/'}> for query: '\n            MATCH (rt:ReasoningTrace {id: $id})-[:HAS_STEP]->(s:ReasoningStep)\n            WHERE s.embedding IS NULL\n            RETURN s.id AS id, s.thought AS thought, s.action AS action, s.observation AS observation\n            '
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Received notification from DBMS server: <GqlStatusObject gql_status='01N52', status_description='warn: property key does not exist. The property `observation` does not exist. Verify that the spelling is correct.', position=<SummaryInputPosition line=4, column=76, offset=193>, raw_classification='UNRECOGNIZED', classification=<NotificationClassification.UNRECOGNIZED: 'UNRECOGNIZED'>, raw_severity='WARNING', severity=<NotificationSeverity.WARNING: 'WARNING'>, diagnostic_record={'_classification': 'UNRECOGNIZED', '_severity': 'WARNING', '_position': {'offset': 193, 'line': 4, 'column': 76}, 'OPERATION': '', 'OPERATION_CODE': '0', 'CURRENT_SCHEMA': '/'}> for query: '\n            MATCH (rt:ReasoningTrace {id: $id})-[:HAS_STEP]->(s:ReasoningStep)\n            WHERE s.embedding IS NULL\n            RETURN s.id AS id, s.thought AS thought, s.action AS action, s.observation AS observation\n            '
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
+  MCP web: lookup
+  MCP neo4j-agent-memory: memory_search, memory_get_context, memory_store_message, memory_add_entity, memory_add_preference, memory_add_fact, memory_get_conversation, memory_list_sessions, memory_get_entity, memory_export_graph, memory_create_relationship, memory_start_trace, memory_record_step, memory_complete_trace, memory_get_observations, graph_query
+  MCP web: lookup
+  --reset-memory: deleted 88 node(s) from the shared graph
+  graph at start: (empty)
+  [cold-1] TimeoutError() -- retrying
+  [cold-2] TimeoutError() -- retrying
+  [cold-3] TimeoutError() -- retrying
+  [cold-0] TimeoutError() -- retrying
+  [warm-0] TimeoutError() -- retrying
+  [warm-1] TimeoutError() -- retrying
+  [warm-2] TimeoutError() -- retrying
+  [warm-3] TimeoutError() -- retrying
+
+============================================================
+WARM (shared memory):  0/4 agents converged | 104 LLM calls | 1015792 prompt + 26690 completion = 1042482 tokens
+COLD (no memory):      0/4 agents converged | 140 LLM calls | 1031744 prompt + 26328 completion = 1058072 tokens
+token_ratio (cold/warm): 1.015
+wall-clock: 409.8s
+GPU cost (this run, $0.49/hr): $0.0558
+event log: runs/m4-1789340410.jsonl

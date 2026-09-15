@@ -1,0 +1,129 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/15/26 07:27:12] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 2425 chars -- working
+[09/15/26 07:27:27] INFO     Starting MCP server                transport.py:242
+                             'neo4j-agent-memory' with                          
+                             transport 'stdio'                                  
+  MCP neo4j-agent-memory: memory_search, memory_get_context, memory_store_message, memory_add_entity, memory_add_preference, memory_add_fact, memory_get_conversation, memory_list_sessions, memory_get_entity, memory_export_graph, memory_create_relationship, memory_start_trace, memory_record_step, memory_complete_trace, memory_get_observations, graph_query
+  MCP neo4j-agent-memory: memory_get_context answered 1193 chars -- working
+warning: The `tool.uv.dev-dependencies` field (used in `pyproject.toml`) is deprecated and will be removed in a future release; use `dependency-groups.dev` instead
+warning: `VIRTUAL_ENV=/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+Warning: No transport type provided. Using default: stdio
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/harness/neo4j-mcp-experiments/servers/mcp-neo4j-vector-graphrag/.venv/lib/python3.12/site-packages/fastmcp/server/server.py:213: DeprecationWarning: Providing `stateless_http` when creating a server is deprecated. Provide it when calling `run` or as a global setting instead.
+  self._handle_deprecated_settings(
+
+
+╭─ FastMCP 2.0 ──────────────────────────────────────────────────────────────╮
+│                                                                            │
+│        _ __ ___ ______           __  __  _____________    ____    ____     │
+│       _ __ ___ / ____/___ ______/ /_/  |/  / ____/ __ \  |___ \  / __ \    │
+│      _ __ ___ / /_  / __ `/ ___/ __/ /|_/ / /   / /_/ /  ___/ / / / / /    │
+│     _ __ ___ / __/ / /_/ (__  ) /_/ /  / / /___/ ____/  /  __/_/ /_/ /     │
+│    _ __ ___ /_/    \__,_/____/\__/_/  /_/\____/_/      /_____(_)____/      │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│    🖥️  Server name:     mcp-neo4j-vector-graphrag                           │
+│    📦 Transport:       STDIO                                               │
+│                                                                            │
+│    📚 Docs:            https://gofastmcp.com                               │
+│    🚀 Deploy:          https://fastmcp.cloud                               │
+│                                                                            │
+│    🏎️  FastMCP version: 2.10.5                                              │
+│    🤝 MCP version:     1.10.1                                              │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/15/26 07:27:33] INFO     Starting MCP server                  server.py:1371
+                             'mcp-neo4j-vector-graphrag' with                   
+                             transport 'stdio'                                  
+  MCP graphrag: neo4j_vector
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/15/26 07:27:34] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 2547 chars -- working
+  graph at start: {'Message': 230, 'ReasoningTrace': 168, 'Entity': 141, 'Object': 96, 'Organization': 21, 'Person': 17, 'Document': 17, 'ReasoningStep': 13, 'ToolCall': 13, 'Tool': 7, 'Conversation': 5, 'Location': 4, 'Geopolitical': 3, 'Event': 3, 'Date': 3, 'Product': 3, 'Group': 2, 'User': 1, 'Email': 1, 'Facility': 1}
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py:189: UserWarning: The `resume_download` argument is deprecated and ignored in `snapshot_download`. Downloads always resume whenever possible.
+  warnings.warn(
+  baseline: 0 tests passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 447 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 461 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+Transaction failed and will be retried in 0.8508868626981807s ({neo4j_code: Neo.TransientError.Transaction.DeadlockDetected} {message: ForsetiClient[transactionId=408, clientId=2] can't acquire EXCLUSIVE NODE_RELATIONSHIP_GROUP_DELETE(60) because it would form this deadlock wait cycle:
+NODE_RELATIONSHIP_GROUP_DELETE(60)-[SHARED_OWNER]->(tx:405)-[WAITING_FOR_EXCLUSIVE]->(NODE_RELATIONSHIP_GROUP_DELETE(60))-[SHARED_OWNER]->(tx:408)-[WAITING_FOR_EXCLUSIVE]->(NODE_RELATIONSHIP_GROUP_DELETE(60))} {gql_status: 50N05} {gql_status_description: error: general processing exception - deadlock detected. Deadlock detected while trying to acquire locks. See log for more details.})
+Transaction failed and will be retried in 0.9435050222869292s ({neo4j_code: Neo.TransientError.Transaction.DeadlockDetected} {message: ForsetiClient[transactionId=406, clientId=4] can't acquire EXCLUSIVE NODE_RELATIONSHIP_GROUP_DELETE(60) because it would form this deadlock wait cycle:
+NODE_RELATIONSHIP_GROUP_DELETE(60)-[SHARED_OWNER]->(tx:405)-[WAITING_FOR_EXCLUSIVE]->(NODE_RELATIONSHIP_GROUP_DELETE(60))-[SHARED_OWNER]->(tx:406)-[WAITING_FOR_EXCLUSIVE]->(NODE_RELATIONSHIP_GROUP_DELETE(60))} {gql_status: 50N05} {gql_status_description: error: general processing exception - deadlock detected. Deadlock detected while trying to acquire locks. See log for more details.})
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 535 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 617 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 631 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 587 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 448 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 558 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 422 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/gliner/data_processing/processor.py:427: UserWarning: Sentence of length 600 has been truncated to 384
+  batch = [self.preprocess_example(b["tokenized_text"], b[key], class_to_ids) for b in batch_list]
+
+============================================================
+WARM (shared memory):  0/4 agents converged | 80 LLM calls | 1003694 prompt + 4110 completion = 1007804 tokens
+COLD (no memory):      0/4 agents converged | 94 LLM calls | 1073323 prompt + 4714 completion = 1078037 tokens
+token_ratio (cold/warm): 1.070
+
+progress (neither swarm converging makes this the comparable measure):
+  warm  errors cleared: best 0, total 0 | best tests passing 0 | 4 attempts | 251,951 tokens/attempt
+  cold  errors cleared: best 0, total 0 | best tests passing 0 | 4 attempts | 269,509 tokens/attempt
+wall-clock: 602.2s
+GPU cost (this run, $0.49/hr): $0.0820
+event log: runs/m4-1789453620.jsonl

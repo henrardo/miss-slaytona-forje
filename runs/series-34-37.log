@@ -1,0 +1,8 @@
+=== run 34 starting 10:52:01 --reset-memory ===
+  [run 34] WARM (shared memory):  0/4 agents converged | 83 LLM calls | 885659 prompt + 34835 completion = 920494 tokens
+  [run 34] COLD (no memory):      0/4 agents converged | 103 LLM calls | 1043838 prompt + 40788 completion = 1084626 tokens
+  [run 34] token_ratio (cold/warm): 1.178
+  [run 34]   warm  errors cleared: best 1, total 2 | best tests passing 0 | 7 attempts | 131,499 tokens/attempt
+  [run 34]   cold  errors cleared: best 1, total 4 | best tests passing 2 | 11 attempts | 98,602 tokens/attempt
+  [run 34] wall-clock: 648.5s
+=== run 35 starting 11:03:46 （accumulated) ===

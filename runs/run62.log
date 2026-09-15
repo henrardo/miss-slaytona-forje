@@ -1,0 +1,96 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/14/26 23:25:30] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 1612 chars -- working
+[09/14/26 23:25:44] INFO     Starting MCP server                transport.py:242
+                             'neo4j-agent-memory' with                          
+                             transport 'stdio'                                  
+  MCP neo4j-agent-memory: memory_search, memory_get_context, memory_store_message, memory_add_entity, memory_add_preference, memory_add_fact, memory_get_conversation, memory_list_sessions, memory_get_entity, memory_export_graph, memory_create_relationship, memory_start_trace, memory_record_step, memory_complete_trace, memory_get_observations, graph_query
+Received notification from DBMS server: <GqlStatusObject gql_status='01N52', status_description='warn: property key does not exist. The property `created_at` does not exist in database `neo4j`. Verify that the spelling is correct.', position=<SummaryInputPosition line=4, column=12, offset=70>, raw_classification='UNRECOGNIZED', classification=<NotificationClassification.UNRECOGNIZED: 'UNRECOGNIZED'>, raw_severity='WARNING', severity=<NotificationSeverity.WARNING: 'WARNING'>, diagnostic_record={'_classification': 'UNRECOGNIZED', '_severity': 'WARNING', '_position': {'offset': 70, 'line': 4, 'column': 12}, 'OPERATION': '', 'OPERATION_CODE': '0', 'CURRENT_SCHEMA': '/'}> for query: '\nMATCH (c:Conversation {session_id: $session_id})\nRETURN c\nORDER BY c.created_at DESC\nLIMIT 1\n'
+  MCP neo4j-agent-memory: memory_get_context answered 91 chars -- working
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      graph, 4.0.3                                │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/14/26 23:25:49] INFO     Starting MCP server 'graph' with   transport.py:242
+                             transport 'stdio'                                  
+  MCP graph: reasoning, entities
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/14/26 23:25:50] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 2728 chars -- working
+  graph at start: (empty)
+Received notification from DBMS server: <GqlStatusObject gql_status='01N52', status_description='warn: property key does not exist. The property `created_at` does not exist in database `neo4j`. Verify that the spelling is correct.', position=<SummaryInputPosition line=4, column=12, offset=70>, raw_classification='UNRECOGNIZED', classification=<NotificationClassification.UNRECOGNIZED: 'UNRECOGNIZED'>, raw_severity='WARNING', severity=<NotificationSeverity.WARNING: 'WARNING'>, diagnostic_record={'_classification': 'UNRECOGNIZED', '_severity': 'WARNING', '_position': {'offset': 70, 'line': 4, 'column': 12}, 'OPERATION': '', 'OPERATION_CODE': '0', 'CURRENT_SCHEMA': '/'}> for query: '\nMATCH (c:Conversation {session_id: $session_id})\nRETURN c\nORDER BY c.created_at DESC\nLIMIT 1\n'
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py:189: UserWarning: The `resume_download` argument is deprecated and ignored in `snapshot_download`. Downloads always resume whenever possible.
+  warnings.warn(
+  baseline: 0 tests passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+
+============================================================
+WARM (shared memory):  0/4 agents converged | 87 LLM calls | 1044093 prompt + 4259 completion = 1048352 tokens
+COLD (no memory):      0/4 agents converged | 91 LLM calls | 1019980 prompt + 4541 completion = 1024521 tokens
+token_ratio (cold/warm): 0.977
+
+progress (neither swarm converging makes this the comparable measure):
+  warm  errors cleared: best 0, total 0 | best tests passing 0 | 4 attempts | 262,088 tokens/attempt
+  cold  errors cleared: best 0, total 0 | best tests passing 0 | 4 attempts | 256,130 tokens/attempt
+wall-clock: 538.0s
+GPU cost (this run, $0.49/hr): $0.0732
+event log: runs/m4-1789424719.jsonl
