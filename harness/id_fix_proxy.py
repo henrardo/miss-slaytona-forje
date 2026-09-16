@@ -1,85 +1,38 @@
-"""Adapts Vibe's Mistral-flavoured wire protocol to a generic SGLang endpoint.
+"""Adapts Vibe's Mistral-flavoured wire protocol to a generic SGLang endpoint,
+and counts tokens.
 
-Two rewrites, both mechanical, both applied identically to every swarm so
-neither can contaminate the warm/cold comparison:
+Deliberately minimal: every byte Vibe sends should reach SGLang unchanged
+except for the two rewrites below, because "Vibe must stay vanilla" is this
+project's first non-negotiable and a wire-level mutation is the easiest way to
+break it invisibly. Both rewrites apply identically to every swarm, so neither
+can contaminate the warm/cold comparison.
 
-1. REQUEST SIDE -- `tool_choice: "required"` -> `"auto"`. A GUARD, not a
-   fix: as of 2026-09-13 the installed Vibe is byte-identical to the
-   published wheel and already sends "auto", so this rewrite should never
-   fire. `GET /usage` reports `tool_choice_relaxed`; if that counter is
-   anything but 0, someone has re-patched Vibe and the run is compromised.
-   It is kept because the failure it guards against is silent, total, and
-   cost twelve full runs to find.
+1. REQUEST SIDE -- `tool_choice: "required"` -> `"auto"`. A TRIPWIRE, not a
+   fix: vanilla Vibe already sends "auto", so this must never fire. If
+   `GET /usage` reports a non-zero `tool_choice_relaxed`, someone has patched
+   the installed package and the run is compromised -- preflight() trips on
+   it. See NOTES-hard-won.md, "The model must tool-call under plain
+   tool_choice: auto", for the twelve runs this cost.
 
-   The history: an earlier session hand-edited the *installed package*,
-   changing `APIToolFormatHandler.get_tool_choice()` (core/llm/format.py:62)
-   from "auto" to "required", to work around a model that would not
-   spontaneously emit tool calls. Vibe's agent loop ends a turn only when
-   the model returns an assistant message carrying *no* tool calls
-   (core/agent_loop/_loop.py:2483,
-   `if not resolved.tool_calls and not resolved.failed_calls: return`).
+2. RESPONSE SIDE -- tool_call ids. Vibe generates OpenAI-style ids;
+   mistral_common's validator requires `^[a-zA-Z0-9]{9}$` and rejects the
+   conversation on the next turn. Rewritten here, response-side only, because
+   Vibe then stores and echoes back the compliant id itself. NOTES-hard-won.md,
+   "Mistral tool-call ids".
 
-   SGLang enforces `tool_choice: "required"` with constrained decoding --
-   confirmed directly against this pod, same model, same endpoint:
+Token accounting lives here because this is the only place that sees every raw
+SGLang response -- Vibe never surfaces per-call usage outside its own process.
+Run one instance per swarm, same upstream, so `/usage` is a real per-swarm
+total. The counters are CUMULATIVE since process start: snapshot before,
+snapshot after, subtract (NOTES-hard-won.md, "/usage counters are cumulative").
 
-       tool_choice=None       -> finish=stop       tool_calls=[]     content='Hello! How can I assist you today?'
-       tool_choice='auto'     -> finish=stop       tool_calls=[]     content='Hello! How can I assist you today?'
-       tool_choice='required' -> finish=tool_calls tool_calls=['bash'] content=''
+No timeout on the forward: this blocks exactly as long as SGLang takes, which
+is what Vibe would have done unmediated.
 
-   ...for the prompt "Say hello. Do not use any tools." Under "required" the
-   model is grammar-constrained into emitting a tool call on every single
-   turn, so the loop's one and only exit condition can never be reached. The
-   agent cannot stop. Confirmed in the transcripts: run-warm-0's last session
-   has 576 assistant messages and 576 tool results -- not one text-only turn
-   in the entire session -- 524 of them `read_file`, looping until the run
-   deadline killed it. That is the whole of the "agents get nothing done"
-   symptom, and every downstream oddity (600+ `skill` calls, 90M-token runs,
-   zero completions across twelve runs) is a consequence of it.
-
-   So the patch traded "the model never starts" for "the model can never
-   stop", and the second failure is total. The real fix was to revert the
-   package (it is now verified byte-identical to the wheel's own SHA-256
-   manifest) and serve a model that calls tools under plain "auto", which
-   is what Vibe was written against.
-
-2. RESPONSE SIDE -- non-compliant tool_call ids.
-
-Why that one exists: Vibe generates OpenAI-style tool_call ids ("call_" + 24 hex
-chars). mistral_common's strict request validator
-(protocol/instruct/validator.py) requires tool_call.id and tool_call_id to
-match ^[a-zA-Z0-9]{9}$ exactly -- so a Vibe conversation that echoes its own
-prior assistant tool_call.id back as a tool-result message's tool_call_id
-gets rejected by SGLang on the very next turn. Root-caused via bisection
-replay of captured request bodies down to a minimal reproducible curl case
-(see notes/ for the full writeup). SGLang's own tool-call-parser generates
-compliant 9-char ids, but Vibe's harness does not, and there is no known
-Vibe-side config to change its id format.
-
-This proxy sits between Vibe and SGLang, rewriting only the ids -- Vibe then
-stores and echoes back the *rewritten* compliant id on its own, so no
-request-side fix is needed for that one, only response-side.
-
-Also tallies token usage (Sec. 12: "tokens[swarm]" comes from each
-response's `usage` object). Vibe itself never surfaces per-call usage to
-anything outside its own process, so this proxy -- the one place that
-actually sees every raw SGLang response -- is where that has to be counted.
-Run one instance per swarm (each on its own port, same upstream) so the
-`/usage` endpoint gives a real per-swarm total, not a mixed one.
-
-No timeout on the forward to UPSTREAM: an earlier revision hardcoded
-timeout=180 (and timeout=30 on the GET passthrough) here, on top of the
-plain SGLang round trip Vibe itself would have made unmediated -- neither
-number was ever validated against how long a real completion call can take,
-and a socket timeout isn't even caught by the one except clause below, so
-it would have killed the request with no response sent back to Vibe at
-all. Removed; this now blocks exactly as long as SGLang takes to answer.
-
-Usage: run this on the same host as the SGLang server (or tunneled to it),
-then point Vibe's config at this proxy's port instead of SGLang's port
-directly.
     python3 harness/id_fix_proxy.py [listen_port] [upstream_url]
-    # defaults: listen_port=8899, upstream_url=http://localhost:30000
-    # GET /usage -> {"prompt_tokens": N, "completion_tokens": N, "requests": N}
+    # defaults: 8899, http://localhost:30000
+    # GET /usage -> {"prompt_tokens", "completion_tokens", "requests",
+    #                "tool_choice_relaxed"}
 """
 
 import http.server
@@ -93,6 +46,21 @@ import urllib.request
 
 LISTEN_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8899
 UPSTREAM = sys.argv[2] if len(sys.argv) > 2 else "http://localhost:30000"
+
+# MUST be set on every upstream request. RunPod's HTTPS pod proxy
+# (*.proxy.runpod.net) returns 403 Forbidden to urllib's default User-Agent
+# and 200 to anything else -- verified three ways against the same URL in the
+# same second: curl's own UA 200, no UA at all 200, `-A "Python-urllib/3.12"`
+# 403. So it is a User-Agent filter, not auth, not rate limiting, and not the
+# pod.
+#
+# The symptom is brutal to read from the outside: both proxies answer their
+# own port, then fail every forward, and preflight reports "not answering
+# (RemoteDisconnected)" while a manual `curl` to the very same upstream
+# succeeds. That cost one aborted run. Direct `http://localhost:30000` over an
+# SSH tunnel never hits this, which is why it only appeared once the pod was
+# reached through its HTTPS proxy instead.
+_USER_AGENT = "miss-slaytona-forje/id_fix_proxy"
 
 VALID_ID = re.compile(r"^[a-zA-Z0-9]{9}$")
 ALPHABET = string.ascii_letters + string.digits
@@ -125,29 +93,15 @@ def relax_tool_choice(req_json):
     return req_json
 
 
-# Ceiling on a single turn's generation. ON by default -- unbounded generation
-# is a hazard for any reasoning model, not just this one. Override with
-# PROXY_MAX_TOKENS=0 to restore vanilla behaviour.
-MAX_TOKENS = int(os.environ.get("PROXY_MAX_TOKENS", "2048"))
+# Ceiling on a single turn's generation. OFF by default -- see
+# NOTES-hard-won.md, "Don't inject max_tokens into every request". Opt in with
+# PROXY_MAX_TOKENS=2048 for a specific experiment; do not leave it on.
+MAX_TOKENS = int(os.environ.get("PROXY_MAX_TOKENS", "0"))
 
 
 def cap_max_tokens(req_json):
-    """Bound how long one turn may generate. Vibe sends neither `max_tokens`
-    nor `stop` -- confirmed by capturing a real request body -- so SGLang
-    generates until the model emits EOS or fills the 32,768-token context.
-
-    With a hybrid reasoning model that is effectively unbounded. Run 24 died
-    exactly this way: SGLang showed `#running-req: 2, #queue-req: 0` with
-    `#token` climbing steadily (11,634 -> 13,415 over 29 seconds) -- nothing
-    queued, nothing stalled, just one turn generating for minutes. All eight
-    agents were still inside their FIRST response when the 600s deadline
-    killed them, so no session directory was ever written and the proxy
-    tallied zero requests (usage is counted on the response, and no response
-    ever came back). It looked exactly like a startup hang and was not one.
-
-    2048 is generous for "some reasoning plus one tool call" and bounds a turn
-    to ~34s at the 60 tok/s this pod sustains. Applied identically to both
-    swarms, so it cannot skew warm against cold."""
+    """Bound how long one turn may generate. Off unless PROXY_MAX_TOKENS is
+    set -- see the constant above for why that default flipped."""
     if MAX_TOKENS and isinstance(req_json, dict) and not req_json.get("max_tokens"):
         req_json["max_tokens"] = MAX_TOKENS
     return req_json
@@ -159,27 +113,16 @@ DISABLE_THINKING = os.environ.get("PROXY_DISABLE_THINKING") == "1"
 def disable_thinking(req_json):
     """Opt-in, off by default: ask Qwen3 to skip its reasoning pass.
 
-    Qwen3 is a hybrid reasoning model and emits `reasoning_content` before its
-    answer. Measured over run 19's 83 assistant turns: 131,751 characters of
-    reasoning against 11,184 characters of actual content -- **92% of every
-    token the model generated was thinking**, 1,587 chars per turn versus 135.
-
-    That is the whole throughput story on this pod. SGLang reports ~155 tok/s
-    aggregate across 10 concurrent requests (~15 tok/s per agent) with
-    `#queue-req: 0`, so nothing is waiting for admission -- the card is simply
-    decoding, and 92% of what it decodes is discarded reasoning. Each turn
-    spends roughly 26 seconds thinking to produce about 2 seconds of tool call.
-
     `enable_thinking` is Qwen's own chat-template switch, passed through
-    SGLang's `chat_template_kwargs`. Vibe never sends it, so it is injected
-    here -- identically for both swarms, so it cannot skew warm against cold.
+    SGLang's `chat_template_kwargs`; Vibe never sends it. Measured on run 19,
+    92% of everything the model generated was reasoning (131,751 chars against
+    11,184 of content), which is the whole throughput story on this pod.
 
-    OFF BY DEFAULT, and it should stay off for the real demo. Qwen3 is a cheap
-    stand-in; the target model is Mistral Small 4. Tuning the pipeline around
-    the stand-in's reasoning mode is exactly the mistake of optimising for a
-    model the demo does not use. Enable it (PROXY_DISABLE_THINKING=1) to answer
-    one specific question -- can this harness converge at all when the model is
-    not spending 92% of the clock thinking -- not as a standing setting."""
+    It should stay off for the real demo. Qwen3 is a cheap stand-in and the
+    target is Mistral Small 4; tuning the pipeline around the stand-in's
+    reasoning mode is optimising for a model the demo does not use. Enable it
+    to answer one question -- can this harness converge when the model is not
+    spending 92% of the clock thinking -- not as a standing setting."""
     if DISABLE_THINKING and isinstance(req_json, dict):
         kwargs = req_json.setdefault("chat_template_kwargs", {})
         if isinstance(kwargs, dict):
@@ -240,7 +183,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         is_stream = bool(req_json and req_json.get("stream"))
 
         req = urllib.request.Request(
-            UPSTREAM + self.path, data=body, headers={"Content-Type": "application/json"}, method="POST"
+            UPSTREAM + self.path, data=body,
+            headers={"Content-Type": "application/json", "User-Agent": _USER_AGENT},
+            method="POST",
         )
         try:
             with urllib.request.urlopen(req) as resp:
@@ -294,7 +239,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        req = urllib.request.Request(UPSTREAM + self.path, method="GET")
+        req = urllib.request.Request(
+            UPSTREAM + self.path, headers={"User-Agent": _USER_AGENT}, method="GET"
+        )
         with urllib.request.urlopen(req) as resp:
             resp_body = resp.read()
             self.send_response(resp.status)

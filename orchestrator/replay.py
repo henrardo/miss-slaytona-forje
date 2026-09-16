@@ -55,9 +55,17 @@ async def serve_replay(
     server = await broadcaster.serve(host, port)
     print(f"replay: serving {len(events)} events from {path} on ws://{host}:{port} (speed={speed}x)")
     try:
-        connected = await broadcaster.wait_for_clients(min_clients=1, timeout=connect_timeout)
-        if not connected:
-            print("replay: no client connected within timeout, playing anyway")
+        # connect_timeout=0 means "don't wait", not "wait forever". It used to
+        # be mapped to None by main() and None means no deadline in
+        # wait_for_clients, so `--connect-timeout 0` -- documented in --help as
+        # "0 = don't wait" -- blocked indefinitely with no client. Found by
+        # running it: the process hung instead of replaying.
+        if connect_timeout is None or connect_timeout > 0:
+            connected = await broadcaster.wait_for_clients(
+                min_clients=1, timeout=connect_timeout
+            )
+            if not connected:
+                print("replay: no client connected within timeout, playing anyway")
         await replay(events, broadcaster, speed=speed)
         print("replay: done")
     finally:
@@ -75,11 +83,15 @@ def main(argv: list[str] | None = None) -> int:
         "--connect-timeout",
         type=float,
         default=10.0,
-        help="seconds to wait for a UI client before playing anyway (0 = don't wait)",
+        help="seconds to wait for a UI client before playing anyway "
+             "(0 = start immediately; negative = wait forever)",
     )
     args = parser.parse_args(argv)
 
-    timeout = args.connect_timeout if args.connect_timeout > 0 else None
+    # 0 is passed straight through and means "don't wait" (see serve_replay).
+    # Only a negative value means "no deadline"; mapping 0 to None is what made
+    # `--connect-timeout 0` hang forever.
+    timeout = None if args.connect_timeout < 0 else args.connect_timeout
     asyncio.run(serve_replay(args.path, args.host, args.port, args.speed, connect_timeout=timeout))
     return 0
 

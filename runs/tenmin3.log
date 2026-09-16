@@ -1,0 +1,90 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          🎉 Update available: 4.0.4                          │
+│                      Run: pip install --upgrade fastmcp                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/16/26 11:58:55] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+[09/16/26 11:59:06] INFO     Starting MCP server                transport.py:242
+                             'neo4j-agent-memory' with                          
+                             transport 'stdio'                                  
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          🎉 Update available: 4.0.4                          │
+│                      Run: pip install --upgrade fastmcp                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/16/26 11:59:11] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 2297 chars -- working
+  MCP neo4j-agent-memory: memory_search, memory_get_context, memory_store_message, memory_add_entity, memory_add_preference, memory_add_fact, memory_get_conversation, memory_list_sessions, memory_get_entity, memory_export_graph, memory_create_relationship, memory_start_trace, memory_record_step, memory_complete_trace, memory_get_observations, graph_query
+  MCP neo4j-agent-memory: memory_get_context answered 1273 chars -- working
+  MCP web: lookup
+  MCP web: smoke test already paid for, not calling it again
+  graph at start: {'ReasoningStep': 193, 'ToolCall': 188, 'Entity': 96, 'Message': 28, 'Object': 18, 'ReasoningTrace': 11, 'Tool': 9, 'Product': 6, 'Document': 5, 'Device': 4, 'Conversation': 3, 'Fact': 2, 'User': 1, 'Email': 1}
+  baseline: 0 tests passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+  setup: 36.5s (outside the agents' budget)
+
+  edits that never landed (agent wrote to a nonexistent path):
+     cold-1 edit LOST -- wrote to a path that does not exist: /Users/username/project/requirements-v2.txt
+     warm-1 edit LOST -- wrote to a path that does not exist: /Users/username/project/pyproject.toml
+
+  !! CONTAINMENT VIOLATION -- this run's warm/cold comparison is NOT valid:
+     warm-1 wrote outside its own checkout: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixture/pyproject.toml
+
+
+============================================================
+WARM (shared memory):  0/2 agents converged | 28 LLM calls | in 409,749 / out 13,568 = 423,317 tokens
+COLD (no memory):      0/2 agents converged | 33 LLM calls | in 270,244 / out 14,566 = 284,810 tokens
+ratio (cold/warm):  input 0.660  output 1.074   [>1 = warm cheaper]
+
+progress (neither swarm converging makes this the comparable measure):
+  warm  errors cleared: best 0, total 0 | best tests passing 0 | 2 attempts | 204,874 in + 6,784 out per attempt
+  cold  errors cleared: best 0, total 0 | best tests passing 0 | 2 attempts | 135,122 in + 7,283 out per attempt
+wall-clock: 487.4s agents (+36.5s setup, outside the budget)
+GPU cost (this run, $0.49/hr): $0.0663
+event log: runs/m4-1789556330.jsonl
+
+GATE ok: 4 attempt(s) graded by 4 real Daytona run(s).
+     warm memory tools: 2 attempt(s) called them, 2 call(s), ['neo4j-agent-memory_memory_get_context']
+     step hook: 26 step(s) written by the agents (1 of them turns that called no tool), 15 injection(s) of prior agents' steps, 0 error(s)
+     entities extracted after the clock stopped: 59 from messages, 926 TOUCHED edge(s) from reasoning steps

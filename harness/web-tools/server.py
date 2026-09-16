@@ -61,7 +61,7 @@ Install:  cd harness/web-tools && uv venv .venv \
 Required environment variable:
     OPENAI_API_KEY
 Optional:
-    WEB_SEARCH_MODEL   defaults to "gpt-5.2"
+    WEB_SEARCH_MODEL   defaults to "gpt-4o-mini" (see the note at MODEL)
 """
 from __future__ import annotations
 
@@ -70,7 +70,28 @@ import os
 from fastmcp import FastMCP
 from openai import AsyncOpenAI
 
-MODEL = os.environ.get("WEB_SEARCH_MODEL", "gpt-5.2")
+# A CHEAP model, deliberately. This defaulted to "gpt-5.2" -- a frontier model
+# -- for a tool whose entire job is answering "which package provides
+# validate_email".
+#
+# The cost is not mainly the model's own tokens. `tools=[{"type":
+# "web_search"}]` is OpenAI's HOSTED search: it bills a fee per tool call and
+# injects the retrieved pages back as input tokens. Measured against the same
+# query in the same minute:
+#
+#   gpt-5.2      5.1s  8,663 input / 175 output tokens
+#   gpt-4o-mini  3.4s  8,174 input / 198 output tokens
+#   gpt-4.1-mini 3.3s  8,174 input / 177 output tokens
+#   gpt-5.2-mini 404, does not exist
+#
+# Same ~8.2k input either way, because that is the search results, not the
+# model. So the frontier model bought nothing here except its own per-token
+# multiple on 8k tokens of input, on every call.
+#
+# Overridable, and verified working on this model rather than assumed -- a
+# dead web tool is a failure this project has already had, and it reads as
+# "the model chose not to search".
+MODEL = os.environ.get("WEB_SEARCH_MODEL", "gpt-4o-mini")
 
 server = FastMCP("web")
 _client: AsyncOpenAI | None = None

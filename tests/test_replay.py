@@ -11,6 +11,7 @@ from pathlib import Path
 
 import websockets
 
+from orchestrator.events import EVENT_TYPES
 from orchestrator.replay import load_events, serve_replay
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -48,17 +49,28 @@ def test_replay_delivers_sample_events_in_order_to_a_stub_consumer():
     asyncio.run(run_both())
 
     assert received == expected
-    assert [e["type"] for e in received] == [
-        "RUN_START",
-        "FILE_CLAIMED",
-        "MEMORY_READ",
-        "ATTEMPT_START",
-        "ATTEMPT_DONE",
-        "FILE_DONE",
-        "MEMORY_WRITE",
-        "METRICS",
-        "RUN_END",
-    ]
+    types = [e["type"] for e in received]
+    assert types[0] == "RUN_START"
+    assert types[-1] == "RUN_END"
+
+
+def test_sample_only_contains_event_types_the_orchestrator_emits():
+    """The sample is the replay contract, so it has to describe a real run.
+
+    It previously hardcoded the abandoned synthetic-fixture design --
+    `cfp/models/speaker.py`, `FILE_CLAIMED`, `METRICS`, per-file
+    `MEMORY_WRITE` with `P1_VALIDATOR` pattern names -- none of which the
+    orchestrator has emitted since the fixture became fastapi-mail. The test
+    passed throughout, because load_events() only parses JSON and never
+    checked the types against the schema. So the one file documenting the
+    UI contract described a run that could not happen, and nothing said so."""
+    declared = EVENT_TYPES
+    seen = {e["type"] for e in load_events(SAMPLE_PATH)}
+    unknown = seen - declared
+    assert not unknown, (
+        f"runs/sample.jsonl contains event types the orchestrator does not "
+        f"emit: {sorted(unknown)}. Regenerate it from a real run."
+    )
 
 
 def test_replay_is_not_live_indistinguishable_payloads():
@@ -68,3 +80,19 @@ def test_replay_is_not_live_indistinguishable_payloads():
     for event in expected:
         assert set(event.keys()) >= {"t", "type"}
         assert "replay" not in event
+
+
+def test_connect_timeout_zero_does_not_wait_for_a_client():
+    """`--connect-timeout 0` is documented as "don't wait" and must not hang.
+
+    It used to be mapped to `None` by main(), and `None` means *no deadline* in
+    wait_for_clients -- so the flag that says "start immediately" blocked
+    forever when no UI was connected. This is the stage-insurance path, so a
+    hang here is the worst possible place for one."""
+    import time
+
+    started = time.monotonic()
+    asyncio.run(
+        serve_replay(SAMPLE_PATH, HOST, PORT + 1, speed=5000.0, connect_timeout=0)
+    )
+    assert time.monotonic() - started < 10.0, "replay waited for a client it was told to skip"

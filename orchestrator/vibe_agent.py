@@ -1,31 +1,18 @@
-"""The migration loop (Sec. 6), M3 revision 2: Mistral Vibe (the harness
-Devstral was actually post-trained around -- its own chat template hardcodes
-a "Mistral Vibe" system persona) replacing dsh, which turned out to produce
-unreliable/malformed tool calls against this model under generic OpenAI-style
-"auto" tool-choice. See the plan this was built from for the full diagnosis.
+"""One agent, one whole-codebase task: "migrate this codebase from Pydantic
+v1 to Pydantic v2."
 
-Corrected 2026-09-13: edits are local, Daytona is only for running and
-validating. An earlier revision routed everything -- reads, edits, and
-checks -- through Daytona's MCP server, with `--enabled-tools 'daytona_*'`
-disabling every one of Vibe's own native tools (edit/write_file/read_file/
-bash). That meant Vibe had no real edit primitive, only a raw remote shell,
-and it wasn't a deliberate choice -- it was never checked against what
-`daytona_*` actually included (it swept in `daytona_computer_use_*`, a
-GUI-automation tool with nothing to do with code, which three separate
-agents got stuck in during an hour-long run). The actual, correct division:
-Vibe runs locally, plain, no `--enabled-tools` filter at all -- its own
-native tools operate on a real local checkout of the codebase in `vibe_cwd`.
-Vibe never registers or talks to Daytona. This module's own
-migrate_codebase() calls Daytona directly (via SandboxPool.run_pytest(),
-Sec. 6) between attempts, uploading whatever the local tree currently looks
-like into a fresh, disposable sandbox to run the real test suite -- that
-result, not Vibe's own exit status, decides success and is what gets fed
-back into the next attempt's prompt.
+The division of labour, which is the only thing about this module worth
+holding in your head:
 
-migrate_codebase() (Sec. 6, M4) gives one agent one whole-codebase task --
-"migrate this codebase from Pydantic v1 to Pydantic v2" -- not a single
-claimed file; see its own docstring and orchestrator/run.py's module
-docstring for the memory wiring.
+  Vibe   edits a real local checkout with its own native tools, unfiltered,
+         exactly as a local `vibe` invocation would. It never registers or
+         talks to Daytona, and it is never told how its work is checked.
+  Here   calls Daytona directly between attempts (SandboxPool.run_pytest),
+         uploading whatever the local tree currently looks like into a fresh
+         disposable sandbox. That verdict -- not Vibe's exit status, not the
+         model's claim -- decides success and feeds the next prompt.
+
+Background on the failures that shaped this: NOTES-hard-won.md.
 """
 from __future__ import annotations
 
@@ -35,13 +22,16 @@ import difflib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from neo4j_agent_memory.mcp._instructions import get_instructions
 from neo4j_agent_memory.schema.models import TraceOutcome
 
 from orchestrator.manifest import REPO_ROOT
@@ -54,18 +44,62 @@ VIBE_HOME = HARNESS_DIR / ".vibe"
 CONFIG_TEMPLATE = HARNESS_DIR / "vibe-config.template.toml"
 CONFIG_GENERATED = VIBE_HOME / "config.toml"
 
-# The interpreter an agent's own shell gets, holding the fixture's pydantic-v2
-# requirements and nothing else. Built once per machine by ensure_agent_venv().
+# The interpreter an agent's own shell gets: the fixture's pydantic-v2
+# requirements and nothing else. Built once by ensure_agent_venv().
 #
-# Before this existed, agents inherited the orchestrator's `VIRTUAL_ENV`
-# wholesale, so `python -m pytest` in an agent's checkout resolved pydantic out
-# of miss-slaytona-forje/.venv -- along with neo4j, the Daytona SDK and
-# neo4j-agent-memory itself. That made the suite runnable locally by accident,
-# and made the cold arm's "zero Neo4j contact" claim true only because no cold
-# agent happened to try.
+# Agents used to inherit the orchestrator's VIRTUAL_ENV, so `python -m pytest`
+# in an agent's checkout resolved pydantic -- and neo4j, and the Daytona SDK --
+# out of this project's own venv. Short path and .resolve() are both
+# load-bearing; see NOTES-hard-won.md, "Keep the paths the model must retype
+# short".
 AGENT_ROOT = Path(os.environ.get("M4_AGENT_ROOT", "/tmp/msf-agents")).resolve()
 AGENT_VENV = AGENT_ROOT / ".fixture-venv"
 AGENT_PYTHON = AGENT_VENV / "bin" / "python"
+
+# An empty HOME for the agents, so that "everything is enabled" does not mean
+# "the agent can rewrite the operator's dotfiles".
+#
+# Vibe resolves its global skills directory as `Path.home() / ".agents" /
+# "skills"` (core/paths/_agents_home.py), which on a developer machine is the
+# real one. With `skill` enabled, warm-0 pulled the operator's installed
+# `find-skills` skill into context as an ordinary project file and then:
+#
+#   * issued SIX `edit` calls against ~/.agents/skills/find-skills/SKILL.md
+#     (all six missed on `old_string`, which is the only reason that file is
+#     still intact -- one lucky match would have corrupted it), and
+#   * at transcript line 52, tried to write the pydantic `validate_alternative_body`
+#     fix INTO SKILL.md, having lost track of which file it was editing, and
+#   * then burned ~20 turns looping over three skill paths, two of which 404.
+#
+# The fix is containment, not capability removal: every tool stays enabled and
+# `skill` still works, but it resolves against a HOME that belongs to the run.
+# `user_skills_dirs` returns [] when the directory does not exist, so the agent
+# simply has no global skills -- and no path to the operator's.
+#
+# Set per agent rather than once, so an agent that does write into its HOME
+# cannot reach a sibling's either.
+AGENT_HOMES = AGENT_ROOT / ".homes"
+# ...except the caches, which must stay shared and warm. The neo4j-agent-memory
+# MCP server is launched with `uvx`, and uvx resolves the package through
+# ~/.cache/uv (30GB of it here). Repointing HOME without this sends every agent
+# to re-resolve and re-download the package on startup, off a network the run
+# does not depend on and cannot rely on. UV_CACHE_DIR/XDG_CACHE_HOME are the
+# documented overrides (`uv --help`: "[env: UV_CACHE_DIR=]").
+_REAL_HOME = Path.home()
+_SHARED_CACHE_ENV = {
+    "UV_CACHE_DIR": str(_REAL_HOME / ".cache" / "uv"),
+    "XDG_CACHE_HOME": str(_REAL_HOME / ".cache"),
+}
+
+
+def agent_home_for(vibe_home: Path) -> Path:
+    """A private, empty HOME for one agent, keyed off its VIBE_HOME.
+
+    Created if absent and otherwise left alone. Deliberately does NOT contain
+    `.agents/`: its absence is what makes Vibe's global skills list empty."""
+    home = AGENT_HOMES / vibe_home.name
+    home.mkdir(parents=True, exist_ok=True)
+    return home
 
 # Stripped from every agent's environment, warm and cold alike. None of these
 # are needed to do the task, and each one is a capability the agent should not
@@ -79,83 +113,199 @@ _STRIPPED_ENV = ("DAYTONA_API_KEY", "OPENAI_API_KEY", "MISTRAL_API_KEY",
 
 # The web-search MCP server and the interpreter it runs under. Separate venv on
 # purpose -- see the note at its registration in render_config().
+# The `post_tool` hook client. Stdlib only and started once per tool call, so
+# it runs under THIS interpreter (sys.executable) rather than the agent's
+# fixture venv -- it needs no third-party package, and the fixture venv exists
+# to run pytest, not to host harness code.
+STEP_HOOK_SCRIPT = HARNESS_DIR / "memory_step_hook.py"
+
 WEB_TOOLS_DIR = HARNESS_DIR / "web-tools"
 WEB_TOOLS_PYTHON = WEB_TOOLS_DIR / ".venv" / "bin" / "python"
 WEB_TOOLS_SERVER = WEB_TOOLS_DIR / "server.py"
 
-# neo4j-graphrag retrieval over the same graph, warm agents only. Its own venv
-# for the same mcp-version reason as web-tools above.
-GRAPHRAG_MCP_DIR = (
-    HARNESS_DIR / "neo4j-mcp-experiments" / "servers" / "mcp-neo4j-vector-graphrag"
-)
-
-# The one thing this server does not ship, because it cannot: the Cypher that
-# knows this graph's shape. It is a documented input (RETRIEVAL_QUERY) and must
-# return `text`, `metadata` and `score`. `node` and `score` come from the vector
-# search and must not be re-declared.
+# Where the MCP servers are launched FROM, as far as the model can see.
 #
-# Searches task_embedding_idx -- (:ReasoningTrace).task_embedding -- then walks
-# HAS_STEP to the thought/action/observation chain, which is the part nothing
-# else reads back: neo4j-agent-memory's own get_context returns each trace's
-# task and outcome only.
-GRAPHRAG_RETRIEVAL_QUERY = (
-    "OPTIONAL MATCH (node)-[:HAS_STEP]->(s:ReasoningStep) "
-    "WITH node, score, s ORDER BY s.step_number "
-    "WITH node, score, collect(s)[0..8] AS steps "
-    "RETURN 'Past attempt by ' + coalesce(node.session_id,'?') + "
-    "'\\nIt started from: ' + coalesce(node.task,'') + "
-    "'\\nHow it ended: ' + coalesce(node.outcome,'(no verdict)') + "
-    "'\\nWhat it did:\\n' + reduce(acc = '', st IN steps | "
-    "acc + '  - ' + coalesce(st.action,'?') + ': ' + "
-    "coalesce(st.thought,'') + ' -> ' + coalesce(st.observation,'') + '\\n') "
-    "AS text, "
-    "{success: node.success, metrics: node.metrics_json} AS metadata, "
-    "score"
-)
-
-# No fixed attempt cap -- migrate_codebase() retries until `deadline` (a shared,
-# run-level wall-clock budget, Sec. 8's HARD_DEADLINE_S) passes, not until a
-# small attempt count is exhausted. A per-file cap like the old MAX_ATTEMPTS=3
-# starves a real agent of the iteration room it needs and produces results
-# that say nothing about the model's actual ability -- see the spec's
-# 2026-09-13(b) PROGRESS note under Sec. 6/Sec. 8 for the full reasoning.
+# Vibe prefixes every MCP tool result with the server's full launch command:
 #
-# No per-invocation timeout either, beyond that same deadline. An earlier
-# revision additionally wrapped every single vibe subprocess call in its own
-# 180-second cap "for safety" -- a number never validated against this
-# model's actual latency, and confirmed live (2026-09-13) to be firing on
-# 100% of attempts: Vibe never once reached its own natural stopping point,
-# so every result observed under that cap was an artifact of the cap, not
-# of the model. The only real, load-bearing time limit is `deadline` itself;
-# Vibe now gets exactly whatever is left of it, nothing invented on top.
-# Likewise the independent pytest check below gets no timeout of its own --
-# Daytona's own `process.exec` already defaults to unbounded (timeout=None)
-# when none is given, which was the correct default to defer to all along.
+#   ok: True
+#   server: stdio:/Users/.../miss-slaytona-forje/harness/web-tools/.venv/bin/python
+#           /Users/.../miss-slaytona-forje/harness/web-tools/server.py
+#   tool: lookup
+#
+# Two things came out of that on 2026-09-16, both measured:
+#
+#   * It is the first thing every agent reads, because step 2 of the task
+#     requires web_lookup. It names the orchestrator's repo root, which is all
+#     you need to reach `fixture/` -- the read-only ground truth -- and every
+#     other agent's checkout. cold-0's NEXT action was an edit to
+#     `<repo>/harness/fastapi-mail/schemas.py`; warm-0 ran `find <repo> -name
+#     pyproject.toml` and then `chmod u+w <repo>/fixture/fastapi_mail/
+#     fastmail.py`. warm-0 made 7 file operations that run, 7 of them outside
+#     its own checkout.
+#   * The memory server's line carried `--uri=` and `--password=` in plain
+#     text, into the context of every warm agent, on every memory call --
+#     defeating _STRIPPED_ENV, which removes exactly those two variables from
+#     the agent's environment so it cannot reach the graph directly.
+#
+# So each server is launched through a single argument-less executable in a
+# directory that contains nothing else. The echoed line becomes
+# `stdio:/private/tmp/msf-mcp/web-server`, which names no code, no fixture, no
+# sibling agent and no credential.
+#
+# NOT a symlink to the venv's python: a symlinked interpreter does not resolve
+# its own site-packages (verified -- `ModuleNotFoundError: No module named
+# 'fastmcp'`), so these are exec shims.
+#
+# Deliberately not under AGENT_ROOT: that directory holds every agent's
+# checkout, so leaking its path would trade one sibling-visible path for
+# another.
+MCP_SHIM_DIR = Path("/private/tmp/msf-mcp")
+
+# THERE IS NO TURN LIMIT. `--max-turns` is not passed at all: the agent takes
+# as many turns as it wants and ends its own attempt, which is what Vibe does
+# when you run it yourself.
+#
+# It used to be `--max-turns 8`, and that was the single largest way this
+# harness inserted itself between the model and the work. What it bought was
+# an attempt that reliably ENDED so it could be graded (see NOTES-hard-won.md,
+# "The loop must produce a graded attempt"); what it cost was every attempt
+# ending mid-thought -- `stop='Turn limit of 8 reached'` on essentially all of
+# them, i.e. the agent was never once the thing that decided it was finished.
+# An 8-turn budget also cannot absorb a wasted turn, and turns do get wasted:
+# in one measured attempt 9 of 13 tool calls were failed `edit`s, so the whole
+# allowance went on retries.
+#
+# A Vibe run ends by itself when the model stops calling tools, so nothing is
+# needed to make attempts terminate. The only bound left is the RUN's own
+# wall-clock budget, minus the verdict reserve -- that is the run's deadline
+# doing its job, not a cap on what the model may do, and an attempt cut by it
+# is still graded on whatever the agent had achieved.
+#
+# Deliberately NOT overridable by an env var any more. A knob that reads
+# "M4_TURNS_PER_ATTEMPT" invites tuning the agent's leash to make a number look
+# better, and there is no value of it that belongs in a measurement of whether
+# these agents can do the job on their own.
+#
+# Reserved for the Daytona verdict. Measured at ~45-70s (upload + create +
+# pytest) on a 1-vCPU sandbox.
+VERDICT_RESERVE_S = 120.0
 
 Emit = Callable[..., Awaitable[Any]]
+
+# Vibe's own end-of-run marker, printed on stdout in programmatic mode, e.g.
+#   <vibe_stop_event>Agent completed</vibe_stop_event>
+# Still matched (rather than keying on the return code) because Vibe does not
+# always exit 0 when it stops for a legitimate reason -- `--max-turns`, back
+# when this harness used it, stopped on a turn boundary and exited 1. The
+# turn-limit pattern is kept only so a run made with an older config, or a
+# Vibe that imposes its own ceiling, is still recognised as a clean stop.
+_STOP_EVENT = re.compile(r"<vibe_stop_event>(.*?)</vibe_stop_event>", re.DOTALL)
+_TURN_LIMIT_STOP = re.compile(r"<vibe_stop_event>Turn limit of \d+ reached</vibe_stop_event>")
+
+
+def stop_reason(output: str) -> str:
+    """Why Vibe's turn ended, for the ATTEMPT_DONE event.
+
+    This is the one thing about an attempt that was completely invisible.
+    `_run_vibe` captured Vibe's stdout, used it for one regex, and dropped it
+    -- so an attempt that ended for an unexpected reason was indistinguishable
+    from one that ran out of turns, which is the same blindness that made a
+    dead MCP server look like a model declining to call a tool.
+
+    Observed live once this was surfaced: every attempt in a run exited 1 with
+    only 1-5 of its 8 turns used and no turn-limit marker, so no session ever
+    resumed -- and nothing anywhere said why."""
+    m = _STOP_EVENT.search(output or "")
+    if m:
+        return m.group(1).strip()[:120]
+    # Under `--output streaming` the tail is a JSON history entry, so print
+    # something readable from it rather than 400 characters of serialised
+    # model. The tag itself still matches above when it fires: it is emitted
+    # as ordinary assistant content (agent_loop/_loop.py:1872), so it appears
+    # inside a streamed message entry rather than as a bare line.
+    tail = [ln for ln in (output or "").strip().splitlines() if ln.strip()]
+    if not tail:
+        return "(no output)"
+    last = tail[-1]
+    try:
+        entry = json.loads(last)
+    except json.JSONDecodeError:
+        return f"(no stop event) {last[:100]}"
+    kind = entry.get("type") or "?"
+    text = _entry_text(entry).replace("\n", " ").strip()
+    return f"(no stop event) last entry {kind}: {text[:90]}" if text else \
+           f"(no stop event) last entry {kind}"
+
+
+def _ended_cleanly(exit_code: int | None, output: str) -> bool:
+    """Is this session safe to `--continue` from?
+
+    The question being asked is NOT "did vibe succeed". It is "is this
+    session's history sane enough to replay into the model". A session that
+    died of context overflow must not be resumed: resuming replays the same
+    oversized history into the same 400, and compaction cannot run on a
+    history already too large to send. Measured live: cold-3 spent 58 attempts
+    at ~5s each in exactly that loop, every call rejected with "The input
+    (35516 tokens) is longer than the model's context length (32768 tokens)".
+
+    Two cases are clean:
+
+    * exit 0 -- the model chose to stop, having emitted a text-only turn.
+      With no turn leash this is how attempts normally end.
+    * a turn limit fired -- the session is mid-task but structurally intact,
+      ending on a completed turn. This harness no longer imposes one, but it
+      exits 1 when it fires, so keying on the return code alone would refuse to
+      resume and throw away everything the agent had learned. Kept for runs
+      made against an older config.
+    """
+    return exit_code == 0 or bool(_TURN_LIMIT_STOP.search(output or ""))
 
 
 @dataclass
 class MigrationResult:
     success: bool
     attempts: int
-    # How far this agent actually got, so warm and cold can be compared when
-    # neither converges -- which so far is every run.
+    # How far this agent got, so the arms can be compared when neither
+    # converges. Raw token totals cannot do that: run 28's token_ratio of
+    # 1.543 read as "memory saved 35%" while warm had made 71 LLM calls to
+    # cold's 132 -- cheaper because it did less. Per completed attempt warm
+    # actually cost MORE.
     #
-    # Raw token totals cannot do that job. Run 28 reported token_ratio 1.543,
-    # which reads as "memory saved 35%", while warm had made 71 LLM calls to
-    # cold's 132: warm was cheaper because it did less, not because it did
-    # better. Per completed attempt warm actually cost more (113.6k vs 94.4k
-    # tokens), and nothing in the summary said so.
-    #
-    # `errors_cleared` counts distinct pytest error signatures the agent moved
-    # the suite through. On this fixture the failures are a chain -- each fix
-    # reveals the next one -- so it is a genuine depth measure, and it is read
-    # off the orchestrator's own independent test runs, never the model's
-    # claims. `best_passed` is the high-water mark of tests passing.
+    # Both are read off the orchestrator's own independent test runs, never
+    # the model's claims. `errors_cleared` counts distinct pytest error
+    # signatures the agent moved the suite through, which is a real depth
+    # measure here because the failures are a chain. `best_passed` is the
+    # high-water mark of tests passing.
     errors_cleared: int = 0
     best_passed: int = 0
     last_signature: str | None = None
+
+
+def _shim(name: str, argv: list[str]) -> Path:
+    """An argument-less executable in MCP_SHIM_DIR that execs `argv`.
+
+    Exists because Vibe echoes an MCP server's whole launch command back to the
+    model on every tool result, so the command is part of the agent's context
+    whether we like it or not. Behind this, the model sees one path in a
+    directory holding nothing but these shims.
+
+    `exec "$@"` via a quoted here-list rather than string interpolation:
+    `--password=` can contain anything, and a shell-quoting bug here would
+    either break the server or, worse, leak the argument into an error message.
+
+    Mode 0700. That is not a boundary against the AGENT -- it runs as the same
+    user and could read this file with `bash` if it went looking. What it stops
+    is the credential arriving unbidden in the model's context on every single
+    memory call, which is what was happening. Real isolation would need the
+    server to run as another user, or the secret to reach it by a channel Vibe
+    does not echo."""
+    MCP_SHIM_DIR.mkdir(parents=True, exist_ok=True)
+    MCP_SHIM_DIR.chmod(0o700)
+    path = MCP_SHIM_DIR / name
+    quoted = " ".join(shlex.quote(a) for a in argv)
+    path.write_text(f'#!/bin/sh\nexec {quoted}\n')
+    path.chmod(0o700)
+    return path
 
 
 def render_config(
@@ -166,139 +316,143 @@ def render_config(
     active_model_alias: str = "devstral-local",
     auto_compact_threshold: int | None = None,
     memory_enabled: bool = False,
+    step_hook_port: int | None = None,
+    agent_label: str | None = None,
 ) -> None:
-    """Render a clean $vibe_home/config.toml: the hand-declared self-hosted
-    provider/model route (confirmed against
-    docs.mistral.ai/vibe/code/cli/offline-models), plus the `memory` MCP
-    block if requested. No Daytona MCP registration -- Vibe edits the local
-    checkout directly with its own native tools; Daytona is the
-    orchestrator's own tool, called directly by migrate_codebase(), never
-    exposed to Vibe. Starts from a deleted file each render so repeated
-    runs never accumulate duplicate [[providers]]/[[models]] blocks.
+    """Render a clean $vibe_home/config.toml: the self-hosted provider/model
+    route (docs.mistral.ai/vibe/code/cli/offline-models) plus MCP servers.
+    Deletes the file first, so repeated runs never accumulate duplicate
+    [[providers]]/[[models]] blocks.
 
-    `vibe_home` defaults to the module constant so existing single-swarm
-    callers (scripts/run_m3.py) are unaffected; pass a distinct path per
-    swarm when running warm and cold agents against different proxy ports
-    in parallel -- each needs its own config.toml, api_base, and session
-    logs, not a shared one.
+    One `vibe_home` per AGENT, not per swarm: each needs its own config,
+    api_base and session logs so `--continue` resumes its own session.
 
-    `auto_compact_threshold` matters for small-context models (e.g. Qwen's
-    32,768-token window): Vibe's own default (200,000) assumes a
-    large-context model and never fires before the model's own context
-    limit does. Omit for models where the default is already appropriate.
+    `auto_compact_threshold` -- Vibe's default (200,000) assumes a
+    large-context model and never fires before a 32k model's own limit does.
 
-    `memory_enabled` is what gives this agent memory at all -- leave it False
-    (as orchestrator/run.py does for every cold agent) and no
-    neo4j-agent-memory MCP block is ever written, so that agent has no path to
-    Neo4j whatsoever. This is not a read/write toggle; it's whether the tools
-    exist in this agent's config.
+    `memory_enabled` is the ONLY difference between the arms. False (every
+    cold agent) means no neo4j-agent-memory MCP block is written at all, so
+    that agent has no path to Neo4j -- not a gated one, none.
 
-    A `web` MCP block is registered for EVERY agent, warm and cold alike
-    (harness/web-tools/server.py, published as `web_lookup`). Unlike
-    memory, this is not part of the comparison -- it is a baseline
-    capability the task actually requires. One of the three files to migrate
-    needs `EmailStr.validate()` replaced with the `email_validator` package,
-    and the traceback (`EmailStr has no attribute validate`) never names
-    another library, so a model without lookup cannot get there: measured
-    over 45 minutes, every agent plateaued at 2 of 3 files. Identical in
-    both swarms, so it cannot skew warm vs cold.
-
-    It is published as `web_lookup`, deliberately not `web_search`: Vibe
-    names MCP tools `f"{alias}_{tool}"`, and `disabled_tools` (below) kills
-    the native `web_search` by name *after* MCP registration, so reusing
-    that name would silently disable this server's tool as well."""
+    `web` is registered for EVERY agent, warm and cold. It is not part of the
+    comparison but a baseline capability the task requires: migrating
+    email_check.py means replacing `EmailStr.validate()` with the
+    `email_validator` package, and the traceback never names another library,
+    so a model without lookup plateaus at 2 of 3 files. Published as
+    `web_lookup`, deliberately not `web_search` -- Vibe names MCP tools
+    f"{alias}_{tool}" and `disabled_tools` below kills the native `web_search`
+    by name after MCP registration, which would take this server's tool with
+    it."""
     config_generated = vibe_home / "config.toml"
     vibe_home.mkdir(parents=True, exist_ok=True)
     if config_generated.exists():
         config_generated.unlink()
-    # active_model MUST be written before any [[table]] array header -- TOML
-    # parses bare `key = value` lines as belonging to the last-opened table,
-    # so writing it after `vibe mcp add`'s [[mcp_servers]] block silently
-    # attaches it to that entry instead of the top level (confirmed by
-    # reproducing exactly this: Vibe fell back to its own built-in
-    # Mistral-hosted default model and demanded MISTRAL_API_KEY).
-    # `disabled_tools` belongs here, in the config, NOT on the command line.
-    # _run_vibe used to pass `--disabled-tools web_search` and it silently
-    # did nothing: the 2026-09-13 run made 24 `web_search` calls, all from
-    # the main session, every one returning `429 web_search rate limit
-    # reached`. Confirmed by capturing the actual request body -- with the
-    # flag alone the tool is still in the `tools` array sent to the model;
-    # with this config key it is gone. Same key, same effect, for every
-    # agent in both swarms.
-    # `disabled_skills` is Vibe's own config key, applied identically to both
-    # swarms. Every builtin skill ships under vibe/plugins/builtins/vibe/skills
-    # -- `vibe`, `skill-creator`, `create-plugin`, `worktree` -- and all four
-    # document *how to use Vibe*, not how to do any user task. For a headless
-    # agent given one migration they are pure noise.
+    # active_model MUST come before any [[table]] header: TOML attaches a bare
+    # `key = value` to the last-opened table, so writing it after `vibe mcp
+    # add`'s [[mcp_servers]] block silently makes it a property of that server
+    # and Vibe falls back to its built-in hosted default.
     #
-    # Measured in run 12: the agents' opening move was "I should check if there
-    # are any existing skills that can help with this migration", and the
-    # `vibe` skill returned 54,708 characters -- roughly 13,700 tokens, 42% of
-    # Qwen3-8B's 32,768-token window -- five separate times. Skills accounted
-    # for 284,428 of the run's 314,652 characters of tool results, 90%, while
-    # the actual work (edit/grep/read_file) came to under 11,000.
+    # NOTHING IS DISABLED except one tool that cannot work here, named below.
     #
-    # Not a small-model accommodation: Vibe's self-documentation is irrelevant
-    # to a pydantic migration on any model. It is simply cheaper to be wrong
-    # about on a 256k context than on a 32k one.
-    # `task` is disabled on measured evidence, not preference, and identically
-    # for both swarms.
+    # `task` and `skill` used to be off, on a judgement about whether an 8B
+    # should be delegating its task to a read-only explorer. That was a limit
+    # on what the agent was allowed to try, decided by this harness rather than
+    # by the agent, and it is gone. `disabled_skills = ["*"]` is gone with it.
     #
-    # Run 14: five `task` calls spawned `explore` subagents that between them
-    # accounted for 527 of the run's 673 messages -- 78% of the whole token
-    # budget. The largest made 47 `read_file` calls and ~100 turns before
-    # returning, as its finished answer:
+    # The exception is the NATIVE `web_search`, and it is not a judgement: it
+    # is `vibe/core/tools/builtins/web_search.py`, which resolves
+    # MISTRAL_API_KEY and calls Mistral's hosted conversations API. This run
+    # serves a local model through SGLang and strips MISTRAL_API_KEY from the
+    # agent's environment (see _STRIPPED_ENV), so the tool can only ever raise
+    # "MISTRAL_API_KEY environment variable not set." Leaving it advertised
+    # would not give the agent a capability, it would give it a trap. The
+    # capability itself is present and working, as the `web_lookup` MCP tool
+    # registered below for both swarms.
     #
-    #     from pydantic.main import BaseModel  # v2 import
-    #
-    # which is wrong (it is `from pydantic import BaseModel`). `explore`
-    # subagents are read-only, so none of that could become an edit even if it
-    # had been right, and the parent blocks while they run -- 17 attempts
-    # started in the run, only 9 finished.
-    #
-    # `skill` goes with `disabled_skills`: with every skill disabled the tool
-    # can only ever answer "Available skills: none", so offering it is offering
-    # a guaranteed dead end. Run 15's agents called it 8 times, every call
-    # inventing a skill they hoped existed -- "pydantic_v2_migration",
-    # "pydantic_v2_migrator", "pydantic_v2_migrate".
-    #
-    # REVISIT ON THE TARGET MODEL. Unlike `web_search` (a dead API key) and
-    # `disabled_skills` (Vibe's own docs, irrelevant to any user task), this
-    # one is a judgement about *this* model: an 8B delegating its entire task
-    # to a read-only explorer is a model-quality failure, and Mistral Small 4
-    # at 256k context may well use subagents productively. It is disabled here
-    # because a swarm that spends 78% of its budget on unusable output cannot
-    # converge, and a demo that never converges measures nothing.
+    # disabled_tools belongs in the config, NOT on the command line --
+    # `--disabled-tools web_search` leaves the tool in the `tools` array sent
+    # to the model. Confirmed by capturing the request body both ways.
     config_generated.write_text(
         f'active_model = "{active_model_alias}"\n'
-        'disabled_tools = ["web_search", "task", "skill"]\n'
-        'disabled_skills = ["*"]\n'
+        'disabled_tools = ["web_search"]\n'
     )
+
+    # $VIBE_HOME/hooks.toml -- Vibe's own per-step extension point, loaded by
+    # core/config/harness_files/_harness_manager.py. WARM ONLY: a cold agent
+    # gets no hooks.toml at all, so there is no hook process, no latency and no
+    # path to the graph, matching how its MCP server is simply absent rather
+    # than gated.
+    #
+    # This is what per-step memory runs on. See orchestrator/step_memory.py for
+    # the loop and for why the command is a stdlib-only client rather than the
+    # work itself.
+    #
+    # `match = "*"` on purpose: Vibe's matcher takes one glob per hook entry
+    # (name_matches(tool_name, [hook.match or "*"]) in core/hooks/_post_tool.py),
+    # so filtering to the evidence-producing tools here would mean one hooks.toml
+    # entry per tool name and a second place to keep that list. The client costs
+    # one loopback round-trip and the sidecar drops non-evidence tools in
+    # _EVIDENCE_TOOLS, so the decision lives in exactly one place.
+    #
+    # `timeout` is the agent's protection, not ours: it bounds how long a slow
+    # or wedged graph can sit in the agent's tool-call path. The client fails
+    # open well before this, so the ceiling is belt-and-braces.
+    hooks_file = vibe_home / "hooks.toml"
+    if hooks_file.exists():
+        hooks_file.unlink()
+    if memory_enabled and step_hook_port is not None and agent_label:
+        command = f"{sys.executable} {STEP_HOOK_SCRIPT} {step_hook_port} {agent_label}"
+        hooks_file.write_text(
+            "[[hooks]]\n"
+            'name = "agent-memory-step"\n'
+            'type = "post_tool"\n'
+            'match = "*"\n'
+            "timeout = 10.0\n"
+            'description = "Record this step in the shared reasoning graph and '
+            'surface what other agents hit here."\n'
+            f'command = "{command}"\n'
+            "\n"
+            # post_tool cannot see a turn that called no tool -- and those are
+            # 15% of this model's reasoning, including every turn where it
+            # declares itself finished while the suite still fails. post_agent
+            # fires when Vibe's loop ends and carries transcript_path, which is
+            # enough to pick them up. No `match`: the field is only valid for
+            # tool hooks (HookConfig._apply_defaults_and_constraints).
+            "[[hooks]]\n"
+            'name = "agent-memory-final-turn"\n'
+            'type = "post_agent"\n'
+            "timeout = 10.0\n"
+            'description = "Record the turns this agent ended without calling '
+            'a tool."\n'
+            f'command = "{command}"\n'
+        )
 
     env = dict(os.environ)
     env["VIBE_HOME"] = str(vibe_home)
+    # The same private HOME the agent itself will run under (see AGENT_HOMES).
+    # `vibe mcp add` resolves global config off HOME as well, so registering
+    # servers under the real one and then running under a different one would
+    # write the config in a place the agent never reads.
+    env["HOME"] = str(agent_home_for(vibe_home))
+    env.update(_SHARED_CACHE_ENV)
 
-    # Web search, for BOTH swarms. Not a memory advantage -- a baseline
-    # capability the task genuinely requires, so it is registered identically
-    # for warm and cold and cannot skew the comparison. See
-    # harness/web_search_mcp_server.py for why the task is unsolvable without
-    # it: one of the three files needs a package substitution the traceback
-    # never names. MCP stdio servers inherit only a minimal curated env
-    # (mcp.client.stdio.get_default_environment), so OPENAI_API_KEY has to be
-    # passed explicitly via --env or the server starts up without it.
-    # Launched from its OWN venv (harness/web-tools/.venv), not this process's
-    # interpreter and not harness/.venv. fastmcp requires mcp>=2 while
-    # mistral-vibe pins mcp==1.28.1, and installing them together breaks Vibe's
-    # MCP subsystem outright ("cannot import name 'RequestContext'"), which
-    # silently removes *every* MCP tool from the model. An MCP stdio server
-    # shares nothing with its client but the protocol, so it gets its own
-    # environment. See harness/web-tools/server.py.
+    # Web search, for BOTH swarms -- see the docstring. Two things that look
+    # incidental and are not:
+    #   * its OWN venv, because fastmcp needs mcp>=2 and mistral-vibe pins
+    #     mcp==1.28.1, and installing both removes EVERY MCP tool from the
+    #     model;
+    #   * OPENAI_API_KEY via --env, because MCP stdio servers inherit only a
+    #     minimal curated environment (get_default_environment).
+    # NOTES-hard-won.md, "MCP servers need their own venvs".
     subprocess.run(
         [
             str(VIBE_BIN), "mcp", "add", "web",
             "--transport", "stdio",
-            "--command", str(WEB_TOOLS_PYTHON),
-            "--arg", str(WEB_TOOLS_SERVER),
+            # See MCP_SHIM_DIR: the command is echoed to the model verbatim on
+            # every tool result, so it must not name this repo.
+            "--command", str(_shim("web-server", [
+                str(WEB_TOOLS_PYTHON), str(WEB_TOOLS_SERVER),
+            ])),
             "--env", f"OPENAI_API_KEY={env['OPENAI_API_KEY']}",
         ],
         env=env,
@@ -307,148 +461,49 @@ def render_config(
     )
 
     if memory_enabled:
-        # neo4j-agent-memory's MCP server, registered exactly as its README
-        # says to register it:
+        # neo4j-agent-memory's MCP server, registered the way its README says
+        # to -- `uvx "neo4j-agent-memory[mcp]" mcp serve --password <pw>`.
+        # Nothing here is built, wrapped, vendored or renamed. Warm agents
+        # only; a cold agent never gets this block, so it has no path to Neo4j
+        # at all.
         #
-        #     uvx "neo4j-agent-memory[mcp]" mcp serve --password <pw>
+        # Four deviations from the bare one-liner, each because the one-liner
+        # does not work here. All four were silent failures -- the server came
+        # up, published every tool, and answered with an error string:
         #
-        # That is the whole install. uvx fetches the package (with the [mcp]
-        # extra) and runs it; nothing here is built, wrapped, vendored or
-        # renamed. The only two additions are arguments the README itself
-        # documents: --uri, because this project's Neo4j is the Docker
-        # container on 7688 rather than the default 7687, and OPENAI_API_KEY,
-        # because embeddings need it (MCP stdio servers inherit only a minimal
-        # curated env -- mcp.client.stdio.get_default_environment -- so it has
-        # to be passed explicitly or the server starts without it).
+        #   [mcp,openai]  the default embedder is OpenAI's and [mcp] does not
+        #                 pull the client in.
+        #   --with httpx  packaging bug: _connect_bolt() imports
+        #                 nams._unsupported -> nams/transport -> httpx, but
+        #                 httpx is declared only by the `nams` extra, and
+        #                 [openai] brings openai 3.x which uses httpx2.
+        #   --embedding   the server builds its OWN client, so its embedder
+        #                 must match this orchestrator's or it opens the six
+        #                 vector indexes at the wrong dimension.
+        #   --backend     pinned to bolt, or the server silently switches to
+        #                 the hosted NAMS service if MEMORY_API_KEY is around.
         #
-        # Everything else that used to be on this command line is gone:
-        # --profile core (dropped 10 of the 16 tools for no measured reason),
-        # --transport stdio (already the default, and passed twice),
-        # --session-strategy/--user-id, and a local .venv path in place of
-        # uvx. Each was something I added that could be wrong, and none of it
-        # was asked for. Before that it was worse: harness/memory_mcp_server.py,
-        # a hand-written server exposing three tools that exist nowhere in the
-        # package (recall_similar_migrations, recall_known_patterns,
-        # record_pattern).
-        #
-        # Registered for warm agents only. A cold agent never gets this block,
-        # so it has no path to Neo4j at all -- not a gated one, none.
+        # `--arg=--with`, not `--arg --with`: argparse reads a bare `--with` as
+        # a flag of its own. Same for the = form on the args below.
+        # NOTES-hard-won.md, "MCP servers need their own venvs".
         subprocess.run(
             [
                 str(VIBE_BIN), "mcp", "add", "neo4j-agent-memory",
                 "--transport", "stdio",
-                "--command", "uvx",
-                # [mcp,openai], not [mcp]. The README one-liner is
-                # `uvx "neo4j-agent-memory[mcp]" mcp serve --password <pw>`,
-                # and that is correct as far as it goes -- but the package's
-                # default embedder is OpenAI text-embedding-3-small, and the
-                # [mcp] extra does not pull the openai client in. Without it
-                # the server starts fine, publishes all 16 tools, and answers
-                # every embedding-backed call with:
-                #
-                #     Error getting context: OpenAI package not installed.
-                #     Install with: pip install neo4j-agent-memory[openai]
-                #
-                # So memory_get_context and memory_search -- the two tools the
-                # agent would actually retrieve with -- returned an error
-                # string rather than memories, silently, for every run from the
-                # switch to uvx onward. Caught only by calling the tool for
-                # real rather than trusting that the server had come up.
-                #
-                # The MCP server builds its OWN client, so its embedder must match
-                # this orchestrator's exactly or it opens the six vector
-                # indexes at the wrong dimension and refuses to start with
-                # EmbeddingDimensionMismatchError. Passed explicitly below
-                # rather than left to either side's default. The extra has to
-                # match the embedder too -- [mcp] alone does not pull in the
-                # OpenAI client.
-                # `--with httpx` works around a packaging bug in the published
-                # package (seen on 0.6.0, which is what uvx resolves to).
-                # `_connect_bolt()` imports neo4j_agent_memory.nams._unsupported,
-                # which pulls nams/__init__ -> nams/client -> nams/transport ->
-                # `import httpx`. So the *bolt* path needs httpx, but httpx is
-                # declared only by the `nams` extra; [openai] brings openai 3.x,
-                # which depends on httpx2, not httpx. The server therefore dies
-                # on import with ModuleNotFoundError: No module named 'httpx'.
-                #
-                # Vibe reports that only as "MCP stdio discovery failed:
-                # Connection closed" -- all 16 memory tools silently absent from
-                # every warm agent, which is indistinguishable from a model that
-                # chose not to call them. Caught by check_mcp_servers(), not by
-                # anything in a run summary.
-                #
-                # httpx is supplied directly rather than by adding the `nams`
-                # extra: the dependency is what is missing, and this project
-                # does not use NAMS.
-                # `--arg=--with`, not `--arg --with`: argparse reads a bare
-                # `--with` as a flag of its own and fails with
-                # "argument --arg: expected one argument". Same reason the
-                # --uri/--password/--embedding args below use the = form.
-                "--arg=--with", "--arg", "httpx",
-                "--arg", "neo4j-agent-memory[mcp,openai]",
+                "--command", str(_shim("memory-server", [
+                    "uvx", "--with", "httpx",
+                    "neo4j-agent-memory[mcp,openai]", "mcp", "serve",
+                    f"--uri={NEO4J_URI}",
+                    f"--password={NEO4J_PASSWORD}",
+                    f"--embedding={EMBEDDING_MODEL}",
+                    "--backend=bolt",
+                ])),
+                # Every one of these args used to be echoed to the model on
+                # every memory call, `--password=` included. Behind a shim
+                # instead -- see MCP_SHIM_DIR. The uvx invocation itself is
+                # unchanged, argument for argument.
                 "--arg", "mcp", "--arg", "serve",
-                f"--arg=--uri={NEO4J_URI}",
-                f"--arg=--password={NEO4J_PASSWORD}",
-                # Both documented flags, both shown in `mcp serve --help`
-                # (which uses this exact model as its example). `--backend
-                # bolt` is pinned because the server otherwise switches itself
-                # to the hosted NAMS service whenever MEMORY_API_KEY happens
-                # to be in the environment, which is a different product.
-                f"--arg=--embedding={EMBEDDING_MODEL}",
-                "--arg=--backend=bolt",
-                # The embedder is OpenAI's, and MCP stdio servers inherit only
-                # a minimal curated environment, so the key has to be handed
-                # over explicitly or every embedding-backed tool answers with
-                # an error string instead of memories.
                 "--env", f"OPENAI_API_KEY={env['OPENAI_API_KEY']}",
-            ],
-            env=env,
-            check=True,
-            capture_output=True,
-        )
-
-        # mcp-neo4j-vector-graphrag, run as shipped. Warm only, and inside this
-        # `if` for that reason: it reads Neo4j, so a cold agent must not have it.
-        #
-        # Neo4j's own server for exposing neo4j-graphrag retrievers over MCP:
-        # neo4j.com/blog/developer/neo4j-graphrag-retrievers-as-mcp-server/,
-        # source at github.com/tomasonjo-labs/neo4j-mcp-experiments. Checked out
-        # under harness/ and launched with `uv --directory ... run`, exactly the
-        # invocation its README documents; uv resolves its deps from the repo's
-        # own uv.lock, so it needs no venv of ours.
-        #
-        # It replaced a server I wrote by hand, which published two tools of my
-        # own naming (`graph_reasoning`, `graph_entities`) around the same
-        # retriever. This one is configured entirely through the environment --
-        # INDEX_NAME, EMBEDDING_MODEL and RETRIEVAL_QUERY are its documented
-        # inputs -- so the only thing left that is ours is the Cypher, which is
-        # the one part that has to be.
-        #
-        # Publishes a single tool, `neo4j_vector`; Vibe prefixes MCP tools with
-        # the server alias, so agents see `graphrag_neo4j_vector`.
-        #
-        # EMBEDDING_MODEL must match the embedder that wrote the vectors
-        # (memory.py's EMBEDDING_MODEL) -- this server takes it in LangChain's
-        # `provider:model` form.
-        #
-        # Every value goes via --env: MCP stdio servers inherit only a minimal
-        # curated environment (mcp.client.stdio.get_default_environment), so
-        # anything not listed here is simply absent in the server process.
-        subprocess.run(
-            [
-                str(VIBE_BIN), "mcp", "add", "graphrag",
-                "--transport", "stdio",
-                "--command", "uv",
-                "--arg=--directory", "--arg", str(GRAPHRAG_MCP_DIR),
-                "--arg", "run", "--arg", "mcp-neo4j-vector-graphrag",
-                "--env", f"NEO4J_URI={NEO4J_URI}",
-                "--env", f"NEO4J_PASSWORD={NEO4J_PASSWORD}",
-                "--env", f"NEO4J_USERNAME={os.environ.get('NEO4J_USERNAME', 'neo4j')}",
-                "--env", f"NEO4J_DATABASE={os.environ.get('NEO4J_DATABASE', 'neo4j')}",
-                "--env", f"OPENAI_API_KEY={env['OPENAI_API_KEY']}",
-                "--env", "INDEX_NAME=task_embedding_idx",
-                "--env", f"EMBEDDING_MODEL=openai:{EMBEDDING_MODEL.split('/')[-1]}",
-                "--env", f"RETRIEVAL_QUERY={GRAPHRAG_RETRIEVAL_QUERY}",
             ],
             env=env,
             check=True,
@@ -467,107 +522,229 @@ def render_config(
         f.write("\n" + rendered)
 
 
-# Warm agents only, because only warm has these tools registered. Qwen3-14B
-# called them zero times in 45 messages when they were merely available:
-# run 62 ended with graphrag_calls=0 and mem_calls=0 while the agent used
-# bash/grep/edit/read_file throughout. The tools were verified present in the
-# config and published by their servers, so this is the model not reaching for
-# them, not a dead server. Telling it what they are for is the difference
-# between a tool that exists and a tool that gets used.
-_MEMORY_TOOLS_GUIDE = (
-    "You share a knowledge graph with the other agents working on this same "
-    "migration, now and in earlier runs. Read it before you guess.\n\n"
-    "- `graphrag_neo4j_vector(query)` -- pass the error you are looking at, "
-    "verbatim. Returns what previous agents did about that exact error: each "
-    "step they took, what they were thinking, and what came back. Use it before "
-    "retrying anything that has already failed once, so you try something new "
-    "instead of repeating a dead end.\n"
-    "- `memory_search` / `memory_get_context` -- the same graph, searched over "
-    "stored messages rather than reasoning steps.\n\n"
-    "Call `graphrag_neo4j_vector` first when an attempt fails. If it comes back "
-    "empty or unhelpful, fall back to `web_lookup`."
-)
+# NOT OURS. This is neo4j-agent-memory's own MCP server instructions, imported
+# and relayed verbatim -- "ALWAYS at conversation start: Call
+# memory_get_context", "FOR complex tasks: Call memory_start_trace ...
+# memory_record_step ... memory_complete_trace", and so on. Warm agents only,
+# since only warm has that server registered.
+#
+# It has to be relayed by hand because VIBE DROPS IT. An MCP server returns
+# `instructions` in its initialize result precisely so the host can put them in
+# the model's system context -- the package's own docstring says "injected into
+# the LLM's system context by the host" -- and the server sends 1,935
+# characters of them (profile defaults to "extended", the 16-tool set we get).
+# Vibe never reads the field: all three of its `session.initialize()` call
+# sites discard the return value (core/tools/mcp/tools.py:156, :188, :418) and
+# its descriptor model keeps only name/description/inputSchema/outputSchema
+# (core/tools/mcp/descriptor_cache.py:41).
+#
+# That is the whole reason 40 consecutive runs ended with zero agent-initiated
+# memory calls while the same agents used bash/grep/edit/read_file throughout.
+# The tools were registered, the server was live and smoke-tested, the model
+# was willing -- it was never told what the tools were for, because the one
+# mechanism the package authors provided for telling it does not survive the
+# host. It is not a model failure and it is not a wiring failure.
+#
+# So this is a passthrough, deliberately containing not one word of our own.
+# The previous version of this constant was hand-written guidance, i.e. an
+# unwitting reimplementation of a shipped payload -- and a worse one: it
+# pre-formatted a call as `memory_search(query, memory_types=[...])`, and the
+# model copied that into message CONTENT instead of making a tool call, ending
+# an attempt after 2 turns having touched nothing. Do not write guidance here.
+# If it needs to say something different, that belongs upstream in the package
+# or in Vibe, not in this file.
+_MEMORY_TOOLS_GUIDE = get_instructions("extended")
 
 
 def _task_prompt(
     last_error: str | None,
-    memory_context: str | None = None,
     memory_enabled: bool = False,
 ) -> str:
-    """One instruction, whole codebase, exactly what a real user would type:
-    "migrate this codebase from Pydantic v1 to Pydantic v2." The code is in
-    Vibe's own current directory -- no sandbox id, no Daytona tool
-    instructions, nothing about how to check the work, because Vibe can't
-    check it: the real test suite runs separately, in Daytona, by the
-    orchestrator, after Vibe's own turn ends (see migrate_codebase()). Vibe
-    just edits, using whatever native tools it has, same as any local run.
+    """The user's request, and nothing else of ours.
 
-    The retry prompt adds two lines, and both are harness responsibilities
-    rather than prompt-engineering the result:
+    The code is in Vibe's own current directory. Nothing here tells the agent
+    how its work is graded, because it isn't graded here -- the real suite runs
+    separately, in Daytona, after Vibe's turn ends.
 
-    * "Keep going until the suite passes" -- agents were ending turns with a
-      summary and an offer ("let me know if you'd like me to continue"),
-      which is the model deciding it is finished when it is not. Nothing
-      else in the loop tells it otherwise, so progress plateaued at 2 of 3
-      files while agents politely stopped.
-    * A pointer at `web_lookup` whenever an import path is in doubt.
-      `email_check.py` needs `EmailStr.validate()` replaced with the
-      `email_validator` package, and the traceback never names another
-      library; measured over 45 minutes, the tool sat unused and every agent
-      plateaued. An earlier wording triggered only on "an API that pydantic
-      v2 removed", which is not the error the agents actually hit: run 25's
-      dominant failure was `NameError: name 'model_validator' is not
-      defined`, a v2 API the model failed to *import*, not one v2 removed.
-      The condition never matched, so the model guessed the import path
-      instead -- `from pydantic.model_validators import ...`, which does not
-      exist -- and web_lookup was called twice in 88 tool calls. The trigger
-      now names the three error classes verbatim. Both swarms get this line
-      identically, so it cannot skew warm vs cold."""
+    This used to be ~2,500 tokens: how to invoke pytest and why to pipe stderr,
+    that `tests/` is the specification, that `edit` matches byte-for-byte
+    including leading indentation, not to resend a failed edit, to prefer
+    relative paths, which error classes should trigger a lookup, and "keep
+    going until the suite passes". Every line of it was written off a real
+    measurement, and every line of it was also us doing the agent's job for
+    it -- teaching a coding agent to use its own editor, inside the harness
+    whose whole point is that the agent can code. If the model needs to be
+    told how `edit` matches, that belongs in `edit`'s own tool description,
+    upstream in Vibe, where every Vibe user would get it. It does not belong
+    here, where it silently becomes part of what this experiment claims to be
+    measuring.
+
+    So it is gone, and what remains is the sentence a user would type plus the
+    operator's own ordering of the work. The failure modes the old prompt
+    papered over are still observable rather than prompted away: failed-edit
+    retry loops show up in ATTEMPT_DONE's `tools` counter, and a `pydantic.v1`
+    shim shows up as ATTEMPT_REJECTED.
+
+    NOT identical between swarms any more, by instruction. The warm list has
+    three extra steps and a closing note, because they concern tools cold does
+    not have -- telling an agent with no memory server to consult it is an
+    instruction it cannot follow. The consequence is that the two arms now
+    differ by more than the presence of memory: warm's list is longer, so warm
+    reads more tokens before it starts and has more steps to work through. That
+    is a real asymmetry in the comparison and it is deliberate."""
+    steps = [
+        "Review the entire codebase, so you understand how everything is connected.",
+        # `web_lookup`, not `web_search`. Vibe's native web_search is killed by
+        # name in every agent's config -- it routes through Mistral's hosted
+        # API and this repo's key returns 429 on every call -- so an agent told
+        # to use it finds no such tool. See harness/web-tools/server.py.
+        "Use web_lookup to review the Pydantic docs, specifically those about "
+        "migration.",
+        "Plan the migration before you change any code.",
+    ]
+    if memory_enabled:
+        steps += [
+            "Use your memory tools to see what other agents have attempted before "
+            "and what they failed on.",
+            "Review your plan in light of previous agents' mistakes.",
+        ]
+    steps += [
+        "Edit the plan in accordance with that new information.",
+        "Make your edits.",
+        # Was "Validate the code in Daytona", which the agent cannot do: that
+        # suite runs in a sandbox the orchestrator owns, after this invocation
+        # has already ended.
+        #
+        # Telling the agent to run the suite itself ("Run the test suite
+        # yourself after each change and keep going until it passes") was tried
+        # on 2026-09-16 and REVERTED: it moved pytest invocations from an
+        # unverified baseline to 1 agent out of 4, once, and changed nothing
+        # else -- 0 tests passing either way. It was also aimed at the wrong
+        # target. The same run showed warm-0 making 7 file operations, 7 of
+        # them OUTSIDE its own checkout, so an agent that did run the suite
+        # would have been testing a directory it had not edited.
+        "When you are finished, your code will be validated externally. You "
+        "will receive the errors from the test suite.",
+        "Review any errors.",
+        "Now research those errors with web_lookup.",
+    ]
+    if memory_enabled:
+        steps.append(
+            "Use your memory tools to understand if any previous agent has "
+            "received similar errors."
+        )
+    steps += [
+        "Review the codebase again.",
+        "Make a new plan to fix only these errors.",
+        "Continue iteratively until the migration is complete.",
+    ]
     base = (
         "Please migrate this codebase from Pydantic v1 to Pydantic v2.\n\n"
-        "You can run the test suite yourself, here, in this directory. Run it "
-        "exactly like this:\n\n"
-        "    python -m pytest tests -q -x --tb=short 2>&1 | tail -30\n\n"
-        "Do that after every change rather than assuming an edit worked -- it "
-        "is the same suite your work is judged on, and with -x it stops at the "
-        "first failure, so while anything is still broken it answers in "
-        "seconds. Keep the `2>&1 | tail -30`: pytest writes collection errors "
-        "to stderr, so without it you get an empty result and a non-zero exit "
-        "instead of the error message.\n\n"
-        "Read the failing test before you decide how to fix it. The files under "
-        "`tests/` are read-only -- never edit them -- but they are the "
-        "specification: they say which exception type, which package and which "
-        "behaviour the code is expected to produce, and that is often something "
-        "no traceback and no web search will tell you.\n\n"
-        "`edit` matches `old_string` byte-for-byte, so read the file with "
-        "`read_file` and copy the lines out of it before editing. Do not type "
-        "from memory or reconstruct what you think is there: 43% of edits in "
-        "the last run failed, most of them because `old_string` did not appear "
-        "in the file. Use real newlines in `old_string`, not the two characters "
-        "backslash-n. If a string occurs more than once, pass "
-        "`replace_all: true`. Use paths relative to this directory, like "
-        "`fastapi_mail/config.py`."
+        + "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1))
     )
-    # Block B (Sec. 6.1): retrieved traces/patterns, placed before Block C
-    # since Block C invalidates the cache from that point anyway -- memory
-    # costs nothing extra placed here.
+    if memory_enabled:
+        base += (
+            "\n\nNote: throughout your work, based on what you say and do, you "
+            "will receive information about other agents' past attempts.\n\n"
+            "You do not have to follow them. They are additional information "
+            "for you to consider in light of your current actions."
+        )
+    # The task first, byte-identical for both swarms so SGLang's RadixAttention
+    # can share the prefix across every agent in the run. (It once came second,
+    # after a retrieved-memory block; warm-1 then spent three attempts
+    # reporting on the memory instead of migrating anything, which is a
+    # reasonable thing to do when you are handed a page of prose before you are
+    # told what the job is.)
+    #
+    # There is no retrieved-memory block any longer. Warm gets the memory
+    # server's own instructions and does its own retrieval -- see
+    # migrate_codebase().
     if memory_enabled:
         base += "\n\n" + _MEMORY_TOOLS_GUIDE
-    if memory_context:
-        base = memory_context + "\n\n" + base
+    # The one thing the agent genuinely cannot see for itself: the verdict from
+    # a suite that ran somewhere else, in Daytona, after its turn ended. Stated
+    # and not editorialised -- the advice that used to follow it ("keep going
+    # until the suite passes", which errors mean to look something up) was us
+    # steering, and the agent can read a traceback.
     if last_error:
         base += (
-            f"\n\nA previous attempt left the code in its current state, and the official test "
-            f"suite (run separately, by the grader) still failed with:\n```\n{last_error}\n```"
-            "\n\nKeep going until the suite passes. You are not done because an edit landed "
-            "or a file looks right -- only a passing suite is done. Use `web_lookup` before "
-            "editing whenever you do not already know, exactly, where a pydantic v2 name "
-            "lives: any NameError, ImportError or ModuleNotFoundError naming a pydantic "
-            "symbol means the import path you used does not exist, and a second guess at it "
-            "is no more likely to be right than the first was. Some replacements are not "
-            "renames at all but a different package entirely."
+            f"\n\nThe test suite still fails:\n```\n{last_error}\n```"
         )
     return base
+
+
+def _entry_text(entry: dict) -> str:
+    """Text out of one streamed history entry.
+
+    A message's `content` is a list of ContentBlocks (`{"type": "text",
+    "text": ...}`); a reasoning entry carries a flat `text`.
+    """
+    if entry.get("text"):
+        return str(entry["text"])
+    content = entry.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n\n".join(
+            str(b.get("text", ""))
+            for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        ).strip()
+    return ""
+
+
+def _entry_consumer(
+    mem: ScopedMemory,
+    session_id: str,
+    step_memory: Any | None,
+    agent_label: str | None,
+) -> Callable[[dict], Awaitable[None]]:
+    """Consume Vibe's streamed history entries into memory, as they happen.
+
+    This is the half of per-step memory the `post_tool` hook cannot supply,
+    and between them nothing the old transcript replay captured is lost:
+
+      * `type="message"`, role assistant -> short_term.add_message. The only
+        source of :Message nodes, and so the only input to entity extraction
+        (verified: add_step has no extraction path at all). Stored with
+        extract_entities=False and extracted in one batch at end of run --
+        see ScopedMemory.extract_entities_from_session.
+      * `type="reasoning"` -> handed to the step hook as the pending thought
+        for this turn. Reasoning entries complete BEFORE the tool calls they
+        justify, so the most recent one is the reasoning behind the next step
+        recorded. This replaces reading `messages.jsonl`, which could not
+        work: Vibe flushes the transcript once per turn, after the tool loop,
+        so at post_tool time the message that issued the call is not on disk.
+
+    `user` entries are deliberately not stored. They are the orchestrator's
+    own prompt, and storing them makes memory retrieve its own previous
+    output -- attempt N's prompt embedding attempt N-1's memory block.
+    Measured at 15,170 characters and growing before it was removed.
+    """
+    async def consume(entry: dict) -> None:
+        kind = entry.get("type")
+        # EVERY entry, of every type, reports the turn it belongs to: turn_id
+        # lives on Vibe's _PublicHistoryEntryBase. That is what lets the step
+        # hook tell "another tool call in the same turn" (share the reasoning)
+        # from "a new turn that emitted none of its own" (do not). See
+        # StepMemoryService.note_turn().
+        if step_memory is not None and agent_label:
+            step_memory.note_turn(agent_label, entry.get("turn_id"))
+        if kind == "reasoning":
+            text = _entry_text(entry)
+            if text and step_memory is not None and agent_label:
+                step_memory.set_pending_reasoning(
+                    agent_label, text, entry.get("turn_id")
+                )
+            return
+        if kind == "message" and entry.get("role") == "assistant":
+            text = _entry_text(entry)
+            if text:
+                await mem.add_message(
+                    session_id, "assistant", _cap(text), extract_entities=False
+                )
+
+    return consume
 
 
 async def _run_vibe(
@@ -577,51 +754,28 @@ async def _run_vibe(
     vibe_home: Path = VIBE_HOME,
     cwd: Path = HARNESS_DIR,
     resume: bool = False,
+    on_entry: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[int, str]:
-    """`timeout_s` is the caller's actual remaining run deadline, not an
-    invented per-call cap -- if this fires, the run's own time budget is
-    genuinely exhausted, not "vibe took longer than some arbitrary number
-    we picked." A timeout here ends this one attempt; it is not a verdict
-    on the model.
+    """Run Vibe exactly as a person would, and wait for it to finish.
 
-    `cwd` matters, not just `vibe_home`: Vibe's own config resolution
-    (`HarnessFilesManager.config_file`) checks `<cwd>/.vibe/config.toml`
-    FIRST, as a "project-local" layer, and only falls back to
-    `VIBE_HOME`'s config.toml if that file doesn't exist -- the env var
-    alone does not override an existing project-local config. Callers using
-    a non-default `vibe_home` must pass a `cwd` whose own `.vibe` subfolder
-    *is* that `vibe_home` (e.g. `vibe_home = cwd / ".vibe"`), or a stale
-    `<cwd>/.vibe/config.toml` left over from another run silently wins
-    instead. Confirmed by direct reproduction, not inferred: harness/'s own
-    leftover `.vibe/config.toml` (stale Devstral config) overrode a
-    correctly-rendered `vibe_home` every time, because HARNESS_DIR was
-    still being used as `cwd` while `vibe_home` pointed elsewhere.
+    No `--max-turns`. The agent decides when it is done; a Vibe run ends by
+    itself when the model stops calling tools. The attempt still gets graded
+    afterwards, because Vibe returning is what the grader waits on.
 
-    No `--enabled-tools` filter: an earlier revision passed
-    `--enabled-tools daytona_*` (plus `memory_*`), disabling every one of
-    Vibe's own native tools (edit/write_file/read_file/bash) and forcing
-    all work through a raw remote shell instead -- never deliberately
-    decided, never checked against what the wildcard actually included.
-    Omitting the flag restores Vibe's full native toolset, unfiltered,
-    exactly as a local `vibe` invocation would have it; `memory_*` (our own
-    registered MCP server) is included automatically since nothing is
-    filtering it out.
+    `timeout_s` is the RUN's remaining wall clock minus the verdict reserve,
+    computed by the caller -- never an invented per-call number. It is not a
+    leash on the agent: it is the point past which there would be no time left
+    to find out what the agent achieved, and an attempt it cuts is still
+    graded on the tree as it stands.
 
-    `web_search` is disabled, but in render_config()'s config.toml, not
-    here. Passing `--disabled-tools web_search` on this command line was
-    tried and does nothing: the 2026-09-13 run made 24 `web_search` calls
-    anyway, all from the main session, every one returning `429 web_search
-    rate limit reached` -- 32% of every tool error in the run. Confirmed by
-    capturing the real request body both ways. The tool routes through
-    Mistral's hosted API, and this repo's MISTRAL_API_KEY is exhausted
-    (a bare `mistral-small-latest` completion 429s too), so it cannot
-    succeed; a tool that always fails still costs a turn to call. Disabled
-    identically for both swarms, so it cannot skew the comparison. If the
-    key is ever topped up, drop the key from render_config.
+    `cwd` matters as much as `vibe_home`: Vibe's config resolution checks
+    `<cwd>/.vibe/config.toml` first as a project-local layer, and that layer
+    wins whenever the file exists. A freshly seeded checkout has no `.vibe`,
+    which is what makes a sibling `vibe_home` safe -- but a stale one left in
+    `cwd` will silently override a correctly-rendered config.
 
-    No other tool is filtered: every native tool (edit/write_file/read_file/
-    bash/grep/task/skill/...) stays on, exactly as a local `vibe` run would
-    have them.
+    No `--enabled-tools` filter and nothing disabled in config.toml either:
+    Vibe gets its full native toolset, exactly as a local invocation would.
     """
     env = dict(os.environ)
     # See _STRIPPED_ENV and AGENT_VENV. Stripped HERE and not in
@@ -635,6 +789,12 @@ async def _run_vibe(
         env["VIRTUAL_ENV"] = str(AGENT_VENV)
         env["PATH"] = f"{AGENT_VENV / 'bin'}{os.pathsep}{env.get('PATH', '')}"
     env["VIBE_HOME"] = str(vibe_home)
+    # See AGENT_HOMES: a private empty HOME, so Vibe's global skills directory
+    # (`~/.agents/skills`) is the run's and not the operator's. Caches stay
+    # pointed at the real ones so `uvx` still starts the memory MCP server from
+    # its existing 30GB cache instead of re-downloading.
+    env["HOME"] = str(agent_home_for(vibe_home))
+    env.update(_SHARED_CACHE_ENV)
 
     # `--continue` on every attempt after the first. Each attempt used to
     # spawn a brand-new Vibe session, so the agent threw away everything it
@@ -651,19 +811,92 @@ async def _run_vibe(
         *resume_args,
         "--auto-approve",
         "--trust",
-        "--output", "text",
+        # `streaming`, not `text`: "newline-delimited JSON per message"
+        # (cli/programmatic.py). Each completed history entry is written as one
+        # JSON object as it happens, and the entry types are the reason this
+        # matters (app_server/models.py):
+        #
+        #   type="message"    role, content, turn_id  -> the agent's messages
+        #   type="reasoning"  text, turn_id           -> its ACTUAL reasoning
+        #   type="effect"     tool_name, input, state -> its tool calls
+        #
+        # `text` gave only a human-readable blob at the end, which is why the
+        # agent's reasoning had to be scavenged from `messages.jsonl`
+        # afterwards -- and why that failed: Vibe saves the transcript once per
+        # TURN (agent_loop/_loop.py:2110, after the inner tool loop), so when a
+        # post_tool hook fires the message that issued the call is still only
+        # in memory. Measured on a live run: every step fell back to recording
+        # tool-input JSON as its `thought`, 100% of the time.
+        "--output", "streaming",
         cwd=str(cwd),
         env=env,
+        # DEVNULL, not inherited. Vibe calls get_prompt_from_stdin()
+        # (cli/cli.py:463) unconditionally before it dispatches, and that
+        # function does a blocking `sys.stdin.read()` for ANY stdin that is not
+        # a TTY -- it exists so `echo "do this" | vibe -p` works.
+        #
+        # This subprocess used to inherit the orchestrator's stdin. Run it from
+        # an interactive terminal and stdin is a TTY, isatty() short-circuits,
+        # and nothing happens. Run it any other way -- `nohup`, `&`, a redirect,
+        # CI, a supervising harness -- and stdin is a pipe that never reaches
+        # EOF, so every single agent blocks inside that read forever, before its
+        # first LLM call. Confirmed by stack-sampling a hung agent: the main
+        # thread sits in _io_FileIO_readall_impl -> read(), and the proxy's
+        # /usage shows 0 requests.
+        #
+        # The symptom is a run that burns its whole deadline with zero tokens,
+        # which is indistinguishable from a dead endpoint -- the exact failure
+        # class preflight() was written to catch, arriving from inside instead.
+        # DEVNULL gives an immediate EOF, so the function returns None and Vibe
+        # uses --prompt as it should.
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
+    # Read stdout LINE BY LINE as it arrives, rather than proc.communicate(),
+    # which buffers to exit. The point of the streaming format is that entries
+    # are consumable while the agent is still working; collecting them at the
+    # end would be the transcript replay again with extra steps.
+    #
+    # stderr is drained concurrently. It has to be: it is a pipe, Vibe writes
+    # warnings to it, and a full stderr pipe blocks the child mid-write while
+    # we sit reading stdout -- a deadlock that looks exactly like a hung agent.
+    lines: list[str] = []
+
+    async def pump_stdout() -> None:
+        assert proc.stdout is not None
+        while True:
+            raw = await proc.stdout.readline()
+            if not raw:
+                return
+            line = raw.decode(errors="replace").rstrip("\n")
+            lines.append(line)
+            if on_entry is None:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue  # not every line is an entry; ignore the rest
+            try:
+                await on_entry(entry)
+            except Exception:
+                # Consuming an entry must never kill the agent's invocation.
+                pass
+
+    async def pump_stderr() -> bytes:
+        assert proc.stderr is not None
+        return await proc.stderr.read()
+
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+        _, err = await asyncio.wait_for(
+            asyncio.gather(pump_stdout(), pump_stderr()), timeout=timeout_s
+        )
+        await proc.wait()
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
         return 1, f"vibe invocation timed out after {timeout_s:.0f}s"
-    return proc.returncode, (stdout + stderr).decode(errors="replace")
+    return proc.returncode, "\n".join(lines) + err.decode(errors="replace")
 
 
 def _transcript_files(vibe_home: Path) -> list[Path]:
@@ -673,6 +906,146 @@ def _transcript_files(vibe_home: Path) -> list[Path]:
     if not root.is_dir():
         return []
     return sorted(root.glob("*/messages.jsonl"))
+
+
+def _assistant_turns_total(vibe_home: Path) -> int:
+    """Assistant messages across ALL of this agent's sessions.
+
+    Monotonic, which `_steps_used` is not: that one reads only the newest
+    session (correctly, since that is what `--continue` resumes), so when an
+    attempt starts a FRESH session its count legitimately drops. Comparing
+    newest-before against newest-after would therefore mark a productive
+    attempt as having done nothing whenever it did not resume -- which is most
+    attempts. This is the total, so "did a turn complete" is just
+    `after > before`."""
+    total = 0
+    for f in _transcript_files(vibe_home):
+        for line in f.read_text(errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                if json.loads(line).get("role") == "assistant":
+                    total += 1
+            except json.JSONDecodeError:
+                continue
+    return total
+
+
+# Read-side memory tools, by their BARE package names. Matched as a suffix,
+# because Vibe publishes an MCP tool as f"{server_alias}_{tool}" -- the config
+# registers the server as "neo4j-agent-memory", so what actually lands in the
+# transcript is `neo4j-agent-memory_memory_get_context`.
+#
+# This cost a finding. The first time an agent ever called memory for itself
+# (warm-0, attempt 1, right after the package's own instructions started
+# reaching the model) the counter read 0 and MEMORY_READ did not fire, because
+# the filter tested `startswith("memory")` against a name beginning "neo4j-".
+# The one event that exists to say "the agent retrieved something" reported
+# nothing on the only occasion it had ever been true.
+_MEMORY_READ_TOOLS = (
+    "memory_get_context",
+    "memory_search",
+    "memory_get_conversation",
+    "memory_get_entity",
+    "memory_get_observations",
+    "memory_list_sessions",
+    "memory_export_graph",
+    "graph_query",
+)
+
+
+def _is_memory_read(tool_name: str) -> bool:
+    return any(tool_name.endswith(t) for t in _MEMORY_READ_TOOLS)
+
+
+def _is_memory_tool(tool_name: str) -> bool:
+    """Any memory tool, read or write -- the `memory_calls` counter.
+
+    Suffix/substring match for the same aliasing reason as _is_memory_read.
+    `graph_query` is included: read-only Cypher against the same graph is the
+    package's own escape hatch and counts as the agent using its memory."""
+    return "memory_" in tool_name or tool_name.endswith("graph_query")
+
+
+def _tool_calls_total(vibe_home: Path) -> Counter:
+    """Every tool the MODEL chose to call, by name, across all its sessions.
+
+    Monotonic like `_assistant_turns_total`, and for the same reason.
+
+    This exists because the most important fact about the warm arm was
+    unmeasured: whether the agent ever *asks* for memory. The 16
+    neo4j-agent-memory MCP tools are advertised to every warm agent (their
+    descriptor is on disk under logs/mcp-descriptors) and the prompt tells it
+    to call `memory_search` when an attempt fails. Counted afterwards off the
+    transcripts: 36 edit, 20 read_file, 8 bash, 6 grep, 1 web_lookup, and
+    *zero* memory_* calls across 15 sessions.
+
+    So retrieval was happening only in the orchestrator, once per attempt, and
+    nothing in the run log distinguished that from an agent doing it itself.
+    Emitting this on ATTEMPT_DONE makes the difference visible while a run is
+    happening instead of a week later."""
+    counts: Counter = Counter()
+    for f in _transcript_files(vibe_home):
+        for line in f.read_text(errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for tc in msg.get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                name = fn.get("name") or tc.get("name")
+                if name:
+                    counts[name] += 1
+    return counts
+
+
+def _steps_used(vibe_home: Path) -> int:
+    """Vibe's own `stats.steps` for the session that `--continue` will resume.
+
+    `--max-turns` is CUMULATIVE over a resumed session, not per invocation.
+    TurnLimitMiddleware tests `context.stats.steps - 1 >= max_turns` against
+    the whole session's step count, and `--continue` restores that count along
+    with the history. So a flat per-attempt allowance gives attempt 2 onward
+    NO turns at all: attempt 1 spends the budget, and every later attempt
+    trips the limit before its first completion call -- the agent appears to
+    run, produces no tokens, changes nothing, and is still graded. Measured
+    twice against the proxy's request counter, which did not move.
+
+    `steps` is incremented in three places in core/agent_loop/_loop.py: once
+    per user message (:2022), once per completed assistant turn (:2106), and
+    once per compaction (:1780). Tool results do not count. So it is
+    reconstructible from the transcript as `users + assistants`, and the
+    allowance to pass for N further turns is `users + assistants + N`.
+
+    Derived from the middleware arithmetic and then confirmed end to end: a
+    session with 3 users and 3 assistants resumed with `--max-turns 8` ran
+    exactly 2 further turns.
+
+    Compaction is the one term this cannot see -- it bumps `steps` without
+    writing a message. That direction is safe: it can only make an attempt
+    slightly shorter than its allowance, never zero it.
+
+    Counted off the transcript rather than tracked in a variable because the
+    transcript is what Vibe itself restores from; an in-memory counter would
+    drift the moment an attempt times out or is retried."""
+    files = _transcript_files(vibe_home)
+    if not files:
+        return 0
+    # The newest session directory is the one `--continue` resumes (names are
+    # session_<YYYYMMDD>_<HHMMSS>_<id>, so lexical order is chronological).
+    steps = 0
+    for line in files[-1].read_text(errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("role") in ("user", "assistant"):
+            steps += 1
+    return steps
 
 
 _MAX_OBSERVATION_CHARS = 2000
@@ -734,128 +1107,6 @@ def _tool_results(lines: list[str]) -> dict[str, str]:
             content = content[:_MAX_OBSERVATION_CHARS] + " ...(truncated)"
         out[call_id] = content
     return out
-
-
-async def _replay_session_messages(
-    vibe_home: Path,
-    replayed: dict[Path, int],
-    mem: ScopedMemory,
-    trace_id: Any,
-    session_id: str,
-) -> None:
-    """HAND-ROLLED STANDIN -- not part of neo4j-agent-memory.
-
-    memory_agent_mvp.py calls add_message and report_step *inside* its agent
-    loop, because it owns that loop. We do not own Vibe's. This function is the
-    substitute: after each attempt it reads Vibe's own session transcript
-    (messages.jsonl) and loads what happened into memory afterwards. Same
-    information, later. If Vibe ever exposes per-turn hooks, this goes away.
-
-    It records TWO things, and both are individual nodes, never a blob:
-
-    * every message -- each assistant turn, each tool result -- as its own
-      :Message via short_term.add_message, so the graph holds the conversation
-      the way the package models it (Message-[:NEXT_MESSAGE]->Message).
-    * every tool call as a :ReasoningStep + :ToolCall.
-
-    An earlier revision stored one summary line per attempt instead, on the
-    grounds that storing messages caused context overflow. That diagnosis was
-    wrong. What overflowed was storing the *entire Vibe stdout as a single
-    message* -- one node holding a whole agent log, which short_term's
-    get_context then replayed verbatim. Individual messages are small. Storing
-    them properly is both what the data model wants and harmless.
-
-    Storage is separate from retrieval: everything is recorded here, and what
-    reaches the prompt is decided by migrate_codebase()'s get_context() call.
-
-    Steps use generate_embedding=False and are embedded in one batch by
-    complete_trace(generate_step_embeddings=True) -- the pairing the package's
-    own docstring names for streaming recorders. Embedding inline meant one
-    synchronous OpenAI round-trip per tool call on the shared asyncio loop, and
-    since both swarms share that loop, the warm arm's memory latency landed on
-    the cold arm's wall clock."""
-    for messages_file in _transcript_files(vibe_home):
-        lines = messages_file.read_text().splitlines()
-        start = replayed.get(messages_file, 0)
-        replayed[messages_file] = len(lines)
-        # tool_call_id -> what the tool actually returned. Built from the whole
-        # file rather than the new slice, because a call at the end of one
-        # attempt has its result written at the start of the next; keyed on
-        # Vibe's own tool_call_id, so this is a join, not a guess.
-        results = _tool_results(lines)
-        for line in lines[start:]:
-            if not line.strip():
-                continue
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            role = msg.get("role") or "assistant"
-            content = msg.get("content")
-            if isinstance(content, list):
-                content = " ".join(str(c) for c in content)
-            # The model's actual reasoning, which Vibe stores in its own field
-            # rather than in `content`. Qwen3 and Mistral Small 4 are both
-            # hybrid reasoning models, so on the real demo config this is where
-            # the thinking lives -- and reading only `content` dropped all of
-            # it. Measured on run 19: 131,751 characters of reasoning against
-            # 11,184 of content, i.e. 92% of everything the model generated was
-            # being discarded before it reached the graph.
-            reasoning = msg.get("reasoning_content") or ""
-            if isinstance(reasoning, list):
-                reasoning = " ".join(str(c) for c in reasoning)
-            # The one message NOT stored: the orchestrator's own constructed
-            # prompt. It already contains the "What you remember" block that
-            # get_context() returned, so storing it makes memory retrieve its
-            # own previous output -- attempt N's prompt embedding attempt N-1's
-            # memory block, which embeds N-2's. Caught live at 15,170 chars and
-            # growing. migrate_codebase() stores the canonical task line
-            # instead. Every other message is stored as-is.
-            if content and role != "user":
-                await mem.add_message(session_id, role, _cap(str(content)))
-            # A turn that is pure reasoning + tool call carries no `content` at
-            # all -- 443 of run 23's 504 assistant messages were exactly that.
-            # Without this the turn leaves no :Message behind and the
-            # conversation chain has a hole where the agent was thinking.
-            elif reasoning and role != "user":
-                await mem.add_message(session_id, role, _cap(str(reasoning)))
-            for tc in msg.get("tool_calls") or []:
-                fn = tc.get("function", {})
-                name = fn.get("name") or tc.get("name") or "unknown_tool"
-                raw_args = fn.get("arguments")
-                if isinstance(raw_args, str):
-                    try:
-                        args = json.loads(raw_args)
-                    except json.JSONDecodeError:
-                        args = {"raw": raw_args}
-                else:
-                    args = raw_args or {}
-                # `thought` is the model's own reasoning for this turn, not a
-                # synthetic label. It used to be the literal string
-                # f"Calling {name}", which made every ReasoningStep in the
-                # graph interchangeable and made reasoning.search_steps() --
-                # the package's step-level case-based retrieval -- useless,
-                # since it embeds thought/action and every thought was the same
-                # sentence. Falls back to the label only when the model emitted
-                # neither reasoning nor content.
-                # `observation` completes the thought-action-observation triple
-                # the reasoning layer is built around, and it is the package's
-                # own add_step parameter -- it was simply never passed. Its
-                # absence is visible from Neo4j itself: the package's
-                # step-embedding query selects s.observation, and the server
-                # answered every batch with "the property `observation` does
-                # not exist", so steps were being embedded on thought+action
-                # alone. Without it a step records that the agent ran `bash`
-                # and why, but never what came back, which is the half that
-                # says whether the idea worked.
-                step = await mem.add_step(
-                    trace_id,
-                    thought=(reasoning or content or f"Calling {name}"),
-                    action=name,
-                    observation=results.get(tc.get("id")),
-                    generate_embedding=False,
-                )
-                await mem.record_tool_call(step.id, tool_name=name, arguments=args)
 
 
 def _collect_file_contents(repo_dir: Path) -> dict[str, bytes]:
@@ -1087,6 +1338,7 @@ def observed_fix(
     prior_error: str | None,
     next_error: str | None,
     suite_passed: bool,
+    tests_delta: int = 0,
     max_lines: int = 90,
 ) -> str | None:
     """What this edit actually did to the suite, in words, plus the edit.
@@ -1161,8 +1413,25 @@ def observed_fix(
             f"{diff}"
         )
 
+    if tests_delta > 0:
+        # The error signature is unchanged but MORE TESTS PASS, and the two
+        # facts are independent: the first failure can stay identical while a
+        # later test starts passing. Saying only "did NOT help" here put the
+        # summary in direct contradiction with the trace's own success flag --
+        # migrate_codebase() sets `resolved = success or advanced`, and
+        # `advanced` keys on exactly this delta. Observed in the graph:
+        # attempt 7 stored with success=True under a summary reading "This
+        # change did NOT help". Retrieval ranks on the flag and a reader reads
+        # the text, so the two disagreeing is worse than either being wrong.
+        return (
+            f"The suite still fails with the same first error:\n{prior_error}\n\n"
+            f"But {tests_delta} more test(s) pass than before, so this change "
+            f"did help -- it just did not get past that error:\n{diff}"
+        )
+
     return (
-        f"This change did NOT help. The suite still fails with the same error:\n"
+        f"This change did NOT help. The suite still fails with the same error, "
+        f"and no additional tests pass:\n"
         f"{prior_error}\n\nDo not repeat this change:\n{diff}"
     )
 
@@ -1274,51 +1543,6 @@ def _localize_sandbox_paths(error_text: str, vibe_cwd: Path) -> str:
 REPLAY_GRACE_S = 120.0
 
 
-async def _settle_replay(
-    task: "asyncio.Task | None", grace_s: float = REPLAY_GRACE_S
-) -> None:
-    """Join a replay that was overlapped with the Daytona check, on the paths
-    that bail out before the normal join.
-
-    Without this the task is left pending when an attempt times out or raises:
-    it keeps writing to Neo4j on behalf of a trace the loop has already closed,
-    and asyncio logs "Task exception was never retrieved" for whatever it hits
-    afterwards.
-
-    It is ALLOWED TO FINISH, not cancelled. An earlier revision cancelled it
-    outright, on the reasoning that its result is no longer wanted once the
-    attempt has bailed. That reasoning was wrong, and it emptied the graph.
-
-    The replay is the only thing that writes the reasoning steps and the
-    messages -- everything an agent actually did. The trace itself is opened
-    before the Vibe call and closed after, so a cancelled replay still leaves a
-    :ReasoningTrace behind: a node with a task, an embedding, and nothing
-    inside it. Retrieval then returns those, which is worse than returning
-    nothing, because they cost tokens and say only that an attempt existed.
-
-    Measured over 41 runs and 8 hours on 2026-09-15, every one of which took
-    the timeout path: 168 traces, of which 160 had no verdict and only 4 had a
-    single step between them -- 13 steps recorded in total, against the
-    hundreds of tool calls the transcripts hold. The whole accumulated-memory
-    series was flat because there was nothing in the graph to accumulate.
-
-    `grace_s` bounds it so a stuck write cannot hang the run: the replay is
-    ~0.5s per message and an attempt holds fewer than 200, so anything past two
-    minutes is stuck rather than slow. Only then is it cancelled."""
-    if task is None:
-        return
-    try:
-        await asyncio.wait_for(asyncio.shield(task), timeout=grace_s)
-    except asyncio.TimeoutError:
-        task.cancel()
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
-    except Exception:
-        pass
-
-
 async def migrate_codebase(
     *,
     pool: SandboxPool,
@@ -1332,6 +1556,8 @@ async def migrate_codebase(
     session_id: str | None = None,
     baseline_signature: str | None = None,
     baseline_passed: int = 0,
+    step_memory: Any | None = None,
+    agent_label: str | None = None,
 ) -> MigrationResult:
     """One agent, one local checkout, one whole-codebase task: "migrate this
     codebase from Pydantic v1 to Pydantic v2." Vibe edits `repo_dir` (a real
@@ -1358,7 +1584,9 @@ async def migrate_codebase(
 
         add_message(user)   -> before the Vibe call
         start_trace(...)    -> before the Vibe call
-        get_context(...)    -> spliced into the prompt (its `what_you_remember`)
+        get_context(...)    -> NOT called here. The agent calls
+                               memory_get_context itself, over MCP, as its
+                               server's instructions tell it to.
         add_step/record_tool_call -> replayed from Vibe's own messages.jsonl
         add_message(assistant) + complete_trace(...) -> after the Daytona check
 
@@ -1401,32 +1629,25 @@ async def migrate_codebase(
     # whole run, warm-2 reaching 32 of 33 passing on its first attempt, was
     # silently discarded because there was "no baseline to compare against".
     last_passed: int = baseline_passed
-    last_vibe_exit: int | None = None
+    last_ended_cleanly: bool = False
     # Seeded with the baseline so the starting failure is not counted as one
     # this agent cleared; errors_cleared subtracts one for it.
     seen_signatures: set[str] = {baseline_signature} if baseline_signature else set()
     best_passed: int = baseline_passed
-    # How much of each session transcript has already been turned into
-    # reasoning steps. Keyed by file and carried across attempts, because
-    # `--continue` RESUMES the same session directory rather than creating a
-    # new one -- so "directories that appeared since this attempt started",
-    # which is what this used to key on, is empty for every attempt after the
-    # first. Measured on run 23: 185 warm tool calls on disk, 70 ReasoningStep
-    # nodes in Neo4j. Everything an agent did from attempt 2 onward was
-    # invisible to memory.
-    replayed_lines: dict[Path, int] = {}
     attempt = 0
     while True:
         remaining = deadline - time.monotonic()
-        if remaining <= 0:
+        # An attempt is only worth starting if it can still afford its own
+        # verdict. Starting one with less than that left is what produced 19
+        # consecutive runs of ungraded work: Vibe ran, the clock expired, and
+        # the Daytona check got 0.0 seconds and raised.
+        if remaining <= VERDICT_RESERVE_S:
             break
         attempt += 1
         await emit("ATTEMPT_START", attempt=attempt)
 
         trace_id = None
-        replay_task: asyncio.Task | None = None
 
-        memory_context = None
         # What this attempt is actually up against. Attempt 1 has nothing to
         # go on yet; from attempt 2 it is the previous attempt's real failure,
         # as read by the orchestrator off its own independent pytest run.
@@ -1434,100 +1655,137 @@ async def migrate_codebase(
 
         if mem is not None:
             assert session_id is not None
-            # memory_agent_mvp.py's `what_you_remember`, which its framework
-            # calls on every single turn regardless of what the model decides
-            # to do. Here the orchestrator splices it in before every attempt.
-            # The agent also has the neo4j-agent-memory MCP tools and may call
-            # them itself; this is the floor under that, not a replacement for
-            # it.
+            # NO get_context() HERE ANY MORE, and that is the point.
             #
-            # Queried with `trace_task` -- the failure -- not with the task
-            # description. Measured directly against the graph: the query
-            # "Migrate this codebase from pydantic v1 to v2" retrieves 0
-            # results, while the signature "PydanticImportError: `BaseSettings`
-            # has been moved..." retrieves the matching trace. These are vector
-            # searches, and a one-line task description is semantically far
-            # from "here is what broke and how it was fixed".
+            # This used to call MemoryClient.get_context() itself and splice the
+            # result into the prompt as a "What you remember:" block, once per
+            # attempt. It retrieved real, cross-agent traces and it worked -- 17
+            # reads, 3-5 hits each, sourced from warm-0/1/2/3 -- but it was the
+            # orchestrator retrieving on the agent's behalf, and it is almost
+            # certainly WHY the agent never retrieved anything itself. The
+            # package's instructions say "ALWAYS at conversation start: Call
+            # memory_get_context". An agent that already has a page of
+            # remembered context at the top of its prompt has no reason to.
             #
-            # include_short_term=False: short_term.get_context(session_id=X)
-            # replays the last N messages of session X verbatim, so anything
-            # written with add_message comes straight back out into the next
-            # prompt. On a 32,768-token model that is the context-overflow
-            # loop that cost one agent 58 consecutive rejected attempts. The
-            # agent re-reading its own prompts carries no information anyway --
-            # what matters is the *other* agents' traces, and those arrive
-            # through the reasoning section, which is not session-scoped.
-            memory_context = await mem.get_context(
-                trace_task, session_id=session_id, include_short_term=False,
-            )
-            if memory_context:
-                memory_context = f"What you remember:\n{memory_context}"
+            # It also made the claim wrong. "These agents retrieve each other's
+            # reasoning" was carried by this function, not by the agents: 0
+            # memory tool calls across 15 sessions while this splice ran on
+            # every attempt. The graph was real, the retrieval was real, the
+            # agency was ours.
+            #
+            # So the agent now does its own reading, with the tools it has and
+            # the instructions their authors wrote (see _MEMORY_TOOLS_GUIDE).
+            # MEMORY_READ is emitted from the agent's own calls instead, counted
+            # off the transcript -- see ATTEMPT_DONE's `memory_calls`. If it
+            # comes back zero now that the instructions actually reach the
+            # model, that is the finding, and the fix for it is upstream in
+            # Vibe, not another splice here.
+            #
+            # start_trace stays: a trace has to exist before steps can hang off
+            # it, and the agent is separately instructed to open its own. Two
+            # traces for one attempt is honest -- one is what happened, one is
+            # what the agent chose to record.
             trace = await mem.start_trace(session_id, task=trace_task)
             trace_id = trace.id
-            await mem.add_message(session_id, "user", trace_task)
+            # Hand this attempt's trace to the step hook. Vibe's post_tool
+            # payload carries the tool call and the agent's cwd, but nothing
+            # about attempts or traces -- so the sidecar has to be told which
+            # trace the steps it is about to receive belong to.
+            if step_memory is not None and agent_label:
+                step_memory.set_trace(agent_label, trace_id)
 
-
-        task = _task_prompt(last_error, memory_context, memory_enabled=mem is not None)
+        task = _task_prompt(last_error, memory_enabled=mem is not None)
         before_snapshot = _snapshot(repo_dir)
+        turns_before = _assistant_turns_total(vibe_home)
+        tools_before = _tool_calls_total(vibe_home)
         try:
-            # Resume only a session that ended cleanly. A session that died
-            # is usually one that outgrew the model's context window, and
-            # resuming it replays the same oversized history straight into
-            # the same 400: measured live, cold-3 spent 58 attempts and
-            # ~5 seconds each in that loop, every call rejected with
-            # "The input (35516 tokens) is longer than the model's context
-            # length (32768 tokens)". Starting fresh is the only way out of
-            # it, because compaction cannot run on a history that is already
-            # too large to send. A clean exit still resumes, which is the
-            # case that matters -- the agent keeps what it learned.
-            resume = attempt > 1 and last_vibe_exit == 0
+            # Resume only a session that ended cleanly -- see _ended_cleanly()
+            # for what that means and why it is not an exit-code check.
+            resume = attempt > 1 and last_ended_cleanly
+            # Unleashed: the agent ends its own attempt. The only bound is
+            # what is left of the RUN's clock after reserving the verdict --
+            # see _run_vibe() on why that is the run's budget rather than a
+            # cap on the agent.
             vibe_exit_code, vibe_output = await _run_vibe(
-                task, timeout_s=remaining, vibe_home=vibe_home, cwd=vibe_cwd,
+                task,
+                timeout_s=max(1.0, deadline - time.monotonic() - VERDICT_RESERVE_S),
+                vibe_home=vibe_home, cwd=vibe_cwd,
                 resume=resume,
+                on_entry=(
+                    _entry_consumer(mem, session_id, step_memory, agent_label)
+                    if mem is not None and session_id else None
+                ),
             )
-            last_vibe_exit = vibe_exit_code
-            # Started here, awaited after the Daytona run below, so the two
-            # overlap instead of running back to back. They are independent:
-            # the replay reads Vibe's transcript and writes to Neo4j, the
-            # Daytona check uploads `file_contents` and runs pytest, and
-            # neither touches the other's data.
-            #
-            # Measured on run 47's own transcript: the replay is 45.5s per
-            # attempt (0.50s per message, nearly all of it serialized OpenAI
-            # embedding round-trips), against a Vibe turn of roughly 20-40s.
-            # Paid serially it was most of an attempt's wall-clock, and it is
-            # paid only by warm -- which is why cold completed 21-28 attempts
-            # per run across runs 44-47 while warm completed 8-10, and why
-            # warm cost 311-521k tokens per attempt against cold's 135-195k.
-            # Nothing about what gets stored changes; only when it is waited on.
-            replay_task = (
-                asyncio.ensure_future(
-                    _replay_session_messages(
-                        vibe_home, replayed_lines, mem, trace_id, session_id
-                    )
-                )
-                if mem is not None
-                else None
-            )
+            last_ended_cleanly = _ended_cleanly(vibe_exit_code, vibe_output)
 
+            # Did the agent actually take a turn? If Vibe exited without
+            # completing one, the tree is byte-identical to the last attempt's,
+            # so grading it spends a Daytona sandbox to re-derive a verdict we
+            # already have, and records a trace saying "no edit was made" that
+            # retrieval will later surface as if it were knowledge.
+            #
+            # This happens under load: the LLM calls fail, Vibe retries with
+            # backoff and exits without a turn. Observed in one 2-a-side run --
+            # 3 of warm-1's 4 attempts and 2 of cold-0's had a session
+            # containing the prompt and ZERO assistant messages, each still
+            # graded, each burning ~135s. It is the "Server disconnected"
+            # failure the README lists, arriving one level down.
+            #
+            # Aborted rather than graded, and emitted so it is countable. The
+            # trace is closed honestly: it is not a verdict on anything.
+            #
+            # This used to interpolate `ScopedMemory._NO_VERDICT`, a sentinel
+            # that the deleted hand-rolled retrieval layer filtered on. Both
+            # the constant and the filter went with that layer, and the
+            # reference did not -- so every warm agent that hit this branch
+            # died with AttributeError, and the run reported "0 attempts" for
+            # the whole warm swarm. Plain text now, because nothing filters on
+            # it any more and pretending otherwise is how that happened.
+            # (An aborted attempt has no steps, so search_steps cannot surface
+            # it regardless.)
+            if _assistant_turns_total(vibe_home) <= turns_before:
+                if mem is not None and trace_id is not None:
+                    await mem.complete_trace(
+                        trace_id,
+                        outcome="no verdict; the agent completed no turn",
+                        success=False,
+                    )
+                await emit(
+                    "ATTEMPT_ABORTED",
+                    attempt=attempt,
+                    reason="vibe completed no assistant turn",
+                    vibe_exit_code=vibe_exit_code,
+                    vibe_stop=stop_reason(vibe_output),
+                )
+                attempt -= 1  # it did not happen; do not inflate the count
+                await asyncio.sleep(5.0)  # don't spin on a saturated endpoint
+                continue
+            # NO TRANSCRIPT REPLAY HERE ANY MORE. The agent's steps were
+            # already written, by the agent, as it took them -- Vibe's
+            # `post_tool` hook calls add_step/record_tool_call at each tool
+            # call (orchestrator/step_memory.py). This is the whole point: the
+            # steps in the graph are now the agents' own, not ours read back
+            # off their logs after the fact.
+            #
+            # What that also removed: the replay cost 45.5s per attempt on run
+            # 47 (0.50s per message, almost all of it serialized OpenAI
+            # embedding round-trips) against a Vibe turn of 20-40s, and only
+            # warm paid it -- which is most of why cold completed 21-28
+            # attempts per run across runs 44-47 while warm completed 8-10.
+            # The hook pays one loopback round-trip per tool call instead, and
+            # defers embedding to complete_trace's batch.
             file_contents = _collect_file_contents(repo_dir)
-            # Bounded by the same shared run deadline as the Vibe call above,
-            # not by a separate invented number. Previously this was the one
-            # step outside the budget entirely, which is why a run asked for
-            # 1200s took 1730.8s: eight agents each finishing a Vibe turn near
-            # the boundary, then all starting an unbounded upload + sandbox
-            # create + pytest afterwards. The check itself is unchanged; it
-            # just can no longer run past the clock it belongs to.
+            # Gets its own reserved slice rather than `deadline - now`. That
+            # expression is the bug that made this project measure nothing: by
+            # the time Vibe had consumed the rest of the clock it evaluated to
+            # 0.0, so the ONE thing that decides success never ran. The reserve
+            # is granted even slightly past the deadline -- a verdict a few
+            # seconds late is worth having; no verdict is worth nothing.
             result = await asyncio.wait_for(
                 pool.run_pytest(file_contents=file_contents, test_command=test_command),
-                timeout=max(0.0, deadline - time.monotonic()),
+                timeout=VERDICT_RESERVE_S,
             )
             await emit("SANDBOX_CREATED", create_ms=result.create_ms)
-            # complete_trace(generate_step_embeddings=True) below needs every
-            # step to exist, so the replay is joined before the verdict is
-            # recorded -- overlapped, never skipped.
-            if replay_task is not None:
-                await replay_task
         except asyncio.TimeoutError:
             # The run's shared clock expired mid-attempt. That is the deadline
             # doing its job, not a failure, and it must not discard what this
@@ -1536,7 +1794,6 @@ async def migrate_codebase(
             # MigrationResult(False, 0). Run 30 printed "0 attempts" for both
             # swarms off the back of that, after 21 cold and 5 warm attempts had
             # actually started.
-            await _settle_replay(replay_task)
             if mem is not None and trace_id is not None:
                 await mem.complete_trace(
                     trace_id,
@@ -1545,77 +1802,124 @@ async def migrate_codebase(
                 )
             break
         except Exception:
-            await _settle_replay(replay_task)
             if mem is not None and trace_id is not None:
                 await mem.complete_trace(trace_id, outcome="error", success=False)
             raise
 
+        tools_used = _tool_calls_total(vibe_home) - tools_before
+        # MEMORY_READ now reports the AGENT's retrieval, not the orchestrator's.
+        # It fires once per attempt in which the agent called a read-side memory
+        # tool itself, and does not fire at all when it did not -- which is the
+        # honest signal, and the one this event was always supposed to carry.
+        # `hits` is how many such calls it made; `sources` names them, so a run
+        # log distinguishes memory_get_context from graph_query.
+        agent_reads = {k: v for k, v in tools_used.items() if _is_memory_read(k)}
+        if agent_reads:
+            await emit(
+                "MEMORY_READ",
+                attempt=attempt,
+                hits=sum(agent_reads.values()),
+                sources=sorted(agent_reads),
+                chars=0,
+                query=trace_task[:120],
+            )
         await emit(
             "ATTEMPT_DONE",
             attempt=attempt,
             exit_code=result.exit_code,
             vibe_exit_code=vibe_exit_code,
+            # Why Vibe's turn ended, and how many turns it actually used.
+            # Without these two an attempt's shape is unknowable after the
+            # fact: "8 turns, hit the limit" and "1 turn, died" look identical
+            # in the event log, and they mean opposite things.
+            vibe_stop=stop_reason(vibe_output),
+            turns_used=_steps_used(vibe_home),
+            resumed=resume,
+            # What the agent chose to do with its turns, and -- the point of
+            # the warm/cold comparison -- whether it ever asked the graph
+            # anything itself. See _tool_calls_total().
+            tools=dict(tools_used),
+            memory_calls=sum(
+                v for k, v in tools_used.items() if _is_memory_tool(k)
+            ),
         )
 
         success = result.exit_code == 0
         signature = error_signature(result.output)
         passed = tests_passed(result.output)
 
-        # The suite cannot tell a migration from a v1 shim -- shimming every
-        # import scores 32 of 33 (see v1_shim_files). So the shim is caught
-        # here, before any of this reaches the verdict or the graph, and it
-        # overrides a green suite rather than merely annotating it.
+        # Two holes the suite cannot see, because `tests/` comes from the real
+        # merge commit and never calls a v2-only API:
         #
-        # `passed` is forced to 0 as well as `success` to False: leaving the
-        # tally intact would let a shimmed attempt clear `passed >
-        # last_passed` and be written to shared memory as verified progress,
-        # which is the one thing that must not happen with a diff every other
-        # warm agent is about to retrieve.
+        #   * the pydantic.v1 compatibility shim -- rewriting every import to
+        #     `from pydantic.v1 import ...` scores 32 of 33 (v1_shim_files);
+        #   * behaviour deleted rather than ported -- a validator stubbed to
+        #     `return values` also scores 32 of 33 (gutted_files).
         #
-        # The agent is told plainly, in the same channel it gets every other
-        # failure -- the fed-back pytest output. Identical for both swarms.
+        # Both therefore GATE `success`: an attempt that does either has not
+        # migrated the codebase, whatever pytest says, and must not be written
+        # to shared memory as the exemplar every other warm agent retrieves.
+        #
+        # What they no longer do is rewrite `passed` and `signature`.
+        #
+        # Forcing `passed = 0` and replacing `signature` with a synthetic
+        # sentence fed that sentence straight into `seen_signatures`, so
+        # *gaming the oracle inflated `errors_cleared`* -- the metric the
+        # summary uses to compare warm against cold when neither converges. A
+        # shimmed attempt scored a cleared error for being caught. The real
+        # tally and the real first-error line are kept intact so the progress
+        # numbers stay honest, and the gate is reported on its own terms
+        # instead of disguised as a pytest result.
         shimmed = v1_shim_files(file_contents)
-        if shimmed:
+        gutted = gutted_files(file_contents)
+        if shimmed or gutted:
             success = False
-            passed = 0
-            signature = f"pydantic.v1 compatibility shim still imported by: {', '.join(shimmed)}"
-            result = replace(
-                result,
-                exit_code=1,
-                output=(
-                    f"{result.output}\n\n"
+            notes = []
+            if shimmed:
+                notes.append(
                     f"MIGRATION NOT COMPLETE: these files still import pydantic's v1 "
                     f"compatibility shim: {', '.join(shimmed)}.\n"
                     f"`from pydantic.v1 import ...` keeps the code on Pydantic v1; the task "
                     f"is to move it to v2. Import from `pydantic` (or `pydantic_settings`) "
                     f"and update the code to the v2 API instead."
-                ),
-            )
-
-        # The same override for the same reason, one hole over: code whose
-        # behaviour was deleted instead of migrated. See gutted_files() -- this
-        # is what actually produced run 54's 32/33, the best score the harness
-        # ever recorded and one I wrongly reported as verified. `passed` is
-        # forced to 0 here too, because 32 was precisely the problem: it beat
-        # every honest attempt at the same file and would have been written to
-        # shared memory as the exemplar.
-        gutted = gutted_files(file_contents)
-        if gutted:
-            success = False
-            passed = 0
-            signature = f"behaviour deleted rather than migrated in: {', '.join(gutted)}"
-            result = replace(
-                result,
-                exit_code=1,
-                output=(
-                    f"{result.output}\n\n"
+                )
+            if gutted:
+                notes.append(
                     f"MIGRATION NOT COMPLETE: these files contain a function whose body "
                     f"was removed rather than ported: {', '.join(gutted)}.\n"
                     f"Either unreachable code follows a `return`/`raise`, or a validator "
                     f"now just hands its argument straight back. Stubbing a validator out "
                     f"makes the imports pass while silently dropping what it enforced. "
                     f"Port the original logic to the v2 API and keep it running."
-                ),
+                )
+            # The agent is told plainly, in the same channel it gets every other
+            # failure -- the fed-back pytest output. Identical for both swarms.
+            # Notes go FIRST, ahead of the pytest output, not appended after
+            # it. Appending put them ~85% of the way through a 5,655-character
+            # prompt, buried at the end of a traceback -- and the agents
+            # ignored them: in one 2-a-side run every one of the 9 graded
+            # attempts was a shim, with cold-1 shimming on attempts 1, 2 AND 3
+            # and warm-1 on 1 and 2. Checked rather than assumed: the
+            # "MIGRATION NOT COMPLETE" block WAS present in attempt 2's
+            # prompt, so the agent was told plainly and did it again.
+            #
+            # Whether it obeys at the top is untested, but the old placement
+            # was incidental (it is where `+=` puts things) rather than chosen,
+            # and this is the single most decision-relevant sentence in the
+            # prompt: the suite says 32 of 33 and the work is still rejected.
+            # It also now survives _trim_error_for_prompt's head/tail cut,
+            # which the appended version only did by luck.
+            result = replace(
+                result,
+                exit_code=1,
+                output="\n\n".join(notes) + "\n\n" + result.output,
+            )
+            await emit(
+                "ATTEMPT_REJECTED",
+                attempt=attempt,
+                shimmed=shimmed,
+                gutted=gutted,
+                pytest_passed=passed,
             )
         # An attempt that moves the suite onto a *different* failure has
         # demonstrably fixed the previous one. Still the orchestrator's own
@@ -1631,7 +1935,16 @@ async def migrate_codebase(
         # error signature is not enough -- see tests_passed() for the run-21
         # case where that scored a regression as a fix and then taught it to
         # every other warm agent.
-        advanced = not success and passed > last_passed
+        #
+        # `not rejected` is what the old `passed = 0` override was really for,
+        # stated directly instead of by corrupting the tally: a shimmed or
+        # gutted tree can pass 32 of 33, which would clear `passed >
+        # last_passed` and be recorded as verified progress -- the one diff
+        # that must never reach shared memory as an exemplar. Gating
+        # `advanced` blocks that at the source, and leaves `signature` and
+        # `passed` telling the truth for everything else.
+        rejected = bool(shimmed or gutted)
+        advanced = not success and not rejected and passed > last_passed
         if mem is not None:
             # TraceOutcome rather than a bare string, so the fix is retrievable
             # two ways: `error_kind` is written as a top-level indexed property
@@ -1651,6 +1964,10 @@ async def migrate_codebase(
                             prior_error=last_signature,
                             next_error=signature,
                             suite_passed=success,
+                            # The same delta `advanced` is computed from, so
+                            # the stored summary and the stored success flag
+                            # cannot contradict each other. See observed_fix().
+                            tests_delta=passed - last_passed,
                         )
                         or (
                             "suite passed" if success else
@@ -1677,9 +1994,16 @@ async def migrate_codebase(
         # Distinct failures this agent has moved the suite through, counted
         # off the orchestrator's own test runs. The baseline signature is
         # seeded in, so clearing it counts once and only once.
-        if signature and signature not in seen_signatures:
-            seen_signatures.add(signature)
-        best_passed = max(best_passed, passed)
+        #
+        # Rejected attempts contribute to neither progress measure. Their
+        # numbers are real pytest numbers, but they describe a tree that did
+        # not migrate anything, so counting them would report "best tests
+        # passing: 32" for a gutted validator -- which is how run 54 came to be
+        # reported as the harness's best-ever result.
+        if not rejected:
+            if signature and signature not in seen_signatures:
+                seen_signatures.add(signature)
+            best_passed = max(best_passed, passed)
 
         if success:
             await emit("FILE_DONE", success=True, attempts=attempt)
@@ -1691,7 +2015,13 @@ async def migrate_codebase(
             )
 
         last_signature = signature
-        last_passed = passed
+        # Not updated on a rejected attempt. A shimmed tree passing 32 would
+        # otherwise raise the bar the agent has to beat above anything an
+        # honest migration of the same file can reach, so the attempt that
+        # un-guts the file and legitimately passes 30 would score as a
+        # regression.
+        if not rejected:
+            last_passed = passed
         last_error = _trim_error_for_prompt(_localize_sandbox_paths(result.output, vibe_cwd))
 
     await emit("FILE_DONE", success=False, attempts=attempt)

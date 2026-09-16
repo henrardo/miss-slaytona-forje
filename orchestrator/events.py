@@ -17,17 +17,31 @@ from typing import Any
 import websockets
 from websockets.asyncio.server import Server, ServerConnection
 
+# Only what the orchestrator actually emits. FILE_CLAIMED and METRICS were
+# removed: they described a design with a per-file work queue and a /metrics
+# poller, neither of which exists -- every agent now gets the same
+# whole-codebase task, and per-swarm tokens come from the proxies. Declaring
+# event types nothing emits makes a replay file look incomplete when it is not.
 EVENT_TYPES = frozenset(
     {
         "RUN_START",
-        "FILE_CLAIMED",
         "MEMORY_READ",
         "ATTEMPT_START",
         "SANDBOX_CREATED",
         "ATTEMPT_DONE",
+        # An attempt whose pytest result was green (or improving) but which
+        # shimmed pydantic.v1 or deleted behaviour instead of porting it. Its
+        # own event so the gate is visible rather than disguised as a pytest
+        # failure -- see migrate_codebase().
+        "ATTEMPT_REJECTED",
+        # An attempt in which Vibe completed no assistant turn at all -- so
+        # the tree is unchanged and there is nothing to grade. Its own event
+        # because it must be countable: silently retrying looks like a slow
+        # run, and silently grading it spends a sandbox to re-derive a verdict
+        # we already have. See migrate_codebase().
+        "ATTEMPT_ABORTED",
         "FILE_DONE",
         "MEMORY_WRITE",
-        "METRICS",
         "RUN_END",
     }
 )
@@ -134,9 +148,14 @@ class EventBus:
         self.clock = RunClock()
         self.writer = JsonlWriter(runs_dir / f"{run_id}.jsonl")
         self.broadcaster = EventBroadcaster()
+        # Kept in memory as well as on disk so the end-of-run summary can state
+        # its own gate (were any attempts actually graded?) without re-reading
+        # the file it just wrote. Events are small and a run emits tens of them.
+        self.events: list[dict] = []
 
     async def emit(self, event_type: str, **payload: Any) -> dict:
         event = make_event(event_type, self.clock.elapsed(), **payload)
+        self.events.append(event)
         self.writer.write(event)
         await self.broadcaster.broadcast(event)
         return event

@@ -1,16 +1,41 @@
+# The orchestrator's own venv (.venv at the repo root). Install with:
+#   uv venv .venv && VIRTUAL_ENV=$PWD/.venv uv pip install -r requirements-dev.txt
+#
+# NOT the harness venv -- harness/.venv holds mistral-vibe and nothing else
+# (see harness/requirements.txt for why that matters).
 pyyaml
 websockets
 pytest
+pytest-asyncio
 daytona
 python-dotenv
-neo4j-agent-memory
 
-# neo4j-agent-memory's extraction pipeline runs SpacyEntityExtractor as one
-# of its stages. Without spaCy that stage logs "failed" and is skipped, so
-# entities are never mined out of message text and the long-term half of the
-# warm swarm's memory is quietly degraded -- which is the exact capability
-# this demo exists to measure. Installed explicitly rather than left to
-# chance. (GLiNEREntityExtractor is a second, optional stage; it is a much
-# heavier dependency and the pipeline runs correctly without it.)
-spacy
+# EXTRAS ARE LOAD-BEARING. This used to read a bare `neo4j-agent-memory`,
+# which cannot run this project:
+#
+#   [openai]  -- orchestrator/memory.py configures
+#               EMBEDDING_MODEL = "openai/text-embedding-3-small", and without
+#               the openai client every embedding-backed call returns the
+#               string "OpenAI package not installed" instead of a result.
+#               Silently: the server starts, publishes all its tools, and
+#               answers every retrieval with an error message.
+#   [gliner]  -- the extraction pipeline's second local stage. memory.py sets
+#               ExtractionConfig(enable_llm_fallback=False) on the measured
+#               grounds that the local extractors are good enough (2071 ms ->
+#               289 ms per message). That is only true with GLiNER present;
+#               without it, extraction quality drops and the long-term half of
+#               the graph -- the thing this demo exists to show -- degrades.
+#   [spacy]   -- the first local stage. Without spaCy that stage logs "failed"
+#               and is skipped.
+#
+# The result was a requirements file that installed a non-working orchestrator
+# on any fresh clone, while the machine it was developed on happened to have
+# the extras from an earlier install.
+neo4j-agent-memory[openai,gliner,spacy]
+
+# spaCy's model is not a PyPI dependency and has to be named explicitly.
 en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
+# check_mcp_servers() speaks MCP directly to each registered server before the
+# clock starts, so the orchestrator needs a client of its own.
+mcp

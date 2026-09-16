@@ -17,3 +17,8 @@ notes/
 .ssh_runpod/
 harness/smoke*/
 fixture/.pytest_cache/
+
+# Third-party checkout for the graphrag MCP server, which was dropped
+# (it duplicated reasoning.search_steps -- see FIXES-2026-09-15.md). Nothing
+# references it any more; safe to delete, kept only to avoid re-downloading.
+harness/neo4j-mcp-experiments/

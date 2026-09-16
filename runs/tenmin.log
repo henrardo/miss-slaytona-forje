@@ -1,0 +1,84 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/16/26 10:11:33] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+Downloading openai (1.9MiB)
+ Downloaded openai
+Installed 75 packages in 305ms
+[09/16/26 10:11:50] INFO     Starting MCP server                transport.py:242
+                             'neo4j-agent-memory' with                          
+                             transport 'stdio'                                  
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 4.0.3                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                  🖥  Server:      web, 4.0.3                                  │
+│                  🚀 Deploy free: https://horizon.prefect.io                  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/16/26 10:11:56] INFO     Starting MCP server 'web' with     transport.py:242
+                             transport 'stdio'                                  
+  MCP web: lookup
+  MCP web: lookup answered 2554 chars -- working
+  MCP neo4j-agent-memory: memory_search, memory_get_context, memory_store_message, memory_add_entity, memory_add_preference, memory_add_fact, memory_get_conversation, memory_list_sessions, memory_get_entity, memory_export_graph, memory_create_relationship, memory_start_trace, memory_record_step, memory_complete_trace, memory_get_observations, graph_query
+  MCP neo4j-agent-memory: memory_get_context answered 4000 chars -- working
+  MCP web: lookup
+  MCP web: smoke test already paid for, not calling it again
+  graph at start: {'ReasoningStep': 141, 'ToolCall': 137, 'Message': 19, 'Entity': 15, 'Object': 15, 'ReasoningTrace': 6, 'Tool': 6, 'Product': 6, 'Document': 5, 'Conversation': 3, 'User': 1, 'Device': 1}
+  baseline: 0 tests passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+  setup: 45.7s (outside the agents' budget)
+
+  edits that never landed (agent wrote to a nonexistent path):
+     cold-0 edit LOST -- wrote to a path that does not exist: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/harness/models/schemas.py
+
+  !! CONTAINMENT VIOLATION -- this run's warm/cold comparison is NOT valid:
+     cold-1 wrote outside its own checkout: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/harness/README.md
+
+
+============================================================
+WARM (shared memory):  0/2 agents converged | 27 LLM calls | in 477,090 / out 13,463 = 490,553 tokens
+COLD (no memory):      0/2 agents converged | 28 LLM calls | in 202,479 / out 13,840 = 216,319 tokens
+ratio (cold/warm):  input 0.424  output 1.028   [>1 = warm cheaper]
+
+progress (neither swarm converging makes this the comparable measure):
+  warm  errors cleared: best 1, total 2 | best tests passing 0 | 3 attempts | 159,030 in + 4,488 out per attempt
+  cold  errors cleared: best 1, total 1 | best tests passing 0 | 3 attempts | 67,493 in + 4,613 out per attempt
+wall-clock: 488.0s agents (+45.7s setup, outside the budget)
+GPU cost (this run, $0.49/hr): $0.0664
+event log: runs/m4-1789549887.jsonl
+
+GATE ok: 6 attempt(s) graded by 6 real Daytona run(s).
+     warm memory tools: 2 attempt(s) called them, 4 call(s), ['neo4j-agent-memory_memory_get_context', 'neo4j-agent-memory_memory_search']
+     step hook: 25 step(s) written by the agents (1 of them turns that called no tool), 12 injection(s) of prior agents' steps, 0 error(s)
+     entities extracted after the clock stopped: 60 from messages, 687 TOUCHED edge(s) from reasoning steps

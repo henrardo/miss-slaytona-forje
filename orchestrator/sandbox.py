@@ -163,16 +163,33 @@ class SandboxPool:
 
 
 def install_cleanup_handlers(pool: SandboxPool) -> None:
-    """Best-effort sweep on normal interpreter exit and on SIGINT/SIGTERM.
-    A demo that hangs is bad; a demo that leaks paid sandboxes is worse."""
+    """Best-effort sweep on SIGINT/SIGTERM and, only if needed, at exit.
+
+    This is for the paths that do NOT unwind: a Ctrl-C or a SIGTERM leaves
+    every live sandbox running and billable, and the `finally` in `sandbox()`
+    cannot help because the interpreter is going away rather than unwinding.
+
+    The atexit hook checks `sandboxes_live` first. A normal run ends with its
+    own final `pool.sweep()`, so by the time atexit fires there is nothing to
+    do -- and doing it anyway raises: Daytona's SDK uses a thread pool, so a
+    sweep issued during interpreter shutdown dies with "cannot schedule new
+    futures after interpreter shutdown". That surfaced as a traceback printed
+    *after* a clean run's summary, which reads as a failed run and is worse
+    than the leak it was guarding against.
+
+    Everything here swallows exceptions on purpose. A best-effort cleanup that
+    can fail loudly on the way out is not best-effort."""
     import atexit
     import signal
 
     def _sweep_sync() -> None:
+        if pool.sandboxes_live == 0:
+            return
         try:
             asyncio.run(pool.sweep())
-        except RuntimeError:
-            pass  # already inside a running loop (e.g. re-entrant shutdown); best effort only
+        except Exception as exc:  # noqa: BLE001 -- best effort, never raise on the way out
+            print(f"  cleanup: could not sweep {pool.sandboxes_live} sandbox(es): {exc!r}")
+            print(f"  check app.daytona.io for label {RUN_ID_LABEL}={pool.run_id}")
 
     atexit.register(_sweep_sync)
 

@@ -41,7 +41,10 @@ def test_module_imports(name):
     [
         ("orchestrator.vibe_agent", "migrate_codebase"),
         ("orchestrator.vibe_agent", "_run_vibe"),
-        ("orchestrator.vibe_agent", "_replay_session_messages"),
+        # _replay_session_messages is gone: the agents write their own steps
+        # through Vibe's post_tool hook now (orchestrator/step_memory.py), so
+        # there is no transcript replay to await.
+        ("orchestrator.step_memory", "StepMemoryService.handle"),
         ("orchestrator.run", "agent_worker"),
         ("orchestrator.run", "main_async"),
         ("orchestrator.memory", "graph_counts"),
@@ -49,7 +52,11 @@ def test_module_imports(name):
     ],
 )
 def test_awaited_functions_are_coroutines(module, func):
-    fn = getattr(importlib.import_module(module), func)
+    # Dotted names so a method on a class can be named as well as a
+    # module-level function (StepMemoryService.handle is awaited per tool call).
+    fn = importlib.import_module(module)
+    for part in func.split("."):
+        fn = getattr(fn, part)
     assert inspect.iscoroutinefunction(fn), (
         f"{module}.{func} is awaited by the run loop but is not a coroutine "
         f"function. If an `async` was dropped, every `await` in its body is a "

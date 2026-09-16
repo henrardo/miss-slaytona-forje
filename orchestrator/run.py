@@ -1,60 +1,32 @@
 #!/usr/bin/env python3
-"""M4 (Sec. 8), simplified single-pass demo: both swarms, real Daytona
-sandboxes, real Neo4j memory, a real self-hosted model via SGLang, run in
-parallel against one shared model server, timed, tokens/cost tracked.
+"""Both swarms, in parallel, against one shared model server: real Daytona
+sandboxes, real Neo4j memory, a real self-hosted model via SGLang.
 
-The model is a parameter (--model), not a property of the design. The
-final demo target is Mistral Small 4; the default here is whatever cheap
-stand-in is currently serving on the pod. One hard requirement on any
-choice: it must emit tool calls under plain `tool_choice: "auto"`, because
-that is what vanilla Vibe sends and the agent loop can only end a turn on a
-text-only assistant message. A model that needs forcing cannot be used
-here -- see harness/id_fix_proxy.py for the full account of why.
+The one difference between the arms is memory. Warm agents get a ScopedMemory
+and a neo4j-agent-memory MCP block; cold agents are constructed with
+`mem=None` throughout and never get the block, so they have zero Neo4j
+contact -- not gated reads, none. Anything else that touches one arm and not
+the other is a bug, latency included.
 
-Memory is agent-callable (neo4j-agent-memory's own MCP server, registered
-into Vibe as its README says -- `uvx "neo4j-agent-memory[mcp,openai]" mcp
-serve`; the openai extra is needed because the package's default embedder is
-OpenAI and [mcp] alone does not pull the client in) AND deterministic
-(a fresh get_context() splice before every attempt) together -- modeled on
-workshop-agent-memory-scripts/memory_agent_mvp.py's actual loop, not a
-subset of it: that script's `what_you_remember` system prompt runs on every
-turn regardless of whether the model calls a tool, every message gets
-registered via add_message, and every tool call gets a reasoning step via
-report_step. Both halves are present here (see
-orchestrator/vibe_agent.py's migrate_codebase()); the steps come from
-replaying each attempt's Vibe session transcript afterward, since we don't
-control Vibe's internal loop the way that script controls pydantic_ai's.
+Memory READS are the agent's own: the package's MCP server, the package's own
+tool descriptions, and the package's own server instructions relayed into the
+prompt because Vibe drops them (see _MEMORY_TOOLS_GUIDE). The orchestrator no
+longer retrieves anything on an agent's behalf -- when it did, the agents never
+retrieved for themselves, and "these agents share memory" was a claim about
+this file rather than about them.
 
-Memory isolation is no longer `read_gate` -- that revision still let cold
-agents write ReasoningTrace nodes to the shared graph (start_trace/
-complete_trace were called unconditionally for every agent, warm and cold
-alike; only the read tools were gated). Confirmed live: cold-0..cold-3 each
-had traces in Neo4j after a run, which isn't an isolated baseline. Now cold
-agents are constructed with mem=None throughout (see main_async below) and
-never get a `memory` MCP block registered at all -- zero reads, zero
-writes, zero Neo4j contact, a true baseline arm.
+Writes are not taken on the model's say-so: a trace is closed on the verdict of
+an independent pytest run in a fresh Daytona sandbox.
 
-Writes are never taken on the model's say-so: a reasoning trace is closed
-with the verdict of an independent pytest run in a fresh Daytona sandbox,
-and trace-level success means "this attempt cleared the error it was handed"
--- see migrate_codebase().
+`--model` must emit tool calls under plain `tool_choice: "auto"` and must be
+able to end a turn with a text-only message. That is the one hard constraint
+on model choice; NOTES-hard-won.md explains what forcing it costs.
 
-One real, known trade-off: the orchestrator can't emit a MEMORY_READ event
-per Vibe-internal tool call, since reasoning steps come from a post-hoc
-replay of each attempt's session transcript rather than an inline call. That
-replay is complete (every tool call from that attempt), just not real-time.
-
-Two id_fix_proxy instances must already be running, one per swarm, both
-forwarding to the same SGLang server -- this is how per-swarm token usage is
-actually measured, since Vibe itself never surfaces per-call usage outside
-its own process (Sec. 12: tokens come from each response's `usage` object,
-and the proxy is the only thing that sees every raw response).
-
-Requires: DAYTONA_API_KEY in the environment, NEO4J_URI/NEO4J_PASSWORD (or
-their defaults) reachable, a snapshot already built via
-scripts/build_snapshot.py, harness/.venv pip-installed with mistral-vibe,
-`daytona login` already run locally, and both proxies up on
-WARM_PROXY_URL/COLD_PROXY_URL below.
+Requires: DAYTONA_API_KEY, a reachable NEO4J_URI/NEO4J_PASSWORD, a snapshot
+built via scripts/build_snapshot.py, harness/.venv with mistral-vibe, and both
+id_fix_proxy instances up on WARM_PROXY_URL/COLD_PROXY_URL (two of them is how
+per-swarm token usage is measured at all -- Vibe never surfaces per-call usage
+outside its own process).
 """
 from __future__ import annotations
 
@@ -86,7 +58,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.vibe_agent import (
     VIBE_BIN,
-    HARNESS_DIR,
     MigrationResult,
     _collect_file_contents,
     ensure_agent_venv,
@@ -98,24 +69,17 @@ from orchestrator.vibe_agent import (
 from orchestrator.events import EventBus
 from orchestrator.manifest import FIXTURE_DIR, load_manifest
 from orchestrator.memory import ScopedMemory, build_settings, graph_counts, reset_graph
-from orchestrator.sandbox import SandboxPool
+from orchestrator.sandbox import SandboxPool, install_cleanup_handlers
 from orchestrator.snapshot import is_stale, load_state, pool_kwargs_from_state
+from orchestrator.step_memory import StepMemoryService
 
-# Sec. 9.3: "Daytona org limits start at roughly 10 vCPU... will not fit
-# the starting cap" at swarm_size=6 (12 concurrent agents x 1 vCPU each).
-# Confirmed live: 12 agents starting simultaneously hit a hard
-# "Total CPU limit exceeded. Maximum allowed: 10" 400 from Daytona, losing
-# 2 of 24 (file, swarm) work items outright (a file whose agent dies this
-# way is now requeued instead of silently vanishing -- see agent_worker's
-# except clause). 4 a side (8 total) is the spec's own suggested fallback,
-# with real margin under the 10-vCPU cap rather than sitting exactly on it
-# (5 a side = 10 total would likely work most of the time but leaves zero
-# room for a sandbox from a previous sweep not yet fully released, or any
-# other concurrent account activity). This one is a real, externally
-# confirmed limit, not a guess -- unlike the constants removed below.
-# Overridable via --swarm-size. The demo's own mechanic is 4 a side; smaller
-# values exist to separate "the harness is broken" from "the GPU is saturated",
-# which is not a distinction the full-size run can make. See main().
+# 4 a side (8 agents). Daytona's org CPU cap is the binding constraint, not a
+# guess: 12 agents starting at once hit a hard "Total CPU limit exceeded.
+# Maximum allowed: 10" 400 and lost work items outright. 8 leaves real margin
+# for a sandbox from a previous sweep not yet released.
+#
+# Overridable via --swarm-size. Lower it to separate "the harness is broken"
+# from "the GPU is saturated", which a full-size run cannot distinguish.
 SWARM_SIZE = 4
 
 # Exceptions that mean "this harness is wrong", not "the network hiccuped".
@@ -124,79 +88,51 @@ SWARM_SIZE = 4
 # See agent_worker, and run 27 for what treating them as transient costs.
 _HARNESS_BUGS = (TypeError, AttributeError, NameError, ImportError, AssertionError)
 
+# Even for genuinely transient failures, an agent that cannot complete an
+# attempt this many times in a row is not going to. See agent_worker's retry
+# clause -- without a cap it span instantly for the whole deadline.
+MAX_CONSECUTIVE_AGENT_FAILURES = 5
+
 DEFAULT_HARD_DEADLINE_S = 300.0
 DEFAULT_MODEL = "Qwen/Qwen3-8B"
-# 32k window. Vibe compacts once the conversation passes this, so it has to
-# leave room for the tool schemas (~2k) plus whatever one tool returns.
+# Vibe compacts past this, so it must leave room for the tool schemas plus
+# whatever one tool returns, inside a 32k window.
 #
-# Raised from 12,000 once the two things that forced a low value were fixed:
-# the fed-back pytest output is now bounded at 6,000 characters (~1,500
-# tokens) by _trim_error_for_prompt, where it used to arrive at 43,000, and
-# stored tool results are capped as well. 12,000 had become actively harmful
-# to the warm arm, which carries the retrieved-memory block: measured on run
-# 50, warm averaged 12,838 prompt tokens per call against cold's 11,336 --
-# warm sitting just above the threshold and cold just below it, so warm
-# compacted on 18.1% of its messages against cold's 10.6%, and completed 8
-# attempts to cold's 17. The memory block is the thing being measured, so the
-# headroom moves rather than the block.
+# Raised from 12,000 because 12,000 penalised the arm under test: warm carries
+# the retrieved-memory block, so it averaged 12,838 prompt tokens per call
+# against cold's 11,336 -- warm just above the threshold, cold just below, so
+# warm compacted on 18.1% of messages against cold's 10.6% and completed 8
+# attempts to cold's 17. Move the headroom, not the block. Same value for both
+# swarms.
 #
-# 18,000 still leaves ~14k for the reply and the tool surface. Both swarms get
-# the same value, so it cannot skew the comparison.
-AUTO_COMPACT_THRESHOLD = 18000
+# Raised again, 18,000 -> 24,000, once the turn leash came off. With an
+# 8-turn cap an attempt ended before compaction mattered; unleashed, ONE
+# attempt took four compactions, and compaction is not free here -- it is
+# where the agent loses the work it has already done. Measured in that
+# attempt's transcript: after each compaction it re-read a file it had
+# already read and re-issued an edit it had already landed 26 messages
+# earlier, and Vibe's compaction summary truncates the preserved user
+# message mid-sentence, so the "do not import from pydantic.v1" instruction
+# fell out of context and the agent promptly tried the shim (then reverted
+# it unprompted).
+#
+# The model serves 32,768 (SGLang reports max_model_len=32768), so 18,000 was
+# compacting with ~14k of headroom unused. 24,000 leaves ~8k, which covers the
+# largest single `read_file` in this fixture (email_check.py, ~350 lines) plus
+# a turn of output. Not higher than that: the failure this threshold exists to
+# prevent is real and was measured at 35,516 tokens against a 32,768 limit,
+# and a session that dies of overflow cannot be resumed OR compacted.
+AUTO_COMPACT_THRESHOLD = 24000
 
-# Every agent gets its own VIBE_HOME (see vibe_home_for) -- separate config,
-# separate session logs, so `--continue` always resumes that agent's own
-# session and never a sibling's.
+# Every agent gets its own VIBE_HOME (vibe_home_for) and its own checkout
+# (run_dir), both OUTSIDE this repository, so fixture/, the answer key in
+# fixture/reference_v2/ and sibling agents are not reachable. They used to live
+# under harness/ and agents reached all three -- see NOTES-hard-won.md,
+# "Agents must stay in their own checkout".
 #
-# Agent checkouts live OUTSIDE this repository, one isolated tree each.
-#
-# They used to live at harness/run-{swarm}-{i}/, i.e. inside the same tree as
-# fixture/ (the pristine v1 source), fixture/reference_v2/ (the answer key)
-# and all seven sibling agents -- with Vibe running --trust/--auto-approve
-# over it. That is not a hypothetical exposure; the 2026-09-13 run did all
-# three things:
-#   * four warm agents edited fixture/fastapi_mail/config.py itself,
-#     corrupting the pristine source every later run seeds from (and
-#     corrupting it *wrongly*, dropping the `as Settings` alias);
-#   * warm-0, warm-1 and warm-3 each wrote into harness/run-cold-1/ --
-#     a warm agent editing a cold agent's codebase, which by itself
-#     invalidates the warm/cold comparison for that run;
-#   * one agent ran grep against fixture/reference_v2/, the answer key.
-# The agents were not being adversarial. They were handed absolute paths in
-# the fed-back pytest output, walked up from them, and found a tree full of
-# pydantic-v1 code that looked like more of their own task.
-#
-# Moving the checkouts out of the repo removes the fixture, the answer key
-# and this project's own source from reach entirely. Siblings still share a
-# parent, so this is containment by construction rather than a sandbox --
-# check_containment() below is the backstop that makes any remaining
-# crossing loud instead of silent.
-# SHORT on purpose. This used to be `tempfile.gettempdir() / "miss-slaytona-
-# forje-agents"`, which on macOS expands to
-# /var/folders/r9/py7xygs97mdfz1lxk_gyfmlw0000gp/T/... -- a 20-character random
-# blob the agent has to reproduce exactly, every time, by hand.
-#
-# It has to reproduce it by hand because every file path it uses is absolute:
-# Vibe's own read_file description says "Use absolute paths", and run 13's
-# transcripts contain 9 absolute file paths and 0 relative ones. Two of those
-# 9 (22%) were typos -- `gyfmlw00000gp` for `gyfmlw0000gp`, one zero too many --
-# and both were `edit` calls on cold-1's schemas.py. The writes went to a
-# directory that does not exist, so they failed, and cold-1's schemas.py was
-# still pristine v1 at the end of the run. The agent believed it had made the
-# edit; the orchestrator uploaded the unedited file to Daytona; the suite
-# failed on a change the agent had already "made". Nothing in the run output
-# said so, and check_containment() reported it as a containment violation,
-# which invalidated the whole run's comparison.
-#
-# 118 characters down to 47, with nothing random in the middle. Still outside
-# this repository, so the containment property that moved these checkouts out
-# of the tree in the first place is unchanged.
-#
-# .resolve() stays load-bearing: on macOS /tmp is a symlink to /private/tmp,
-# and Vibe records a session against its *resolved* cwd. Launching it with the
-# unresolved spelling made `--continue` look up a cwd it had never seen and die
-# with "No previous sessions found" -- warm-0 once burned 27 consecutive
-# 8-second attempts that way, which also faked a 2.05x token ratio.
+# The path is short and has nothing random in it, and .resolve() is
+# load-bearing: NOTES-hard-won.md, "Keep the paths the model must retype
+# short". Do not make this a tempfile.mkdtemp().
 AGENT_ROOT = Path(os.environ.get("M4_AGENT_ROOT", "/tmp/msf-agents")).resolve()
 
 
@@ -207,25 +143,11 @@ def run_dir(swarm: str, agent_id: int) -> Path:
 def clear_session_logs(swarm: str, agent_id: int) -> None:
     """Delete this agent's Vibe session transcripts from previous runs.
 
-    A run is a fresh experiment and its checkout is reseeded to pristine v1
-    (see seed_repo), but VIBE_HOME persisted, so transcripts accumulated
-    forever -- 14 to 17 session directories per agent by run 34.
-
-    That is a pure warm-swarm handicap, and a growing one.
-    _replay_session_messages() globs every transcript under VIBE_HOME, and the
-    `replayed` line-offset dict is a local in migrate_codebase() that starts
-    empty each run. So on attempt 1 of every run each warm agent replayed every
-    message it had ever produced, in any earlier run, into the current run's
-    trace: measured at 476 messages over 16 transcripts, 118.6s of memory work
-    on warm-1 alone, against a 600s budget. Cold has mem=None and pays none of
-    it, which is most of why cold consistently got more attempts (11 vs 7 in
-    run 34).
-
-    It also corrupted the data: tool calls from a run days earlier were being
-    attached as ReasoningSteps to a trace keyed on today's error.
-
-    Within a run the directory still persists, which is what `--continue`
-    needs; only history from previous runs goes."""
+    Within a run the directory persists, which is what `--continue` needs;
+    only history from earlier runs goes. Without this, warm agents replayed
+    every message they had ever produced into the current run's trace, and
+    attached tool calls from days earlier to a trace keyed on today's error --
+    NOTES-hard-won.md, "Clear session logs between runs"."""
     logs = vibe_home_for(swarm, agent_id) / "logs" / "session"
     if logs.is_dir():
         shutil.rmtree(logs, ignore_errors=True)
@@ -234,29 +156,12 @@ def clear_session_logs(swarm: str, agent_id: int) -> None:
 def vibe_home_for(swarm: str, agent_id: int) -> Path:
     """A SIBLING of the agent's checkout, never a child of it.
 
-    This used to be `run_dir(swarm, agent_id) / ".vibe"`, which put Vibe's own
-    session transcripts inside the directory the agent was told to search --
-    and `messages.jsonl` is one JSON object per line, with lines up to 210,108
-    characters. So:
+    Put the home inside the directory the agent searches and its own
+    transcript becomes a grep target -- one match is a 210,000-character line,
+    and a 32k context window is gone in one tool result. NOTES-hard-won.md,
+    "VIBE_HOME must be a sibling of the checkout".
 
-        agent edits config.py, writes about BaseSettings
-          -> its transcript now contains "BaseSettings"
-          -> agent greps "BaseSettings" to find what else to migrate
-          -> grep matches its own transcript and returns a 64,000-char line
-          -> the 32,768-token context window is gone in one tool result
-
-    Measured in run 11: seven greps returned ~64k chars each, `max_matches: 10`
-    made no difference because a single match *is* a 210k line, and 827,189
-    characters of tool results were produced across 75 results. Eight agents
-    managed 15 attempts between them in 411 seconds.
-
-    The placement was never necessary. `get_vibe_home()` (vibe/utils/paths.py)
-    reads $VIBE_HOME directly and session logs go to $VIBE_HOME/logs/session,
-    so the home can be anywhere. An earlier comment here claimed `<cwd>/.vibe`
-    was forced because Vibe's project layer checks it first -- that layer only
-    wins when such a file *exists* (core/config/layers/project.py:113), which
-    was true of harness/'s stale leftover config and is not true of a freshly
-    seeded checkout that has no .vibe at all."""
+    Session logs go to $VIBE_HOME/logs/session, so the home can be anywhere."""
     return AGENT_ROOT / f"{swarm}-{agent_id}.vibe"
 
 
@@ -271,13 +176,13 @@ def seed_repo(swarm: str, agent_id: int, package_path: str, tests_path: str) -> 
     """Lays down this agent's local checkout: the real thing a user would
     have open, not a fragment of one.
 
-    Three things go in, and all three matter:
+    What goes in:
 
     * `<package_path>/` -- the pydantic v1 source. The only thing Vibe is
       expected to edit, and the only thing uploaded to Daytona for the
       independent check (see _collect_file_contents).
-    * `<tests_path>/` -- the real (post-migration) suite. Seeded read-only
-      in spirit: the agent may read it, but edits to it are never uploaded,
+    * `<tests_path>/` -- the real (post-migration) suite. Test SOURCE is left
+      read-only: the agent may read it, but edits to it are never uploaded,
       so the Daytona oracle always runs the pristine suite and cannot be
       gamed. Without this the agent was being handed pytest tracebacks
       naming `tests/conftest.py` and had no such file to open -- 524
@@ -285,6 +190,7 @@ def seed_repo(swarm: str, agent_id: int, package_path: str, tests_path: str) -> 
       paths that could not exist on the machine it was running on.
     * `requirements-v2.txt` -- so "what version am I targeting" is
       answerable from the checkout rather than guessed.
+    * ROOT_FILES -- the upstream repo's own root files, see below.
 
     Then `git init` + one commit. This is not decoration: Vibe's project
     context (vibe/core/system_prompt.py) is *only* the absolute path plus
@@ -293,8 +199,53 @@ def seed_repo(swarm: str, agent_id: int, package_path: str, tests_path: str) -> 
     checkout, so this makes the agent's environment match one instead of
     being a stripped-down approximation of it.
 
+    ROOT_FILES is the same argument taken seriously. The checkout used to be
+    exactly `fastapi_mail/  tests/  requirements-v2.txt  .gitignore` -- no
+    README, no pyproject.toml, no Makefile, nothing stating how the project is
+    built or tested. `INCLUDED_RELATIVE_PATHS` had stripped all of it when the
+    fixture was built. So the agent was dropped into a codebase with no
+    conventions, and the harness compensated by hand: ~2,500 tokens of prompt
+    telling it how to invoke pytest, which was us answering a question the repo
+    should answer for itself. That prompt is gone (see _task_prompt), and these
+    are what replace it -- not our words, the project's.
+
+    They are real files from sabuhish/fastapi-mail at fab70e4, the same
+    pre-migration commit `fastapi_mail/` comes from, and Vibe reads this kind
+    of thing already: `read_file` surfaces per-directory AGENTS.md, and the
+    Makefile here carries the project's own `test:` target
+    (`pytest -vvv --cov ...`). pyproject.toml matters most of all -- it pins
+    `pydantic = "^1.8"`, and the REAL migration (PR #195) changed exactly that
+    line, so it is a legitimate part of the job the agent could not previously
+    even see. reference_v2/pyproject.toml holds the post-migration version so
+    the answer key is complete.
+
+    Excluded on purpose, and each exclusion is a real limitation:
+
+    * `poetry.lock` -- 104KB, and the real PR regenerated 899 lines of it.
+      Regenerating it needs poetry and a network the sandbox does not have,
+      and a 104KB file one `read_file` away from a 32k context window is a
+      context bomb. So dependency resolution is out of scope here.
+    * `docs/`, `examples/` -- examples/ imports fastapi_mail, so it is extra
+      migration surface the Daytona oracle never checks. Including it would
+      let an agent spend turns on work that cannot be graded.
+    * `.github/` -- CI config for a CI that is not running.
+
+    Note that an agent's pyproject.toml edit is NOT uploaded to Daytona either
+    (_collect_file_contents takes package_path only). That is accurate rather
+    than a gap: the sandbox installs from requirements-v2.txt and pytest reads
+    no config from pyproject (there is no [tool.pytest.ini_options]), so the
+    declaration genuinely cannot be verified by running the suite -- exactly as
+    in the real repo.
+
     Wipes any prior copy first, so a stale edit from an earlier run never
     leaks into a fresh one."""
+    # Real root files from the upstream pre-migration commit. Small on purpose;
+    # see the docstring for what is deliberately left out.
+    ROOT_FILES = (
+        "README.md", "pyproject.toml", "CONTRIBUTING.md", "Makefile",
+        "tox.ini", ".flake8", "LICENSE", "MANIFEST.in", "contributors.txt",
+        "mkdocs.yml",
+    )
     dst = run_dir(swarm, agent_id)
     for rel in (package_path, tests_path):
         target = dst / rel
@@ -308,47 +259,51 @@ def seed_repo(swarm: str, agent_id: int, package_path: str, tests_path: str) -> 
             shutil.rmtree(target)
         shutil.copytree(FIXTURE_DIR / rel, target, ignore=_IGNORE_JUNK)
     shutil.copy2(FIXTURE_DIR / "requirements-v2.txt", dst / "requirements-v2.txt")
+    for name in ROOT_FILES:
+        src = FIXTURE_DIR / name
+        if src.exists():
+            shutil.copy2(src, dst / name)
 
-    # fixture/ is chmod a-w on disk, because agents have repeatedly found and
-    # edited it despite living outside this repo -- twice they rewrote
-    # fastapi_mail/config.py, and once left schemas.py holding
-    # `@model_validator(mode='after')("attachments")`, which is not valid
-    # Python. Directory placement is not containment when the agent has bash
-    # and --trust; a read-only source is.
-    #
-    # But shutil.copytree/copy2 preserve mode, so the agent's own checkout
-    # would inherit r-xr-xr-x and every edit would fail. Restore write on the
-    # copy only: the agent owns its checkout, nobody owns the fixture.
+    # fixture/ is chmod a-w on disk, because directory placement is not
+    # containment when the agent has bash and --trust: agents have twice
+    # rewritten fastapi_mail/config.py in the pristine source, once leaving it
+    # holding `@model_validator(mode='after')("attachments")`, which is not
+    # valid Python. But copytree preserves mode, so restore write on the copy
+    # -- the agent owns its checkout, nobody owns the fixture.
     for path in dst.rglob("*"):
         path.chmod(path.stat().st_mode | 0o200)
 
-    # ...except the test suite, which is the oracle and is therefore read-only.
+    # ...except the test suite, which is the oracle. This is not a safety
+    # bolt-on, it is making the checkout tell the truth: _collect_file_contents
+    # uploads only <package_path>, so an edit to tests/ is silently discarded
+    # and the agent believes it fixed something the grader never sees.
     #
-    # This is not a guard bolted on for safety -- it is making the checkout
-    # tell the truth. _collect_file_contents() uploads only <package_path> to
-    # Daytona, so an edit to tests/ is silently discarded: the agent believes
-    # it fixed something and the suite it is graded by never sees the change.
-    #
-    # Measured in run 15: 32 of 64 `edit` calls -- half of every edit made in
-    # the run -- targeted tests/conftest.py. They failed with "String to
-    # replace not found in file", because conftest.py is already v2 and has no
+    # Measured in run 15: 32 of 64 `edit` calls -- half of every edit in the
+    # run -- targeted tests/conftest.py, which is already v2 and has no
     # pydantic import at all. It appears in the traceback only as the top frame
-    # of the import chain:
+    # of the import chain, and the agent reads that top-down. Read-only turns a
+    # misleading "String to replace not found" into an immediate, accurate
+    # permission error.
     #
-    #     tests/conftest.py:7: in <module>
-    #         from fastapi_mail.email_utils import DefaultChecker
-    #     fastapi_mail/config.py:5: in <module>
-    #         from pydantic import BaseSettings as Settings
-    #     E   PydanticImportError: `BaseSettings` has been moved ...
+    # ONLY the .py files, and this is not a detail. Locking the whole tree made
+    # the local suite UNPASSABLE: four of the 33 tests write an attachment
+    # fixture (`with open(attachement, "w")` in test_message.py:90 and three in
+    # test_connection.py) into tests/txt_files/, so they failed with
+    # PermissionError no matter what the agent did to the package. Verified
+    # against the answer key -- fixture/reference_v2, the real merged
+    # migration, scored 29/33 in a seeded checkout for this reason alone.
     #
-    # The agent reads that top-down and goes to work on the first file named.
-    # Read-only means it now gets an immediate, accurate "permission denied"
-    # instead of a misleading string-match failure, and learns in one turn that
-    # the suite is not its to change -- which is also true of most real
-    # migrations.
-    for path in (dst / tests_path).rglob("*"):
+    # Every one of those failures is unfixable from the package, and the prompt
+    # tells the agent this suite is "the same suite your work is judged on" and
+    # to "keep going until the suite passes". So the agent was instructed to
+    # chase a green suite that its own checkout could not produce, while the
+    # Daytona oracle -- which runs as root and ignores the mode bits -- could.
+    # The two disagreed by four tests and nothing said so.
+    #
+    # Data files the suite writes into stay writable. Test SOURCE stays locked,
+    # which is all the original measurement was about.
+    for path in (dst / tests_path).rglob("*.py"):
         path.chmod(path.stat().st_mode & ~0o222)
-    (dst / tests_path).chmod((dst / tests_path).stat().st_mode & ~0o222)
 
     # A real checkout has a .gitignore; this is that. `git status` is most of
     # what Vibe puts in the system prompt, so build junk showing as untracked
@@ -359,15 +314,20 @@ def seed_repo(swarm: str, agent_id: int, package_path: str, tests_path: str) -> 
 
     if not (dst / ".git").exists():
         subprocess.run(["git", "init", "-q", "."], cwd=dst, check=True)
-    # Identity in the repo config, not just on the seeding commit. The seed
-    # commit below passes `-c user.email=...` inline, which configures nothing
-    # persistent -- so every commit the *agent* then tried failed with "Please
-    # tell me who you are". Run 15 burned six turns that way across four
-    # agents. Committing is not part of the task, but an agent that decides to
-    # commit should not be punished for it by a hole in the harness's setup.
+    # Identity in the repo CONFIG, not just on the seed commit: the seed
+    # commit's inline `-c user.email=...` configures nothing persistent, so
+    # every commit the *agent* tried failed with "Please tell me who you are"
+    # (six wasted turns across four agents in run 15). Committing is not part
+    # of the task, but an agent that chooses to commit should not be punished
+    # for it by a hole in our setup.
     subprocess.run(["git", "config", "user.email", "demo@example.com"], cwd=dst, check=True)
     subprocess.run(["git", "config", "user.name", "demo"], cwd=dst, check=True)
-    subprocess.run(["git", "add", "-A", package_path, tests_path, "requirements-v2.txt", ".gitignore"],
+    # ROOT_FILES are committed too, not left untracked. `git status` is most of
+    # what Vibe puts in its system prompt, so an uncommitted README/pyproject
+    # reads to the model as work in progress that someone just dropped in --
+    # which is the opposite of "this is the project's existing convention".
+    subprocess.run(["git", "add", "-A", package_path, tests_path, "requirements-v2.txt",
+                    ".gitignore", *(n for n in ROOT_FILES if (dst / n).exists())],
                    cwd=dst, check=True)
     subprocess.run(
         ["git", "-c", "user.email=demo@example.com", "-c", "user.name=demo",
@@ -425,6 +385,7 @@ async def agent_worker(
     results: list,
     baseline_signature: str | None = None,
     baseline_passed: int = 0,
+    step_memory: StepMemoryService | None = None,
 ) -> MigrationResult:
     """One agent, one whole-codebase task -- no queue, nothing to claim: all
     N agents in a swarm are given the identical prompt ("migrate this
@@ -455,6 +416,7 @@ async def agent_worker(
     # for both swarms after 21 cold and 5 warm ATTEMPT_STARTs, because no agent
     # reached the end of its own loop before the clock ran out.
     best = MigrationResult(False, 0)
+    consecutive_failures = 0
 
     while True:
         remaining = deadline - time.monotonic()
@@ -474,6 +436,11 @@ async def agent_worker(
                 session_id=session_id,
                 baseline_signature=baseline_signature,
                 baseline_passed=baseline_passed,
+                # So each attempt's trace id reaches the step hook: the hook
+                # only gets what Vibe hands it, which knows nothing about
+                # attempts or traces.
+                step_memory=step_memory,
+                agent_label=session_id,
             )
             results.append((swarm, agent_id, result))
             return result
@@ -494,7 +461,27 @@ async def agent_worker(
         except Exception as exc:
             # Genuinely transient: Daytona's per-org CPU cap when many agents
             # request a sandbox at once, a dropped connection, a timeout.
-            print(f"  [{swarm}-{agent_id}] {exc!r} -- retrying")
+            #
+            # Backed off, and counted. This used to retry instantly and
+            # forever: any failure that raises immediately -- a missing `vibe`
+            # binary is FileNotFoundError, which is an OSError and so not in
+            # _HARNESS_BUGS -- turned this into a tight loop that printed until
+            # the deadline and reported a normal-looking 0-attempt result.
+            consecutive_failures += 1
+            if consecutive_failures >= MAX_CONSECUTIVE_AGENT_FAILURES:
+                print(
+                    f"  [{swarm}-{agent_id}] {exc!r} -- "
+                    f"{consecutive_failures} consecutive failures, giving up on this agent"
+                )
+                traceback.print_exc()
+                result = MigrationResult(False, best.attempts)
+                results.append((swarm, agent_id, result))
+                return result
+            print(
+                f"  [{swarm}-{agent_id}] {exc!r} -- retrying "
+                f"({consecutive_failures}/{MAX_CONSECUTIVE_AGENT_FAILURES})"
+            )
+            await asyncio.sleep(min(30.0, 2.0 ** consecutive_failures))
 
 
 async def run_swarm(swarm: str, tasks: list[asyncio.Task]) -> None:
@@ -529,7 +516,19 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
 
     run_id = f"m4-{int(time.time())}"
     bus = EventBus(run_id)
-    deadline = time.monotonic() + hard_deadline_s
+    setup_start = time.monotonic()
+    # NOTE: `deadline` is deliberately NOT set here. It is set immediately
+    # before the agents start (search for `deadline =` below).
+    #
+    # It used to be set on this line, so everything between here and the first
+    # ATTEMPT_START came out of the agents' budget: eight render_config calls,
+    # check_mcp_servers starting four MCP servers with 120s smoke tests against
+    # OpenAI and Neo4j, the two memory warmups, and the baseline Daytona pytest.
+    # Measured: RUN_START was stamped at t=68.9s, and every `--deadline-s 600`
+    # run in runs/accumulation.csv reports a 533-546s wall-clock, because
+    # `wall_start` was taken after setup while `deadline` was taken before it.
+    # ~10% of every run was silently spent on preflight, and the summary said
+    # otherwise.
 
     # One render per agent, not per swarm: each warm agent's memory MCP
     # server registration needs its own pending-patterns file. Cold agents
@@ -543,6 +542,15 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
     # only used by migrate_codebase() to run and validate.
     package_path = manifest["package_path"]
     tests_path = manifest["tests_path"]
+
+    # The step-memory sidecar, started BEFORE render_config because each warm
+    # agent's hooks.toml has to carry its port. Bound to 127.0.0.1 on an
+    # ephemeral port; holds one warm ScopedMemory per warm agent so the
+    # per-tool-call hook is a loopback round-trip rather than a 1.5s package
+    # import. See orchestrator/step_memory.py.
+    step_memory = StepMemoryService()
+    await step_memory.start()
+
     for i in range(SWARM_SIZE):
         seed_repo("warm", i, package_path, tests_path)
         seed_repo("cold", i, package_path, tests_path)
@@ -552,6 +560,12 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
             WARM_PROXY_URL, model, vibe_home=vibe_home_for("warm", i),
             active_model_alias="qwen-warm", auto_compact_threshold=AUTO_COMPACT_THRESHOLD,
             memory_enabled=True,
+            # Writes $VIBE_HOME/hooks.toml, so this agent records each step in
+            # the graph as it takes it and sees what other agents hit at the
+            # same point. Warm only -- cold gets no hooks.toml at all. See
+            # orchestrator/step_memory.py.
+            step_hook_port=step_memory.port,
+            agent_label=f"warm-{i}",
         )
         render_config(
             COLD_PROXY_URL, model, vibe_home=vibe_home_for("cold", i),
@@ -562,8 +576,20 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
     # one warm and one cold config because they differ: warm registers
     # neo4j-agent-memory as well as web, and a broken memory server is exactly
     # the failure that reads as "the model didn't use memory".
+    #
+    # `skip` stops the second pass re-smoke-testing `web`. That smoke test is
+    # a real, BILLED OpenAI hosted web_search call -- and the `web` server is
+    # byte-identical in both arms, so the cold pass was re-proving the warm
+    # pass's result at full price. Measured across today's runs: 30 web_lookup
+    # calls in total, 16 of them this smoke test, i.e. over half of all web
+    # spend went on proving a server was alive rather than on any agent's
+    # question. Memory is still checked, because it is the thing that differs.
+    smoke_tested: set[str] = set()
     for swarm in ("warm", "cold"):
-        problems = await check_mcp_servers(vibe_home_for(swarm, 0))
+        problems = await check_mcp_servers(
+            vibe_home_for(swarm, 0), skip=smoke_tested
+        )
+        smoke_tested.add("web")
         for problem in problems:
             print(f"PREFLIGHT ({swarm}): {problem}")
         if problems:
@@ -578,9 +604,24 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
     mem_settings = build_settings()
     results: list[tuple[str, int, MigrationResult]] = []
     test_command = manifest["test_command"]
+    # None means "the run never got far enough to extract" -- distinct from 0,
+    # which means extraction ran and found nothing. The summary prints the
+    # difference.
+    entities_extracted: int | None = None
+    # Initialised out here for the same reason: the summary prints it, and a
+    # run that dies before the extraction block must not turn into a NameError
+    # in the reporting code.
+    steps_linked: int = 0
 
     async with AsyncDaytona() as client, MemoryClient(mem_settings) as mem_client:
         pool = SandboxPool(client, run_id=run_id, **pool_kwargs)
+        # Wired, finally. sandbox.py has shipped this since M2 and nothing ever
+        # called it, so a Ctrl-C or a SIGTERM mid-run left every live sandbox
+        # running and billable -- the exact leak the module docstring says is
+        # "the standard way to overspend on Daytona". The in-run `finally` in
+        # SandboxPool.sandbox() does not help there: the interpreter is going
+        # away, not unwinding.
+        install_cleanup_handlers(pool)
         await pool.sweep()
 
         # Force the embedding model to load and the vector indexes to be
@@ -591,16 +632,35 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         # warm's memory setup cost straight into cold's wall-clock. Paid once
         # here, outside the measured window, where it belongs.
         warmup_mem = ScopedMemory(mem_client, user_identifier="warm")
-        await warmup_mem.get_context("warmup")
+        # Read side, via the package client directly -- ScopedMemory no longer
+        # wraps get_context, because the orchestrator no longer retrieves on an
+        # agent's behalf. The agents do their own reading over MCP; this call
+        # exists only to pay the model load here rather than inside the
+        # measured window.
+        await mem_client.get_context("warmup", session_id="warmup")
         # The write path too, not just the read path. The extraction pipeline
         # loads spaCy's en_core_web_sm and GLiNER's gliner_medium-v2.5 on first
         # use -- measured at 12.8s -- and that load would otherwise land on
         # whichever warm agent stored the first message, inside the measured
         # window. Same reasoning as the get_context warmup above.
+        #
+        # The CONTENT is deliberately unrelated to the task. It used to read
+        # "migrating fastapi_mail config.py from pydantic BaseSettings to
+        # pydantic_settings for Pydantic v2" -- which is the correct fix for
+        # the first file in the failure chain, written into the warm arm's
+        # memory scope, on every run, and nowhere in cold's. Confirmed in the
+        # graph: a Conversation {session_id:'warmup', user_identifier:'warm'}
+        # with `pydantic_settings`, `pydantic-settings` and `pydantic
+        # BaseSettings` all present as warm-scope entities, retrievable by
+        # get_context's long-term search. The warm swarm was being handed part
+        # of the answer by the thing that was only supposed to load a model.
+        #
+        # Any string of similar length loads the same models, so this one says
+        # nothing about pydantic, migrations, or this codebase.
         await warmup_mem.add_message(
             "warmup", "assistant",
-            "Warmup message: migrating fastapi_mail config.py from pydantic "
-            "BaseSettings to pydantic_settings for Pydantic v2.",
+            "Warmup message: Priya Raman met Tomas Nowak in Lisbon on Tuesday "
+            "to discuss the quarterly logistics review at Acme Freight.",
         )
 
         # The suite's starting state, measured rather than assumed. Every
@@ -632,19 +692,38 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         baseline_passed = tests_passed(baseline_result.output)
         print(f"  baseline: {baseline_passed} tests passing | {baseline_signature or 'no error signature'}")
 
+        setup_s = time.monotonic() - setup_start
+        print(f"  setup: {setup_s:.1f}s (outside the agents' budget)")
+
+        # The agents' clock starts HERE, not at the top of main_async. Every
+        # agent and the whole loop share this one absolute timestamp.
+        deadline = time.monotonic() + hard_deadline_s
+
         await bus.emit(
             "RUN_START", run_id=run_id, package=manifest["package_path"],
-            test_command=test_command, model=model,
+            test_command=test_command, model=model, setup_s=round(setup_s, 1),
+            deadline_s=hard_deadline_s,
         )
+
+        # One ScopedMemory per warm agent, shared between that agent's worker
+        # and the step hook -- the hook must write into the SAME scope the
+        # worker opens its trace in, or its steps hang off nothing.
+        warm_mems = {
+            i: ScopedMemory(mem_client, user_identifier="warm")
+            for i in range(SWARM_SIZE)
+        }
+        for i, m in warm_mems.items():
+            step_memory.register(f"warm-{i}", m)
 
         warm_tasks = [
             asyncio.ensure_future(agent_worker(
                 swarm="warm", agent_id=i, pool=pool,
-                mem=ScopedMemory(mem_client, user_identifier="warm"),
+                mem=warm_mems[i],
                 vibe_home=vibe_home_for("warm", i), vibe_cwd=run_dir("warm", i),
                 repo_dir=repo_dir_for("warm", i, package_path),
                 test_command=test_command, deadline=deadline, bus=bus, results=results,
                 baseline_signature=baseline_signature, baseline_passed=baseline_passed,
+                step_memory=step_memory,
             ))
             for i in range(SWARM_SIZE)
         ]
@@ -688,6 +767,45 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         if leaked:
             print(f"  WARNING: swept {leaked} sandbox(es) not accounted for locally")
 
+        # Entities, once, AFTER the agents' clock has stopped and while
+        # mem_client is still open. Messages are stored during the run with
+        # extract_entities=False, because extraction is 0.50s of spaCy +
+        # GLiNER + OpenAI per message -- 45.5s per attempt when it ran inline,
+        # paid by warm alone, and most of why warm completed 8-10 attempts per
+        # run against cold's 21-28. This is the package's own answer: its
+        # docstring names extract_entities_from_session for "messages loaded
+        # without extraction". Same entities, same POLE+O typing, off the
+        # agents' budget.
+        # Both halves, because they cover different text and neither covers the
+        # other. extract_entities_from_session reads MESSAGES; nothing in the
+        # package reads ReasoningStep.thought -- add_step only embeds. On this
+        # task the reasoning is where the substance is, and most of it never
+        # becomes a message: a turn that is pure reasoning plus a tool call has
+        # no text content at all.
+        #
+        # link_step_entities was written for that gap and then called from
+        # nowhere. The run it shipped in recorded 141 steps, 15 Entity nodes
+        # and ZERO (:ReasoningStep)-[:TOUCHED]->(:Entity) edges; the 101 edges
+        # credited to it came from a throwaway script run by hand against a
+        # finished graph, never from a run.
+        entities_extracted = 0
+        for i in range(SWARM_SIZE):
+            scoped = ScopedMemory(mem_client, user_identifier="warm")
+            try:
+                stats = await scoped.extract_entities_from_session(f"warm-{i}")
+                entities_extracted += sum(
+                    v for v in stats.values() if isinstance(v, int)
+                )
+            except Exception as exc:
+                print(f"  entity extraction failed for warm-{i}: {exc!r}")
+            # Separately guarded: the two draw on the same extractor but fail
+            # independently, and losing the messages half must not silently
+            # take the reasoning half with it.
+            try:
+                steps_linked += await scoped.link_step_entities(f"warm-{i}")
+            except Exception as exc:
+                print(f"  step entity linking failed for warm-{i}: {exc!r}")
+
         warm_results = [r for (s, _a, r) in results if s == "warm"]
         cold_results = [r for (s, _a, r) in results if s == "cold"]
         warm_usage = usage_delta(warm_usage_before, fetch_usage(WARM_PROXY_URL))
@@ -708,7 +826,21 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
     warm_passed = sum(r.success for r in warm_results)
     cold_passed = sum(r.success for r in cold_results)
     gpu_cost = (elapsed_s / 3600.0) * GPU_COST_PER_HOUR
-    token_ratio = (cold_tokens / warm_tokens) if warm_tokens else float("nan")
+
+    # Input and output, never just their sum. Prompt tokens dominate by ~36x
+    # here, so a combined ratio is a prompt-token ratio wearing a disguise: the
+    # 2026-09-16 run reported 0.867 combined while output was 1.001 -- i.e. the
+    # two swarms generated the SAME amount and differed only in what they were
+    # made to read. Those are opposite findings and the sum reported one of
+    # them. Input is mostly context growth (retrieved steps, injected hook
+    # output, a longer prompt); output is what the model actually produced.
+    def _ratio(numerator: int, denominator: int) -> float:
+        return (numerator / denominator) if denominator else float("nan")
+
+    input_ratio = _ratio(cold_usage["prompt_tokens"], warm_usage["prompt_tokens"])
+    output_ratio = _ratio(
+        cold_usage["completion_tokens"], warm_usage["completion_tokens"]
+    )
 
     print()
     print("=" * 60)
@@ -718,13 +850,14 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
     # cancelled reads as "everyone succeeded" -- it was 1 of 4.
     print(f"WARM (shared memory):  {warm_passed}/{SWARM_SIZE} agents converged"
           f" | {warm_usage['requests']} LLM calls"
-          f" | {warm_usage['prompt_tokens']} prompt + {warm_usage['completion_tokens']} completion"
-          f" = {warm_tokens} tokens")
+          f" | in {warm_usage['prompt_tokens']:,} / out {warm_usage['completion_tokens']:,}"
+          f" = {warm_tokens:,} tokens")
     print(f"COLD (no memory):      {cold_passed}/{SWARM_SIZE} agents converged"
           f" | {cold_usage['requests']} LLM calls"
-          f" | {cold_usage['prompt_tokens']} prompt + {cold_usage['completion_tokens']} completion"
-          f" = {cold_tokens} tokens")
-    print(f"token_ratio (cold/warm): {token_ratio:.3f}")
+          f" | in {cold_usage['prompt_tokens']:,} / out {cold_usage['completion_tokens']:,}"
+          f" = {cold_tokens:,} tokens")
+    print(f"ratio (cold/warm):  input {input_ratio:.3f}  output {output_ratio:.3f}"
+          f"   [>1 = warm cheaper]")
 
     # What each swarm actually achieved, which the token ratio alone does not
     # say. Run 28 reported token_ratio 1.543 -- apparently a 35% saving for
@@ -735,25 +868,65 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
     def _depth(label: str, rs: list[MigrationResult], usage: dict) -> None:
         attempts = sum(r.attempts for r in rs)
         cleared = [r.errors_cleared for r in rs] or [0]
-        tokens = usage["prompt_tokens"] + usage["completion_tokens"]
-        per_attempt = tokens / attempts if attempts else float("nan")
+        nan = float("nan")
+        in_per = usage["prompt_tokens"] / attempts if attempts else nan
+        out_per = usage["completion_tokens"] / attempts if attempts else nan
         print(
             f"  {label:5} errors cleared: best {max(cleared)}, total {sum(cleared)}"
             f" | best tests passing {max((r.best_passed for r in rs), default=0)}"
-            f" | {attempts} attempts | {per_attempt:,.0f} tokens/attempt"
+            f" | {attempts} attempts"
+            f" | {in_per:,.0f} in + {out_per:,.0f} out per attempt"
         )
 
     print()
     print("progress (neither swarm converging makes this the comparable measure):")
     _depth("warm", warm_results, warm_usage)
     _depth("cold", cold_results, cold_usage)
-    print(f"wall-clock: {elapsed_s:.1f}s")
+    print(f"wall-clock: {elapsed_s:.1f}s agents (+{setup_s:.1f}s setup, outside the budget)")
     print(f"GPU cost (this run, ${GPU_COST_PER_HOUR}/hr): ${gpu_cost:.4f}")
     print(f"event log: runs/{run_id}.jsonl")
-    return 0
+
+    # THE GATE, printed last, because everything above it can look healthy on a
+    # run that measured nothing. 40 consecutive runs reported plausible token
+    # ratios and 4 attempts a side while the oracle never ran once: one Vibe
+    # invocation ate the whole deadline, so pool.run_pytest was called with
+    # ~0s and raised, and every trace closed without a verdict. Nothing in the
+    # summary said so. A zero here means throw the run away.
+    graded = sum(1 for e in bus.events if e["type"] == "ATTEMPT_DONE")
+    oracle = sum(1 for e in bus.events if e["type"] == "SANDBOX_CREATED")
+    reads = [e for e in bus.events if e["type"] == "MEMORY_READ"]
+    print()
+    if graded and oracle:
+        print(f"GATE ok: {graded} attempt(s) graded by {oracle} real Daytona run(s).")
+    else:
+        print(f"GATE FAILED: {graded} attempts graded, {oracle} oracle runs. "
+              f"This run measured NOTHING -- discard it. Every number above is "
+              f"an artifact of agents that never reached a verdict.")
+    if reads:
+        calls = sum(e.get("hits", 0) for e in reads)
+        srcs = sorted({s for e in reads for s in e.get("sources") or []})
+        # "calls", not "hits". This counts what the agent ASKED, which is not
+        # what it got: the first agent-initiated read in this project's history
+        # was `memory_get_context(session_id=null, query=null)`, and the server
+        # answered with an OpenAI 400 ("input cannot be an empty string").
+        # Reported as a hit at the time, which was wrong.
+        print(f"     warm memory tools: {len(reads)} attempt(s) called them, "
+              f"{calls} call(s), {srcs or 'nobody'}")
+    # The per-step hook is the honest measure of shared reasoning: steps the
+    # AGENTS wrote as they worked, and prior agents' steps injected back into
+    # their tool output. See orchestrator/step_memory.py.
+    print(f"     {step_memory.summary()}")
+    if entities_extracted is not None:
+        print(f"     entities extracted after the clock stopped: {entities_extracted} "
+              f"from messages, {steps_linked} TOUCHED edge(s) from reasoning steps")
+    if step_memory.steps_written == 0:
+        print("     the step hook wrote nothing -- warm's graph is empty, so "
+              "warm == cold and any token_ratio above is a null result.")
+    await step_memory.stop()
+    return 0 if (graded and oracle) else 1
 
 
-def check_containment(run_started_at: float) -> list[str]:
+def check_containment(run_started_at: float) -> tuple[list[str], list[str]]:
     """Did any agent edit something that was not its own checkout?
 
     Scans each agent's own Vibe transcript for `edit`/`write_file` calls
@@ -763,6 +936,15 @@ def check_containment(run_started_at: float) -> list[str]:
     this demo exists to make, and that has to be shouted rather than left for
     someone to notice in a diff three runs later. Also re-checks the fixture
     hash, since a corrupted fixture silently poisons every future run's seed.
+
+    SCOPE, stated because it was previously overclaimed: this sees `edit` and
+    `write_file` only. Vibe also ships `bash`, `git_bash` and
+    `experimental_bash`, all enabled under --trust --auto-approve, and agents
+    use bash constantly (7 of 22 calls in one measured session). An agent that
+    writes with `sed -i` or `cat >` is invisible here. The real containment
+    property is that fixture/ is chmod a-w on disk and each checkout lives in
+    its own directory; this is a tripwire on the most common write path, not a
+    sandbox.
 
     Returns (problems, lost_edits). `problems` empty means the run's arms
     stayed separate; `lost_edits` are writes to paths that do not exist, which
@@ -885,10 +1067,18 @@ async def _smoke_test_tool(session, server_name: str, tools) -> list[str]:
     return []
 
 
-async def check_mcp_servers(vibe_home: Path) -> list[str]:
+async def check_mcp_servers(
+    vibe_home: Path, *, skip: set[str] | None = None
+) -> list[str]:
     """Start every MCP server registered in `vibe_home`'s config and list its
     tools. Returns problems; empty means every server came up and published at
     least one tool.
+
+    `skip` names servers whose TOOL SMOKE TEST has already been paid for on
+    another config. The server is still started and its tools still listed --
+    that is the cheap half and the half that catches a dead import. What is
+    skipped is calling a tool for real, which for `web` is a billed OpenAI
+    hosted web_search.
 
     This is the "verify the wire" rule in code. A server that raises on import
     dies before it speaks protocol, and the only symptom anywhere is that its
@@ -932,7 +1122,13 @@ async def check_mcp_servers(vibe_home: Path) -> list[str]:
                         problems.append(f"MCP server {name!r} started but published no tools.")
                     else:
                         print(f"  MCP {name}: {', '.join(t.name for t in tools)}")
-                        problems.extend(await _smoke_test_tool(session, name, tools))
+                        if name in (skip or set()):
+                            print(f"  MCP {name}: smoke test already paid for, "
+                                  f"not calling it again")
+                        else:
+                            problems.extend(
+                                await _smoke_test_tool(session, name, tools)
+                            )
         except Exception as exc:
             problems.append(
                 f"MCP server {name!r} did not start ({exc!r}). Its tools will be "
@@ -1054,8 +1250,11 @@ def main() -> int:
     # `python` through it (see AGENT_VENV), so a missing one silently sends
     # them back to the orchestrator's venv.
     problems += ensure_agent_venv(FIXTURE_DIR / "requirements-v2.txt")
+    # `return 1` used to sit INSIDE this loop, so only the first problem was
+    # ever printed -- you fixed one thing, re-ran, and found the next.
     for problem in problems:
         print(f"PREFLIGHT: {problem}")
+    if problems:
         return 1
 
     return asyncio.run(main_async(args.deadline_s, args.model, args.reset_memory))
