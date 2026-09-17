@@ -203,3 +203,57 @@ Size cap: 2,000 approx tokens (4 chars/token), rejection reason `too_large`.
 ### Next
 
 Distiller + ingestion, then skill loading, then the first run.
+
+---
+
+## 2026-09-17 (later) — transcript review, budget reset, skill loading solved
+
+### Budget, re-read from the API
+
+| | |
+|---|---|
+| balance | **$50 loaded by the operator today.** Still not readable through the API; treated as a $50 cap. |
+| spend 13 Sept | $18.12 |
+| spend 14 Sept | $17.87 |
+| spend 15 Sept | $12.09 |
+| spend 16 Sept | $38.77 |
+| spend 17 Sept (to now) | $27.02 |
+| H200 SXM | $4.59/hr secure, $3.59/hr community, availability MEDIUM |
+| pods running | **none — `list-pods` returns `[]`, $0/hr** |
+
+Using **secure** H200 at $4.59: the provisioning script is tuned for it, and
+the one pod that vanished mid-download was a Low-stock secure instance — a
+community pod that loses a 113 GB model download costs more than the $1/hr it
+saves. Recorded here per the "record any change" rule; no change made.
+
+Floor: stop starting runs below **$12** remaining (one ~1.5h run plus 30 min
+of wrap-up).
+
+### How Vibe loads a skill — verified locally, no pod
+
+The riskiest unknown in the mission, settled at $0 by installing
+`mistral-vibe==2.25.4` into a throwaway py3.13 venv and driving its own
+`SkillManager`:
+
+- Vibe discovers **`$VIBE_HOME/skills/<name>/SKILL.md`** (`GLOBAL_SKILLS_DIR`
+  in `core/config/harness_files/_paths.py`). The harness already gives every
+  agent its own `VIBE_HOME`, so warm gets the skill and cold cannot see one.
+- **Our AIP `SKILL.md` parses unmodified.** Vibe's `SkillMetadata.metadata` is
+  `dict[str, str]` with a `str(v)` coercion, so the nested `metadata.aip`
+  block survives rather than erroring. Discovery reported no config issues.
+- **`/pydantic-v2-migration <task text>` as the first user message makes Vibe
+  itself load the skill**: `parse_skill_command` returned the full 1,684-char
+  body with the task as `extra_instructions`, and `_inject_invoked_skill`
+  appends a real `skill` tool call + result to the message list before the
+  model's first turn (`core/agent_loop/_loop.py:2307`). Deterministic loading
+  through Vibe's own surface — no patch, and no reliance on the model choosing
+  to call the `skill` tool.
+
+Two constraints this imposes on the distiller, to enforce in `propose()`:
+`name` must match `^[a-z0-9]+(-[a-z0-9]+)*$`, and `description` is capped at
+**1024 characters** by Vibe (v0 is 301). A skill the AIP validator accepts but
+Vibe rejects would load nothing and look like a model that ignored it.
+
+Also noted: Vibe's skill search path includes `~/.agents/skills`. Harmless on
+the pod, where each agent has its own 0700 home, but it is the same
+operator's-home reach recorded earlier for the `skill` tool.
