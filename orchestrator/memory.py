@@ -402,6 +402,25 @@ class ScopedMemory:
                 linked += 1
         return linked
 
+    async def trace_metrics(self, trace_ids: list[str]) -> dict[str, dict]:
+        """metrics_json for these traces, parsed, keyed by trace id.
+
+        `search_steps` returns parent_task/parent_outcome/parent_success but
+        not metrics, and `tests_passed` is what makes a retrieved step
+        interpretable. One query for the whole hit set."""
+        rows = await self._client.query.cypher(
+            "MATCH (t:ReasoningTrace) WHERE toString(t.id) IN $ids "
+            "RETURN toString(t.id) AS id, t.metrics_json AS m",
+            {"ids": list(trace_ids)},
+        )
+        out: dict[str, dict] = {}
+        for row in rows:
+            try:
+                out[row["id"]] = json.loads(row["m"]) if row["m"] else {}
+            except (json.JSONDecodeError, TypeError):
+                out[row["id"]] = {}
+        return out
+
     async def add_message(
         self,
         session_id: str,

@@ -51,6 +51,8 @@ the arm separation has.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
 import json
 from pathlib import Path
 from typing import Any
@@ -165,7 +167,7 @@ def _text_only_turns(transcript_path: str | None) -> list[str]:
     return out
 
 
-def _render(hits: list) -> str | None:
+def _render(hits: list, metrics: dict[str, dict] | None = None) -> str | None:
     """Hand the retrieved steps over with their properties. Nothing else.
 
     `search_steps` returns ReasoningStepWithContext: thought, action,
@@ -176,6 +178,7 @@ def _render(hits: list) -> str | None:
     yet, and the honest rendering of that is an absent property rather than
     "outcome unknown".
     """
+    metrics = metrics or {}
     lines: list[str] = []
     for h in hits:
         step = h.step
@@ -195,11 +198,27 @@ def _render(hits: list) -> str | None:
             lines.append(f"    task: {_cap(h.parent_task, 200)}")
         if h.similarity is not None:
             lines.append(f"    similarity: {h.similarity:.2f}")
-        if h.parent_success is not None:
-            lines.append(f"    success: {h.parent_success}")
+        # tests_passed, not a bare success flag. The flag used to mean
+        # "passed OR advanced", so a step from a 32/33 failure was presented
+        # as `success: true`. It now means the suite passed, and the count is
+        # shown alongside because "33 of 33" and "32 of 33" are the same
+        # boolean and very different advice. `metrics` is looked up per hit
+        # (search_steps does not return it); absent for traces written before
+        # the schema change, and shown as such rather than guessed.
+        m = metrics.get(str(getattr(h.step, "trace_id", ""))) or {}
+        if m.get("tests_passed") is not None:
+            lines.append(f"    tests_passed: {int(m['tests_passed'])}")
+        if m.get("outcome_schema") is None and h.parent_success is not None:
+            lines.append(f"    success: {h.parent_success} "
+                         f"(legacy flag: true here can mean 'made progress')")
+        elif h.parent_success is not None:
+            lines.append(f"    suite_passed: {h.parent_success}")
     if not lines:
         return None
     return "Steps retrieved from the shared reasoning graph:\n" + "\n".join(lines)
+
+
+logger = logging.getLogger(__name__)
 
 
 class StepMemoryService:
@@ -224,6 +243,35 @@ class StepMemoryService:
         self.text_turns_written = 0
         self.context_returned = 0
         self.errors = 0
+        # THE WRITE QUEUE.
+        #
+        # add_step + record_tool_call go to Aura, 175ms RTT from the pod, and
+        # they used to be awaited inside the hook -- so every tool call the
+        # warm agent made paid for them before it could act. Measured on run
+        # 13: 5.16 s/tool-call for warm against 1.78 for cold, ~3.3s of it
+        # here, ~200s of a 310s attempt. Cold pays none of it, and the run
+        # deadline is wall-clock, so it is a direct bias between the arms.
+        #
+        # Nothing the agent does next depends on the write having landed, so
+        # it is queued and drained behind the agent. The READ half stays
+        # synchronous, because the injection genuinely feeds the model.
+        #
+        # trace_id is captured HERE, at enqueue. Capturing it at flush time
+        # would attach steps to whichever attempt happened to be current when
+        # the drain caught up -- exactly the corruption the notes already
+        # record from replayed transcripts.
+        self._queue: asyncio.Queue[tuple] | None = None
+        self._drain: asyncio.Task | None = None
+        self.writes_queued = 0
+        self.writes_flushed = 0
+        self.writes_dropped = 0
+        # One record per injection: query, what came back, from which trace,
+        # at what similarity, and how big it was. Written out at end of run.
+        self.injections: list[dict] = []
+        # A bound, so a wedged Aura cannot grow this without limit. Overflow
+        # is reported, never silent -- a dropped step is a hole in the graph
+        # and the whole point of the counters is that nobody has to guess.
+        self.QUEUE_MAX = 2000
         # (agent, first 200 chars) of text-only turns already stored.
         # `post_agent` fires per Vibe invocation and reads the transcript tail,
         # which spans earlier attempts of a `--continue`d session, so without
@@ -231,11 +279,107 @@ class StepMemoryService:
         # attempt for the rest of the run.
         self._seen_text_turns: set[tuple[str, str]] = set()
 
+    # ---- the write queue ------------------------------------------------
+
+    def _ensure_drain(self) -> None:
+        if self._queue is None:
+            self._queue = asyncio.Queue()
+        if self._drain is None or self._drain.done():
+            self._drain = asyncio.ensure_future(self._drain_forever())
+
+    def _enqueue_write(self, agent: str, trace_id: Any, thought: str,
+                       tool_name: str, observation: str, arguments: dict) -> None:
+        """Bind the write to the trace that is current RIGHT NOW and return.
+
+        The tuple carries `trace_id` rather than the agent name on purpose: by
+        the time this drains, `set_trace` may have moved the agent on to the
+        next attempt, and resolving the trace at flush time would file these
+        steps under it."""
+        self._ensure_drain()
+        assert self._queue is not None
+        if self._queue.qsize() >= self.QUEUE_MAX:
+            self.writes_dropped += 1
+            logger.error(
+                "STEP QUEUE FULL (%d): dropping a step for %s on trace %s. "
+                "The graph will have a hole here; %d dropped so far.",
+                self.QUEUE_MAX, agent, trace_id, self.writes_dropped)
+            return
+        self._queue.put_nowait(
+            (agent, trace_id, thought, tool_name, observation, arguments))
+        self.writes_queued += 1
+
+    async def _write_one(self, item: tuple) -> None:
+        agent, trace_id, thought, tool_name, observation, arguments = item
+        mem = self._mem.get(agent)
+        if mem is None:
+            raise RuntimeError(f"no ScopedMemory registered for {agent!r}")
+        step = await mem.add_step(
+            trace_id,
+            thought=thought,
+            action=tool_name,
+            observation=observation,
+            # Embedded in one batch by complete_trace(
+            # generate_step_embeddings=True) -- the pairing the package's
+            # docstring names for streaming recorders.
+            generate_embedding=False,
+        )
+        await mem.record_tool_call(
+            step.id, tool_name=tool_name, arguments=arguments)
+
+    async def _drain_forever(self) -> None:
+        assert self._queue is not None
+        while True:
+            item = await self._queue.get()
+            try:
+                await self._write_one(item)
+                self.writes_flushed += 1
+                self.steps_written += 1
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.errors += 1
+                logger.error("STEP WRITE FAILED for trace %s (%s): %r",
+                             item[1], item[3], exc)
+            finally:
+                self._queue.task_done()
+
+    async def flush(self, timeout: float = 120.0) -> bool:
+        """Block until every queued write has been attempted.
+
+        Called before grading, before the next attempt starts, and before
+        anything reads the graph expecting this attempt to be in it. Returns
+        False if the queue did not drain in time -- the caller should say so
+        rather than proceed as though the graph were complete."""
+        if self._queue is None or self._queue.empty():
+            return True
+        try:
+            await asyncio.wait_for(self._queue.join(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            logger.error(
+                "STEP QUEUE DID NOT DRAIN in %.0fs -- %d still pending. The "
+                "graph is incomplete for this attempt.", timeout,
+                self._queue.qsize())
+            return False
+
+    def queue_report(self) -> str:
+        return (f"queued {self.writes_queued}, flushed {self.writes_flushed}, "
+                f"dropped {self.writes_dropped}")
+
     def register(self, agent: str, mem: ScopedMemory) -> None:
         self._mem[agent] = mem
 
     def set_trace(self, agent: str, trace_id: Any) -> None:
         self._trace[agent] = trace_id
+
+    async def set_trace_flushed(self, agent: str, trace_id: Any) -> None:
+        """Drain the previous attempt's writes BEFORE moving the pointer.
+
+        Items already queued carry their own trace_id so they cannot be
+        misfiled, but draining here also means the next attempt's retrieval
+        sees a complete previous attempt rather than a partial one."""
+        await self.flush()
+        self.set_trace(agent, trace_id)
 
     def set_pending_reasoning(
         self, agent: str, text: str, turn_id: str | None = None
@@ -309,6 +453,14 @@ class StepMemoryService:
         agent = request.get("agent") or ""
         mem = self._mem.get(agent)
         trace_id = self._trace.get(agent)
+        # THE FLUSH BARRIER. post_agent fires when Vibe's loop ends, which is
+        # the last moment the harness controls before run_vibe returns and
+        # migrate_codebase grades the tree. Vibe waits for this hook, so
+        # awaiting the drain here is what makes "every write landed before
+        # grading" true rather than hoped for. hooks.toml allows 20s.
+        if not await self.flush(timeout=18.0):
+            logger.error("post_agent: queue not drained for %s; the graph is "
+                         "missing steps from this attempt", agent)
         if mem is None or trace_id is None:
             return {}
         try:
@@ -378,23 +530,12 @@ class StepMemoryService:
                     _cap(pending[1] if pending else "", _THOUGHT_CAP)
                     or _cap(json.dumps(request.get("tool_input") or {}), 800)
                 )
-                step = await mem.add_step(
-                    trace_id,
-                    thought=thought,
-                    action=tool_name,
-                    observation=observation,
-                    # Embedded in one batch by complete_trace(
-                    # generate_step_embeddings=True) -- the pairing the
-                    # package's docstring names for streaming recorders.
-                    # Inline embedding would put an OpenAI round-trip in the
-                    # agent's tool path, on every tool call.
-                    generate_embedding=False,
+                # Queued, not awaited -- see self._queue. `trace_id` is bound
+                # into the item now, so a later set_trace cannot redirect it.
+                self._enqueue_write(
+                    agent, trace_id, thought, tool_name, observation,
+                    request.get("tool_input") or {},
                 )
-                await mem.record_tool_call(
-                    step.id, tool_name=tool_name,
-                    arguments=request.get("tool_input") or {},
-                )
-                self.steps_written += 1
         except Exception:
             self.errors += 1
 
@@ -419,11 +560,52 @@ class StepMemoryService:
         # another agent's experience.
         own = {str(trace_id)} if trace_id is not None else set()
         fresh = [h for h in hits if str(getattr(h.step, "trace_id", "")) not in own]
-        text = _render(fresh)
+        metrics = await self._trace_metrics(
+            mem, [str(getattr(h.step, "trace_id", "")) for h in fresh])
+        text = _render(fresh, metrics)
         if not text:
             return {}
         self.context_returned += 1
+        # EVERY injection, recorded. Run 13 returned 44 of these and nothing
+        # anywhere said what they contained, so "did memory help" could only
+        # be answered by re-deriving it from token counts. Provenance is the
+        # point: a step from a previous run of a different model is not the
+        # same evidence as one from this agent's last attempt.
+        self.injections.append({
+            "agent": agent,
+            "into_trace": str(trace_id),
+            "query": _cap(query, 300),
+            "returned": [
+                {
+                    "step_id": str(getattr(h.step, "id", "")),
+                    "source_trace": str(getattr(h.step, "trace_id", "")),
+                    "similarity": round(h.similarity, 4) if h.similarity is not None else None,
+                    "suite_passed": h.parent_success,
+                    "tests_passed": (metrics.get(str(getattr(h.step, "trace_id", ""))) or {}).get("tests_passed"),
+                    "outcome_schema": (metrics.get(str(getattr(h.step, "trace_id", ""))) or {}).get("outcome_schema"),
+                }
+                for h in fresh
+            ],
+            "chars": len(text),
+            "approx_tokens": len(text) // 4,
+        })
         return {"additional_context": text}
+
+    async def _trace_metrics(self, mem, trace_ids: list[str]) -> dict[str, dict]:
+        """metrics_json for the traces behind a set of hits.
+
+        One query for up to three ids. search_steps does not return trace
+        metrics, and `tests_passed` is the number that makes a retrieved step
+        interpretable -- 32/33 and 33/33 are the same boolean."""
+        ids = [t for t in dict.fromkeys(trace_ids) if t]
+        if not ids:
+            return {}
+        try:
+            rows = await mem.trace_metrics(ids)
+        except Exception:
+            self.errors += 1
+            return {}
+        return rows
 
     async def start(self, host: str = "127.0.0.1", port: int = 0) -> int:
         async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -454,6 +636,15 @@ class StepMemoryService:
         return self.port
 
     async def stop(self) -> None:
+        # Drain what is still queued before going away, then stop the drain
+        # task. Exiting with items in the queue would silently lose steps the
+        # agent already took.
+        await self.flush(timeout=30.0)
+        if self._drain is not None:
+            self._drain.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._drain
+            self._drain = None
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
@@ -464,5 +655,5 @@ class StepMemoryService:
             f"step hook: {self.steps_written} step(s) written by the agents "
             f"({self.text_turns_written} of them turns that called no tool), "
             f"{self.context_returned} injection(s) of prior agents' steps, "
-            f"{self.errors} error(s)"
+            f"{self.errors} error(s); write queue: {self.queue_report()}"
         )
