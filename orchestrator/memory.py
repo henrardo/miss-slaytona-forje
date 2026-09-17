@@ -39,6 +39,7 @@ from neo4j_agent_memory.memory.reasoning import ToolCallStatus
 EMBEDDING_MODEL = "openai/text-embedding-3-small"
 
 import json
+import logging
 import os
 
 # Keep the embedding stack off the network. A synchronous network call inside
@@ -232,6 +233,9 @@ async def reset_graph() -> int:
         await driver.close()
 
 
+logger = logging.getLogger(__name__)
+
+
 class ScopedMemory:
     """The warm swarm's -- and only the warm swarm's -- view of memory.
     Never constructed for a cold agent; orchestrator/run.py passes mem=None
@@ -246,6 +250,23 @@ class ScopedMemory:
             session_id=session_id, task=task, user_identifier=self.user_identifier,
         )
 
+    def set_provenance(self, **props: Any) -> None:
+        """What produced the traces this scope writes.
+
+        `TraceOutcome.metrics` is typed `dict[str, float]`, so the model
+        name, GPU and harness commit cannot live there. They are stamped
+        onto the trace node directly instead, by complete_trace below.
+
+        This exists because the graph already contains traces from two
+        models on three GPUs, written under two different definitions of
+        `success`, some by agents whose checkout was read-only and who
+        therefore could not edit anything. Mixing those into distillation
+        would teach the distiller from runs that measured the harness rather
+        than the agent. Eligibility is decided on these properties -- see
+        eligible_traces().
+        """
+        self._provenance = dict(props)
+
     async def complete_trace(
         self,
         trace_id: UUID,
@@ -258,10 +279,59 @@ class ScopedMemory:
         TraceOutcome, which additionally persists `error_kind` as a top-level
         indexed property and `metrics` on the node. A TraceOutcome overrides
         `success`."""
-        return await self._client.reasoning.complete_trace(
+        result = await self._client.reasoning.complete_trace(
             trace_id, outcome=outcome, success=success,
             generate_step_embeddings=generate_step_embeddings,
         )
+        # Stamped here rather than at the call site, so every trace this
+        # scope completes carries provenance without migrate_codebase --
+        # the shared, tested path -- needing to know about it.
+        prov = getattr(self, "_provenance", None)
+        if prov:
+            try:
+                await self._client.graph.execute_write(
+                    "MATCH (t:ReasoningTrace) WHERE toString(t.id) = $id SET t += $p",
+                    {"id": str(trace_id), "p": prov},
+                )
+            except Exception as exc:
+                logger.error("provenance stamp failed for trace %s: %r",
+                             trace_id, exc)
+        return result
+
+    async def eligible_traces(self, *, model: str, schema: float = 2.0) -> list[dict]:
+        """Traces a distiller may learn from.
+
+        Three filters, each for a failure already in the graph:
+          * `prov_model` -- 109 of 187 steps were written by Qwen3-14B, a
+            weaker model on different hardware;
+          * `prov_writable` -- seven early runs handed agents a chmod a-w
+            checkout and recorded 13 graded attempts with zero edits;
+          * `outcome_schema >= 2` -- before that, `success` meant "passed OR
+            advanced", so two traces claim success at tests_passed<33.
+        """
+        rows = await self._client.query.cypher(
+            "MATCH (t:ReasoningTrace) WHERE t.user_identifier = $who "
+            "AND t.prov_model = $model AND t.prov_writable = true "
+            "OPTIONAL MATCH (t)-[:HAS_STEP]->(s:ReasoningStep) "
+            "WITH t, count(s) AS steps, "
+            "  sum(CASE WHEN s.thought IS NOT NULL AND NOT s.thought STARTS WITH '{' "
+            "      THEN 1 ELSE 0 END) AS real_thoughts "
+            "RETURN toString(t.id) AS id, t.success AS suite_passed, "
+            "  t.metrics_json AS metrics, steps, real_thoughts, "
+            "  t.outcome AS outcome, t.task AS task "
+            "ORDER BY t.started_at",
+            {"who": self.user_identifier, "model": model},
+        )
+        out = []
+        for r in rows:
+            try:
+                m = json.loads(r["metrics"]) if r["metrics"] else {}
+            except (json.JSONDecodeError, TypeError):
+                m = {}
+            if m.get("outcome_schema", 0.0) < schema:
+                continue
+            out.append({**dict(r), "metrics": m})
+        return out
 
     async def add_step(
         self,

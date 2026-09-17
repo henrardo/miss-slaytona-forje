@@ -371,6 +371,27 @@ class AgentWorkspace:
         self.host.run_as(
             self.user, f"rm -rf {self.home}/.vibe/logs/session/*", check=False)
 
+    def checkout_is_writable(self) -> bool:
+        """Can the agent actually edit its own source?
+
+        Seven runs said no and nobody noticed: `fixture/` is chmod a-w to
+        protect the ground truth and `repo_tarball` preserves modes, so every
+        agent got a read-only checkout and recorded 13 graded attempts with
+        zero edit/write_file calls. Checked per run and stamped onto every
+        trace, so a distiller can exclude runs where editing was impossible.
+
+        Tests stay read-only on purpose; this asks about source only.
+        """
+        out = self.host.run_as(
+            self.user,
+            f"find {self.repo_path} -name '*.py' -not -path '*/tests/*' "
+            f"-not -path '*/.git/*' ! -writable | wc -l",
+            check=False).stdout.strip()
+        try:
+            return int(out or "1") == 0
+        except ValueError:
+            return False
+
     def loaded_tools(self) -> set[str]:
         """Tool names Vibe actually loaded, from the newest session's meta.json.
 

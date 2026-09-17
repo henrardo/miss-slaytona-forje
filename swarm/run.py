@@ -391,7 +391,9 @@ async def main_async(args, watch=None) -> int:
         return 1
 
     gpu = host.gpu_description()
-    print(f"gpu: {gpu}")
+    commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                            capture_output=True, text=True).stdout.strip() or "unknown"
+    print(f"gpu: {gpu} | harness: {commit}")
     print(f"repo: {repo}")
     tar = repo_tarball(repo, exclude=(".git", "__pycache__", ".venv",
                                       ".pytest_cache", "reference_v2"))
@@ -449,11 +451,30 @@ async def main_async(args, watch=None) -> int:
         deadline = time.monotonic() + args.deadline_s
         results: list = []
 
+        # Stamped onto every trace this run writes. See
+        # ScopedMemory.set_provenance for why it cannot live in `metrics`.
+        provenance = {
+            "prov_model": args.model,
+            "prov_gpu": gpu,
+            "prov_commit": commit,
+            "prov_writable": all(ws.checkout_is_writable()
+                                 for ws in spaces.values()),
+        }
+        print(f"provenance: {provenance}")
+        if not provenance["prov_writable"]:
+            print("  WARNING: at least one checkout is READ-ONLY -- agents "
+                  "cannot edit source; this run is not a fair test")
+
+        def _scoped(client, label, prov):
+            m = ScopedMemory(client, user_identifier=label)
+            m.set_provenance(**prov)
+            return m
+
         def tasks_for(warm: bool) -> list:
             return [asyncio.ensure_future(agent_worker(
                 ws=spaces[label], warm=warm, pool=pool, test_command=args.test,
                 deadline=deadline, bus=bus, bridge=bridge,
-                mem=ScopedMemory(mem_client, user_identifier=label) if warm else None,
+                mem=_scoped(mem_client, label, provenance) if warm else None,
                 baseline_signature=baseline_signature,
                 baseline_passed=baseline_passed, results=results,
             )) for label, w in labels if w is warm]
@@ -462,8 +483,10 @@ async def main_async(args, watch=None) -> int:
         # agent in a swarm converges, the rest of THAT swarm is cancelled
         # rather than left grinding out the deadline. The arms stay
         # independent, so warm stopping early does not touch cold.
-        await asyncio.gather(run_swarm("warm", tasks_for(True)),
-                             run_swarm("cold", tasks_for(False)))
+        stop = not args.no_stop_for_victory
+        await asyncio.gather(
+            run_swarm("warm", tasks_for(True), stop_on_success=stop),
+            run_swarm("cold", tasks_for(False), stop_on_success=stop))
         swept = await pool.sweep()
 
         # Entities, once, AFTER the agents' clock has stopped and while the
@@ -562,6 +585,11 @@ def main() -> int:
     p.add_argument("--deadline-s", type=float, default=900.0)
     p.add_argument("--swarm-size", type=int, default=1,
                    help="agents PER ARM; --swarm-size 1 --arms both is 2 agents.")
+    p.add_argument("--no-stop-for-victory", action="store_true",
+                   help="let both arms run the full deadline even after one "
+                        "converges. Required for measurement runs: stopping "
+                        "early censors the winner's distribution and leaves "
+                        "the other agents' undefined.")
     p.add_argument("--no-loop-debug", action="store_true",
                    help="disable asyncio debug mode and the blocking-call guard.")
     p.add_argument("--arms", choices=("both", "warm", "cold"), default="both",

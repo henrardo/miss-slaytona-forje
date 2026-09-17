@@ -484,14 +484,22 @@ async def agent_worker(
             await asyncio.sleep(min(30.0, 2.0 ** consecutive_failures))
 
 
-async def run_swarm(swarm: str, tasks: list[asyncio.Task]) -> None:
+async def run_swarm(swarm: str, tasks: list[asyncio.Task],
+                    *, stop_on_success: bool = True) -> None:
     """Stop for victory: the moment one agent in this swarm converges, cancel
     the rest of its sandboxes instead of letting them keep grinding for the
     remainder of the run's deadline. Swarms are independent of each other --
     warm stopping early doesn't affect cold, and vice versa -- so the
     warm/cold comparison for whichever swarm converges first is still real,
     just no longer padded by agents that kept working after the answer was
-    already found."""
+    already found.
+
+    `stop_on_success=False` disables it for MEASUREMENT runs. Ending a swarm
+    the moment one agent converges truncates that arm's distribution: the
+    converging agent stops early and the others never finish, so
+    attempts-to-converge and tokens-per-run are censored for the winner and
+    undefined for the rest. For a warm-vs-cold comparison both arms have to
+    run their full course."""
     pending = set(tasks)
     while pending:
         done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
@@ -500,7 +508,7 @@ async def run_swarm(swarm: str, tasks: list[asyncio.Task]) -> None:
             if exc is not None:
                 print(f"  WARNING: a {swarm} agent coroutine raised: {exc!r}")
                 continue
-            if task.result().success:
+            if task.result().success and stop_on_success:
                 print(f"  [{swarm}] an agent converged -- stopping the rest of this swarm")
                 for other in pending:
                     other.cancel()
