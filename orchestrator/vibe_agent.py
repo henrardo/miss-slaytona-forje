@@ -29,7 +29,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Protocol
 
 from neo4j_agent_memory.mcp._instructions import get_instructions
 from neo4j_agent_memory.schema.models import TraceOutcome
@@ -188,7 +188,11 @@ MCP_SHIM_DIR = Path("/private/tmp/msf-mcp")
 #
 # Reserved for the Daytona verdict. Measured at ~45-70s (upload + create +
 # pytest) on a 1-vCPU sandbox.
-VERDICT_RESERVE_S = 120.0
+# 120.0 was not enough twice running. Run 7 warm-0 and run 8 warm-0 both
+# lost their only verdict to it: a cold Daytona pool took 46.5s just to
+# create, and on run 8 the service was returning 404s and hanging. Grading
+# is the only thing that decides success, and it comes out of a 1500s clock.
+VERDICT_RESERVE_S = 240.0
 
 Emit = Callable[..., Awaitable[Any]]
 
@@ -723,19 +727,25 @@ def _entry_consumer(
     """
     async def consume(entry: dict) -> None:
         kind = entry.get("type")
-        # EVERY entry, of every type, reports the turn it belongs to: turn_id
-        # lives on Vibe's _PublicHistoryEntryBase. That is what lets the step
-        # hook tell "another tool call in the same turn" (share the reasoning)
-        # from "a new turn that emitted none of its own" (do not). See
-        # StepMemoryService.note_turn().
+        # EVERY entry, of every type, reports the turn it belongs to, and the
+        # key is `turnId`, NOT `turn_id`: the streaming writer dumps with
+        # `model_dump(mode="json", by_alias=True)` (cli/programmatic.py:128),
+        # so every multi-word field arrives camelCase -- turnId, sessionId,
+        # generationStatus, relatedEntryId.
+        #
+        # This was written as `turn_id` first, which made the whole mechanism a
+        # no-op: `.get("turn_id")` is always None, note_turn() returns
+        # immediately on None, and nothing was ever invalidated. It passed its
+        # unit tests, which pass synthetic dicts, and shipped through two live
+        # runs. Read off the wire, not off the model definition -- the field is
+        # declared `turn_id` in app_server/models.py and serialised `turnId`.
+        turn_id = entry.get("turnId")
         if step_memory is not None and agent_label:
-            step_memory.note_turn(agent_label, entry.get("turn_id"))
+            step_memory.note_turn(agent_label, turn_id)
         if kind == "reasoning":
             text = _entry_text(entry)
             if text and step_memory is not None and agent_label:
-                step_memory.set_pending_reasoning(
-                    agent_label, text, entry.get("turn_id")
-                )
+                step_memory.set_pending_reasoning(agent_label, text, turn_id)
             return
         if kind == "message" and entry.get("role") == "assistant":
             text = _entry_text(entry)
@@ -1543,13 +1553,67 @@ def _localize_sandbox_paths(error_text: str, vibe_cwd: Path) -> str:
 REPLAY_GRACE_S = 120.0
 
 
+class Workspace(Protocol):
+    """Where one agent's files and Vibe process live.
+
+    The attempt loop below is the same loop whether the agent runs on this
+    machine or on a remote swarm host, so the six operations that differ are
+    named here and nothing else changes. This exists because the alternative
+    was a SECOND copy of migrate_codebase for the remote case, which had
+    already started drifting: its own cruder `tests_passed` and
+    `error_signature`, no `observed_fix` outcome text, no `add_message`, no
+    trace keyed on the error signature -- a different graph, built a different
+    way, from a parallel implementation of a function that already worked.
+    """
+
+    async def run_vibe(self, task: str, *, timeout_s: float, resume: bool,
+                       on_entry: Any | None) -> tuple[int, str]: ...
+
+    def snapshot(self) -> dict[str, str]: ...
+    def collect_file_contents(self) -> dict[str, bytes]: ...
+    def assistant_turns_total(self) -> int: ...
+    def tool_calls_total(self) -> Counter: ...
+    def steps_used(self) -> int: ...
+
+
+@dataclass
+class LocalWorkspace:
+    """The original arrangement: a checkout on this machine, Vibe as a local
+    subprocess. Every method delegates to the function that already did it."""
+
+    repo_dir: Path
+    vibe_home: Path = VIBE_HOME
+    vibe_cwd: Path = HARNESS_DIR
+
+    async def run_vibe(self, task: str, *, timeout_s: float, resume: bool,
+                       on_entry: Any | None) -> tuple[int, str]:
+        return await _run_vibe(task, timeout_s=timeout_s, vibe_home=self.vibe_home,
+                               cwd=self.vibe_cwd, resume=resume, on_entry=on_entry)
+
+    def snapshot(self) -> dict[str, str]:
+        return _snapshot(self.repo_dir)
+
+    def collect_file_contents(self) -> dict[str, bytes]:
+        return _collect_file_contents(self.repo_dir)
+
+    def assistant_turns_total(self) -> int:
+        return _assistant_turns_total(self.vibe_home)
+
+    def tool_calls_total(self) -> Counter:
+        return _tool_calls_total(self.vibe_home)
+
+    def steps_used(self) -> int:
+        return _steps_used(self.vibe_home)
+
+
 async def migrate_codebase(
     *,
     pool: SandboxPool,
-    repo_dir: Path,
     test_command: str,
     deadline: float,
     emit: Emit,
+    workspace: Workspace | None = None,
+    repo_dir: Path | None = None,
     vibe_home: Path = VIBE_HOME,
     vibe_cwd: Path = HARNESS_DIR,
     mem: ScopedMemory | None = None,
@@ -1609,6 +1673,16 @@ async def migrate_codebase(
       default, return anything at all on a suite that stays red for most of a
       run. Suite-level completion is MigrationResult.success, reported
       separately by run.py."""
+    # Either a Workspace is supplied (remote swarm host) or one is built
+    # from the local paths, which is exactly what this function did before.
+    # Same loop, same graph, same events either way -- only where the files
+    # live differs.
+    if workspace is None:
+        if repo_dir is None:
+            raise ValueError('migrate_codebase needs workspace= or repo_dir=')
+        workspace = LocalWorkspace(repo_dir=repo_dir, vibe_home=vibe_home,
+                                   vibe_cwd=vibe_cwd)
+
     task_desc = "Migrate this codebase from pydantic v1 to v2"
     last_error: str | None = None
     # Seeded from run.py's one pre-run pytest against the pristine fixture, so
@@ -1695,9 +1769,9 @@ async def migrate_codebase(
                 step_memory.set_trace(agent_label, trace_id)
 
         task = _task_prompt(last_error, memory_enabled=mem is not None)
-        before_snapshot = _snapshot(repo_dir)
-        turns_before = _assistant_turns_total(vibe_home)
-        tools_before = _tool_calls_total(vibe_home)
+        before_snapshot = workspace.snapshot()
+        turns_before = workspace.assistant_turns_total()
+        tools_before = workspace.tool_calls_total()
         try:
             # Resume only a session that ended cleanly -- see _ended_cleanly()
             # for what that means and why it is not an exit-code check.
@@ -1706,10 +1780,9 @@ async def migrate_codebase(
             # what is left of the RUN's clock after reserving the verdict --
             # see _run_vibe() on why that is the run's budget rather than a
             # cap on the agent.
-            vibe_exit_code, vibe_output = await _run_vibe(
+            vibe_exit_code, vibe_output = await workspace.run_vibe(
                 task,
                 timeout_s=max(1.0, deadline - time.monotonic() - VERDICT_RESERVE_S),
-                vibe_home=vibe_home, cwd=vibe_cwd,
                 resume=resume,
                 on_entry=(
                     _entry_consumer(mem, session_id, step_memory, agent_label)
@@ -1743,7 +1816,7 @@ async def migrate_codebase(
             # it any more and pretending otherwise is how that happened.
             # (An aborted attempt has no steps, so search_steps cannot surface
             # it regardless.)
-            if _assistant_turns_total(vibe_home) <= turns_before:
+            if workspace.assistant_turns_total() <= turns_before:
                 if mem is not None and trace_id is not None:
                     await mem.complete_trace(
                         trace_id,
@@ -1774,16 +1847,26 @@ async def migrate_codebase(
             # attempts per run across runs 44-47 while warm completed 8-10.
             # The hook pays one loopback round-trip per tool call instead, and
             # defers embedding to complete_trace's batch.
-            file_contents = _collect_file_contents(repo_dir)
+            file_contents = workspace.collect_file_contents()
             # Gets its own reserved slice rather than `deadline - now`. That
             # expression is the bug that made this project measure nothing: by
             # the time Vibe had consumed the rest of the clock it evaluated to
             # 0.0, so the ONE thing that decides success never ran. The reserve
             # is granted even slightly past the deadline -- a verdict a few
             # seconds late is worth having; no verdict is worth nothing.
+            #
+            # A FLOOR, NOT A CEILING. A bare `timeout=VERDICT_RESERVE_S` caps
+            # grading at 120s however much clock is left, and the handler below
+            # reads that as "the shared clock expired" and breaks out of the
+            # attempt loop for good. On run 7 warm-0 and cold-0 raced a cold
+            # Daytona pool at t=46; cold-0 won (first create 46.5s, then 9.1s,
+            # then ~1.5s once warm), warm-0 queued behind it, blew the 120s cap
+            # and ended its run after ONE attempt with 1,060s unused. Taking
+            # the max means the wait can only expire at or after the deadline,
+            # which is the condition the handler already claims to detect.
             result = await asyncio.wait_for(
                 pool.run_pytest(file_contents=file_contents, test_command=test_command),
-                timeout=VERDICT_RESERVE_S,
+                timeout=max(VERDICT_RESERVE_S, deadline - time.monotonic()),
             )
             await emit("SANDBOX_CREATED", create_ms=result.create_ms)
         except asyncio.TimeoutError:
@@ -1806,7 +1889,7 @@ async def migrate_codebase(
                 await mem.complete_trace(trace_id, outcome="error", success=False)
             raise
 
-        tools_used = _tool_calls_total(vibe_home) - tools_before
+        tools_used = workspace.tool_calls_total() - tools_before
         # MEMORY_READ now reports the AGENT's retrieval, not the orchestrator's.
         # It fires once per attempt in which the agent called a read-side memory
         # tool itself, and does not fire at all when it did not -- which is the
@@ -1833,7 +1916,7 @@ async def migrate_codebase(
             # fact: "8 turns, hit the limit" and "1 turn, died" look identical
             # in the event log, and they mean opposite things.
             vibe_stop=stop_reason(vibe_output),
-            turns_used=_steps_used(vibe_home),
+            turns_used=workspace.steps_used(),
             resumed=resume,
             # What the agent chose to do with its turns, and -- the point of
             # the warm/cold comparison -- whether it ever asked the graph
@@ -1952,15 +2035,27 @@ async def migrate_codebase(
             # and an exact match beats a vector search on a string two agents
             # both have verbatim), while `summary` carries the diff that
             # cleared it and is what reasoning.get_context() surfaces.
-            resolved = success or advanced
+            # `success` NOW MEANS THE FULL SUITE PASSED. It used to be
+            # `resolved = success or advanced`, so a trace could carry
+            # success=True under a summary reading "The suite still fails
+            # with the same first error" -- observed in the graph at
+            # tests_passed=32. `_render` shows that flag to the next warm
+            # agent, so memory was reporting failures as successes.
+            #
+            # "Advanced" is still worth recording, so it becomes its own
+            # metric rather than being folded into the flag. `outcome_schema`
+            # marks which definition a trace was written under: 1 is the old
+            # conflated flag, 2 is this one. Older traces are stamped 1 by
+            # scripts/mark_legacy_traces.py rather than deleted, so they can
+            # be excluded from analysis without losing the reasoning in them.
             await mem.complete_trace(
                 trace_id,
                 outcome=TraceOutcome(
-                    success=resolved,
+                    success=success,
                     summary=(
                         observed_fix(
                             before_snapshot,
-                            _snapshot(repo_dir),
+                            workspace.snapshot(),
                             prior_error=last_signature,
                             next_error=signature,
                             suite_passed=success,
@@ -1975,7 +2070,13 @@ async def migrate_codebase(
                         )
                     ),
                     error_kind=trace_task,
-                    metrics={"attempt": float(attempt), "tests_passed": float(passed)},
+                    metrics={
+                        "attempt": float(attempt),
+                        "tests_passed": float(passed),
+                        "suite_passed": float(bool(success)),
+                        "advanced": float(bool(advanced)),
+                        "outcome_schema": 2.0,
+                    },
                 ),
                 generate_step_embeddings=True,
             )

@@ -60,11 +60,43 @@ def test_attempt_is_not_started_without_room_to_grade_it() -> None:
     )
 
 
-def test_verdict_timeout_is_the_reserve_not_the_remaining_deadline() -> None:
-    """`timeout=deadline - now` is the specific expression that broke this."""
+def test_verdict_timeout_is_the_reserve_as_a_floor_not_a_ceiling() -> None:
+    """The reserve is a floor. Both ways of getting that wrong cost a run.
+
+    `timeout=deadline - now` was the original bug: Vibe eats the clock, the
+    expression evaluates to ~0.0, and the one call that decides success never
+    runs. That is the negative assertion below, and it still holds.
+
+    `timeout=VERDICT_RESERVE_S` on its own is the opposite bug, and it cost
+    run 7's entire warm arm. It caps grading at 120s however much clock is
+    left; the handler underneath reads the resulting TimeoutError as "the
+    shared clock expired" and breaks out of the attempt loop permanently.
+    warm-0 lost a cold-pool sandbox race at t=46, blew the cap, and finished
+    with 1 attempt and 1,060s unused while cold-0 ran 9.
+
+    max() satisfies both: grading can use whatever clock is left, and still
+    gets its full reserve when there is none -- so the wait can only expire at
+    or after the deadline, which is what the handler claims to detect."""
     src = inspect.getsource(vibe_agent.migrate_codebase)
-    assert "timeout=VERDICT_RESERVE_S" in src
+    assert "timeout=max(VERDICT_RESERVE_S, deadline - time.monotonic())" in src, (
+        "the verdict timeout is no longer max(reserve, remaining); a bare "
+        "reserve caps grading and ends the agent's run, a bare remaining "
+        "leaves it no time to grade at all"
+    )
     assert "timeout=max(0.0, deadline - time.monotonic())" not in src
+
+
+@pytest.mark.parametrize(
+    "remaining, expected",
+    [(600.0, 600.0), (VERDICT_RESERVE_S + 1, VERDICT_RESERVE_S + 1),
+     (10.0, VERDICT_RESERVE_S), (0.0, VERDICT_RESERVE_S),
+     (-5.0, VERDICT_RESERVE_S)],
+)
+def test_the_floor_arithmetic(remaining: float, expected: float) -> None:
+    """What max(reserve, remaining) actually yields, including past the
+    deadline -- a verdict a few seconds late is worth having."""
+    assert max(VERDICT_RESERVE_S, remaining) == expected
+    assert max(VERDICT_RESERVE_S, remaining) >= VERDICT_RESERVE_S
 
 
 # --- 2. --max-turns is cumulative across --continue ------------------------
@@ -341,7 +373,11 @@ def test_attempt_with_no_completed_turn_is_aborted_not_graded() -> None:
     byte-identical tree and writes a "no edit was made" trace that retrieval
     later surfaces as knowledge."""
     src = inspect.getsource(vibe_agent.migrate_codebase)
-    assert "_assistant_turns_total(vibe_home) <= turns_before" in src
+    # Spelled through the workspace since the loop became runnable against a
+    # remote host as well as a local checkout. Same guard, same place, same
+    # `continue` before the oracle -- only where the transcript is read from
+    # moved behind a method.
+    assert "workspace.assistant_turns_total() <= turns_before" in src
     assert "ATTEMPT_ABORTED" in src
     # and it must not fall through to the oracle
     abort = src[src.index("<= turns_before"):]
