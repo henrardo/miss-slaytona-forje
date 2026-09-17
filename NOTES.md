@@ -148,7 +148,58 @@ Prerequisites 3–7, and the mission proper:
 - Skill load at attempt start; ingestion + distillation after each attempt.
 - Skill versioning, graph provenance, repair loop.
 
+---
+
+## 2026-09-17 — prerequisites 3, 4, 6, 7 done (off-GPU, no pod running)
+
+| commit | what |
+|---|---|
+| `05de965` | provenance stamping (3), eligible-trace filter (4), stop-for-victory switch (6) |
+| `3d5b720` | AIP skill v0 scaffold + vendored workshop validator (7) |
+| `5cb66e6` | versioned skill manager: validate, size cap, graph provenance (7) |
+
+141 tests pass.
+
+### Prereq 4 result — ZERO eligible traces
+
+```
+total 10 | has_provenance 0 | right_model 0 | writable 0 | schema2 0
+eligible 0 | eligible_with_reasoning 0
+```
+
+Every existing trace fails all three filters. **Consequence for the design:**
+the distiller has nothing to learn from on the first run, so skill v0 must be
+an empty scaffold. It is — `test_v0_carries_no_migration_answer` fails if the
+scaffold ever contains `pydantic_settings`, `field_validator`,
+`email_validator` and similar. The first eligible trace will be produced by
+the first warm attempt on this harness.
+
+### AIP validator — two rules learned by running it
+
+Assumptions recorded per prereq 7, using the workshop package's validator
+verbatim rather than writing one from the paper:
+
+1. `metadata.aip.spec` must be a **URL** (must contain a scheme). A bare
+   `"0.3a3"` is rejected. Set to the paper URL.
+2. The body must be **exactly one fenced YAML block with no surrounding
+   prose**, so all rationale lives in YAML comments inside the block.
+3. The validator requires `name` to equal the containing **folder name**, so
+   candidates are staged in a temp dir named after the skill. Staging as
+   `.staging-x` fails for the wrong reason and masks real errors.
+
+Size cap: 2,000 approx tokens (4 chars/token), rejection reason `too_large`.
+
+### Still outstanding
+
+- Ingestion of the attempt transcript after the clock (real reasoning +
+  honest verdict), replacing per-tool-call writes.
+- The distillation turn itself: query eligible traces, read current skill,
+  write improved version, up to 2 repair turns on validator failure.
+- Skill load into Vibe at warm attempt start + hash logged at load.
+- Disable per-step injection and warm's memory MCP read tools during attempts.
+- Prereq 5: separate attempt vs distillation metrics.
+- Then: provision one H200 and start the iteration loop.
+
 ### Next
 
-Build 3–7 and the distillation loop off-GPU, commit each, then provision one
-H200 and start the iteration loop.
+Distiller + ingestion, then skill loading, then the first run.
