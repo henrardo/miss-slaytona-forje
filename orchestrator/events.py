@@ -40,6 +40,42 @@ EVENT_TYPES = frozenset(
         # run, and silently grading it spends a sandbox to re-derive a verdict
         # we already have. See migrate_codebase().
         "ATTEMPT_ABORTED",
+        # One attempt resumed after a turn ended with no executable tool
+        # call -- the model's call arrived as message text, or it stopped
+        # mid-task saying nothing. Countable because it is the difference
+        # between "the agent plateaued" and "the agent was cut off": three
+        # of six attempts in swarm-1789903474 ended this way and the run
+        # reported it as a plateau. If this becomes frequent the serving
+        # layer is broken and the count is how anyone would know. See
+        # vibe_agent.truncated_turn().
+        "ATTEMPT_CONTINUED",
+        # One attempt's Vibe stream written into the graph, after the
+        # verdict and off the agent's clock. Countable because "ingestion
+        # silently wrote nothing" and "the agent did nothing" have looked
+        # identical in this harness before -- see orchestrator/ingest.py.
+        "INGESTED",
+        # One distillation turn: the warm model rewriting its own skill
+        # after an attempt. Carries the version it produced or the reason
+        # it was rejected, and how many memory tools it actually called --
+        # "the distiller never queried the graph" is a finding worth being
+        # able to count. See orchestrator/distill.py.
+        "DISTILLED",
+        # Where each ReasoningStep's `thought` came from: the model's own
+        # reasoning, relayed off Vibe's stream, or a fall-back to the
+        # serialised tool input. Emitted once per run from the sidecar's
+        # counters, because on the live-hook path nothing else can see it
+        # -- and it went unseen for six runs, 988 of 993 steps holding tool
+        # JSON while every visible number looked healthy. See
+        # orchestrator/step_memory.py.
+        "STEP_WRITES",
+        # RETIRED, and kept declared so the six runs of 2026-09-18/19 still
+        # parse. The harness used to roll the checkout back to the tree that
+        # graded better. It was never asked for, it keyed on `tests_passed`
+        # -- which on fixtures/oapi is 0 / ~310 / 445 and cannot see how
+        # much of the migration exists -- and both times it fired it threw
+        # away warm's most complete migration. Nothing emits this now; see
+        # "NO ROLLBACK" in migrate_codebase().
+        "RESTORED",
         "FILE_DONE",
         "MEMORY_WRITE",
         "RUN_END",

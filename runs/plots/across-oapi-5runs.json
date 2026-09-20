@@ -1,0 +1,495 @@
+{
+  "schema_version": 1,
+  "scope": "across_runs",
+  "n_runs": 5,
+  "arms": [
+    "cold",
+    "warm"
+  ],
+  "oracle": {
+    "fixture": "oapi",
+    "package": "openapi_python_client",
+    "graded_at": 1789753062,
+    "baseline_passed": 0,
+    "baseline_v1_surfaces": 64,
+    "baseline_signature": "pydantic.errors.PydanticUserError: `const` is removed, use `Literal` instead",
+    "answer_key_passed": 445,
+    "answer_key_v1_surfaces": 3
+  },
+  "rows": [
+    {
+      "index": 1,
+      "run_id": "swarm-1789722727",
+      "arms": {
+        "cold": {
+          "best_passed": 0,
+          "attempts": 4,
+          "converged": false,
+          "attempts_to_converge": null,
+          "tokens": 10148074,
+          "turns": 338,
+          "best_v1_remaining": null,
+          "skill_version_at_start": null,
+          "distillations_accepted": 0,
+          "distillations": 0
+        },
+        "warm": {
+          "best_passed": 441,
+          "attempts": 4,
+          "converged": false,
+          "attempts_to_converge": null,
+          "tokens": 9750895,
+          "turns": 281,
+          "best_v1_remaining": null,
+          "skill_version_at_start": 0,
+          "distillations_accepted": 4,
+          "distillations": 4
+        }
+      }
+    },
+    {
+      "index": 2,
+      "run_id": "swarm-1789724853",
+      "arms": {
+        "cold": {
+          "best_passed": 445,
+          "attempts": 3,
+          "converged": true,
+          "attempts_to_converge": 3,
+          "tokens": 8835500,
+          "turns": 246,
+          "best_v1_remaining": null,
+          "skill_version_at_start": null,
+          "distillations_accepted": 0,
+          "distillations": 0
+        },
+        "warm": {
+          "best_passed": 436,
+          "attempts": 5,
+          "converged": false,
+          "attempts_to_converge": null,
+          "tokens": 6739013,
+          "turns": 253,
+          "best_v1_remaining": null,
+          "skill_version_at_start": 4,
+          "distillations_accepted": 5,
+          "distillations": 5
+        }
+      }
+    },
+    {
+      "index": 3,
+      "run_id": "swarm-1789726882",
+      "arms": {
+        "cold": {
+          "best_passed": 445,
+          "attempts": 4,
+          "converged": true,
+          "attempts_to_converge": 4,
+          "tokens": 8837973,
+          "turns": 225,
+          "best_v1_remaining": 32,
+          "skill_version_at_start": null,
+          "distillations_accepted": 0,
+          "distillations": 0
+        },
+        "warm": {
+          "best_passed": 443,
+          "attempts": 4,
+          "converged": false,
+          "attempts_to_converge": null,
+          "tokens": 12062948,
+          "turns": 313,
+          "best_v1_remaining": 33,
+          "skill_version_at_start": 9,
+          "distillations_accepted": 4,
+          "distillations": 4
+        }
+      }
+    },
+    {
+      "index": 4,
+      "run_id": "swarm-1789729022",
+      "arms": {
+        "cold": {
+          "best_passed": 445,
+          "attempts": 3,
+          "converged": true,
+          "attempts_to_converge": 3,
+          "tokens": 7545483,
+          "turns": 243,
+          "best_v1_remaining": 32,
+          "skill_version_at_start": null,
+          "distillations_accepted": 0,
+          "distillations": 0
+        },
+        "warm": {
+          "best_passed": 311,
+          "attempts": 4,
+          "converged": false,
+          "attempts_to_converge": null,
+          "tokens": 7246293,
+          "turns": 224,
+          "best_v1_remaining": 39,
+          "skill_version_at_start": 13,
+          "distillations_accepted": 4,
+          "distillations": 4
+        }
+      }
+    },
+    {
+      "index": 5,
+      "run_id": "swarm-1789730908",
+      "arms": {
+        "cold": {
+          "best_passed": 0,
+          "attempts": 5,
+          "converged": false,
+          "attempts_to_converge": null,
+          "tokens": 7413792,
+          "turns": 272,
+          "best_v1_remaining": 9,
+          "skill_version_at_start": null,
+          "distillations_accepted": 0,
+          "distillations": 0
+        },
+        "warm": {
+          "best_passed": 445,
+          "attempts": 4,
+          "converged": true,
+          "attempts_to_converge": 4,
+          "tokens": 8161706,
+          "turns": 236,
+          "best_v1_remaining": 20,
+          "skill_version_at_start": 17,
+          "distillations_accepted": 4,
+          "distillations": 4
+        }
+      }
+    }
+  ],
+  "panels": [
+    {
+      "id": "best_by_run",
+      "title": "Best tests passing, run over run",
+      "kind": "line",
+      "x_label": "run index (times the skill has been rewritten)",
+      "y_label": "best tests passing",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 1,
+              "y": 0,
+              "run_id": "swarm-1789722727",
+              "converged": false,
+              "skill_version": null
+            },
+            {
+              "x": 2,
+              "y": 445,
+              "run_id": "swarm-1789724853",
+              "converged": true,
+              "skill_version": null
+            },
+            {
+              "x": 3,
+              "y": 445,
+              "run_id": "swarm-1789726882",
+              "converged": true,
+              "skill_version": null
+            },
+            {
+              "x": 4,
+              "y": 445,
+              "run_id": "swarm-1789729022",
+              "converged": true,
+              "skill_version": null
+            },
+            {
+              "x": 5,
+              "y": 0,
+              "run_id": "swarm-1789730908",
+              "converged": false,
+              "skill_version": null
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 441,
+              "run_id": "swarm-1789722727",
+              "converged": false,
+              "skill_version": 0
+            },
+            {
+              "x": 2,
+              "y": 436,
+              "run_id": "swarm-1789724853",
+              "converged": false,
+              "skill_version": 4
+            },
+            {
+              "x": 3,
+              "y": 443,
+              "run_id": "swarm-1789726882",
+              "converged": false,
+              "skill_version": 9
+            },
+            {
+              "x": 4,
+              "y": 311,
+              "run_id": "swarm-1789729022",
+              "converged": false,
+              "skill_version": 13
+            },
+            {
+              "x": 5,
+              "y": 445,
+              "run_id": "swarm-1789730908",
+              "converged": true,
+              "skill_version": 17
+            }
+          ]
+        }
+      ],
+      "annotations": [
+        {
+          "kind": "hline",
+          "y": 445,
+          "label": "answer key = 445"
+        }
+      ],
+      "y_starts_at_zero": true,
+      "caveat": "THE headline panel. The skill persists between runs and cold starts from nothing every time, so cold is the control that says whether the task or the server drifted. One run per point, no repeats: a trend over several is suggestive, two adjacent points are not a result.",
+      "fits": {
+        "cold": {
+          "slope": 0.0,
+          "intercept": 267.0,
+          "r_squared": 0.0,
+          "p_value": 1.0,
+          "stderr": 89.0,
+          "n": 5
+        },
+        "warm": {
+          "slope": -11.700000000000001,
+          "intercept": 450.3,
+          "r_squared": 0.10053022736619471,
+          "p_value": 0.6031701316195172,
+          "stderr": 20.20552729659222,
+          "n": 5
+        }
+      }
+    },
+    {
+      "id": "attempts_to_converge",
+      "title": "Attempts needed to pass the suite",
+      "kind": "line",
+      "x_label": "run index",
+      "y_label": "attempts (gap = never converged)",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 1,
+              "y": null
+            },
+            {
+              "x": 2,
+              "y": 3
+            },
+            {
+              "x": 3,
+              "y": 4
+            },
+            {
+              "x": 4,
+              "y": 3
+            },
+            {
+              "x": 5,
+              "y": null
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": null
+            },
+            {
+              "x": 2,
+              "y": null
+            },
+            {
+              "x": 3,
+              "y": null
+            },
+            {
+              "x": 4,
+              "y": null
+            },
+            {
+              "x": 5,
+              "y": 4
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": true,
+      "caveat": "6 point(s) are UNDEFINED -- the run never converged -- and are drawn as gaps, never as the attempt count. This is the metric the design predicts should fall; it is also the one most often undefined.",
+      "undefined_points": 6
+    },
+    {
+      "id": "cost_by_run",
+      "title": "Attempt tokens per run",
+      "kind": "line",
+      "x_label": "run index",
+      "y_label": "tokens",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 1,
+              "y": 10148074,
+              "turns": 338
+            },
+            {
+              "x": 2,
+              "y": 8835500,
+              "turns": 246
+            },
+            {
+              "x": 3,
+              "y": 8837973,
+              "turns": 225
+            },
+            {
+              "x": 4,
+              "y": 7545483,
+              "turns": 243
+            },
+            {
+              "x": 5,
+              "y": 7413792,
+              "turns": 272
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 9750895,
+              "turns": 281
+            },
+            {
+              "x": 2,
+              "y": 6739013,
+              "turns": 253
+            },
+            {
+              "x": 3,
+              "y": 12062948,
+              "turns": 313
+            },
+            {
+              "x": 4,
+              "y": 7246293,
+              "turns": 224
+            },
+            {
+              "x": 5,
+              "y": 8161706,
+              "turns": 236
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": true,
+      "caveat": "Warm's prompt carries the skill, and the skill grows. A rising warm line is the skill getting longer, which is a real cost of the method -- not an artefact to normalise away."
+    },
+    {
+      "id": "skill_growth",
+      "title": "Skill version reached, per run",
+      "kind": "step",
+      "x_label": "run index",
+      "y_label": "skill version at the start of the run",
+      "series": [
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 0,
+              "accepted": 4,
+              "proposed": 4
+            },
+            {
+              "x": 2,
+              "y": 4,
+              "accepted": 5,
+              "proposed": 5
+            },
+            {
+              "x": 3,
+              "y": 9,
+              "accepted": 4,
+              "proposed": 4
+            },
+            {
+              "x": 4,
+              "y": 13,
+              "accepted": 4,
+              "proposed": 4
+            },
+            {
+              "x": 5,
+              "y": 17,
+              "accepted": 4,
+              "proposed": 4
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": false,
+      "caveat": "A version that does not advance means every proposal that run was rejected by the validator. Flat is informative."
+    }
+  ],
+  "effect": {
+    "mean_difference": 148.2,
+    "ci95": [
+      -57.6,
+      354.0
+    ],
+    "n_runs": 5,
+    "crosses_zero": true
+  },
+  "effect_note": "Paired warm-minus-cold on best tests passing, bootstrap 95% CI over runs. Paired because both arms share a run, a server and an hour. An interval that crosses zero means this experiment has not yet shown a difference -- say that, do not round it to the sign of the mean."
+}

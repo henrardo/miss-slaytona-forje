@@ -1,0 +1,80 @@
+{
+  "mistral-s": {
+    "w": 84.13,
+    "h": 100.367,
+    "above": 0.7509,
+    "below": 0.0212,
+    "widthInCaps": 0.6472
+  },
+  "sglang-S": {
+    "w": 525,
+    "h": 658,
+    "above": 1,
+    "below": 0,
+    "widthInCaps": 0.7979
+  },
+  "sglang-L": {
+    "w": 516,
+    "h": 662,
+    "above": 1.003,
+    "below": 0.003,
+    "widthInCaps": 0.7842
+  },
+  "daytona-a": {
+    "w": 35.796,
+    "h": 44.859,
+    "above": 0.7787,
+    "below": 0.0069,
+    "widthInCaps": 0.6269
+  },
+  "daytona-y": {
+    "w": 36.313,
+    "h": 61.414,
+    "above": 0.7732,
+    "below": 0.3024,
+    "widthInCaps": 0.636
+  },
+  "daytona-t": {
+    "w": 23.692,
+    "h": 53.488,
+    "above": 0.9351,
+    "below": 0.0016,
+    "widthInCaps": 0.4149
+  },
+  "daytona-n": {
+    "w": 36.954,
+    "h": 44.449,
+    "above": 0.7787,
+    "below": -0.0003,
+    "widthInCaps": 0.6472
+  },
+  "neo4j-mark": {
+    "w": 16,
+    "h": 20,
+    "above": 0.5217,
+    "below": 0.3478,
+    "widthInCaps": 0.6957
+  },
+  "neo4j-e": {
+    "w": 24,
+    "h": 23,
+    "above": 1,
+    "below": 0,
+    "widthInCaps": 1.0435
+  },
+  "mistral-M": {
+    "w": 140,
+    "h": 100,
+    "aspect": 1.4
+  },
+  "mistral-flower": {
+    "w": 104,
+    "h": 104,
+    "aspect": 1
+  },
+  "daytona-glyph": {
+    "w": 210.154,
+    "h": 218.998,
+    "aspect": 0.9596
+  }
+}

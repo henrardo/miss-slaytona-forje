@@ -1,0 +1,19 @@
+# Built by scripts/make_fixture.py from a REAL merged migration:
+# openapi-generators/openapi-python-client#779 -- feat: Upgrade internal Pydantic use to v2. Thanks @KristinnVikar!
+# https://github.com/openapi-generators/openapi-python-client/pull/779
+#
+# openapi_python_client/ is at the PRE-migration commit (be5b306d).
+# tests/ and reference_v2/ are at the MERGE commit
+# (a6d7d7bb) -- the post-migration suite is the success
+# oracle, the reference is the answer key and never reaches the pod.
+#
+# Nothing here is hand-tagged with which v1/v2 patterns appear
+# where. The agent gets the whole codebase and one instruction.
+#
+# Measured at build time: 6/22 migration
+# surfaces, 277-test oracle, warnings-as-errors=False.
+target_version: "pydantic>=2.0,<3.0"
+package_path: openapi_python_client
+tests_path: tests
+test_command: "python -m pytest tests -q"
+needs_editable_install: true

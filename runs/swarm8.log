@@ -1,0 +1,22 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+packet queue is empty, aborting
+packet queue is empty, aborting
+--reset-memory: deleted 753 node(s) from the shared graph
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixture
+tarball: 18,487 bytes
+  warm-0 seeded (memory)
+  cold-0 seeded
+baseline: 0 passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+  [cold-0] transient (1): DaytonaNotFoundError(message='Failed to create sandbox: Failure during waiting for sandbox to start: Failed to refresh sandbox data: Sandbox with ID or name edb6d5bf-ebe4-4a3a-8156-ed78710bdc5c not found', status_code=404, code=None, headers={'Content-Type': 'application/json; charset=utf-8', 'Content-Length': '219', 'Connection': 'keep-alive', 'Date': 'Wed, 16 Sep 2026 16:41:48 GMT', 'Etag': 'W/"db-9tOmmNJvgy7YNiYLeIhy4cAC/xo"', 'X-Powered-By': 'Express', 'Vary': 'Origin', 'X-Daytona-Api-Version': 'v0.214.3', 'X-RateLimit-Limit-authenticated': '50000', 'X-RateLimit-Remaining-authenticated': '49999', 'X-RateLimit-Reset-authenticated': '60', 'X-Cache': 'Error from cloudfront', 'Via': '1.1 1ebee81f497eb06c92039c3b1faacc38.cloudfront.net (CloudFront)', 'X-Amz-Cf-Pop': 'LHR50-P5', 'X-Amz-Cf-Id': 'hC_rNojcXz_s1Gr0xFlFfSGc8JBPM4WEEJ9-57OVkXgeiEgGbdac6A==', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'Content-Security-Policy': "frame-ancestors 'none'", 'X-Content-Type-Options': 'nosniff', 'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload'})
+  WARNING: a cold agent coroutine raised: ValueError("unknown event type: 'ATTEMPT_FAILED'")
+
+============================================================
+WARM (shared memory): 0/1 converged | 1 attempts | errors cleared 0 | best tests passing 0 | in 541,836 / out 17,584
+COLD (no memory)  : 0/1 converged | 0 attempts | errors cleared 0 | best tests passing 0 | in 127,751 / out 4,670
+
+GATE FAILED: 0 attempt(s) graded by 0 real Daytona run(s); 1 sandbox(es) swept
+     step hook (this run): 42 step(s) written by the agents (0 of them turns that called no tool), 0 injection(s), 0 error(s)
+     entities extracted after the clock stopped: 0 from messages, 83 TOUCHED edge(s) from reasoning steps
+event log: runs/swarm-1789575475.jsonl

@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from swarm import agent_workspace
 from swarm.agent_workspace import AgentWorkspace, SwarmHost
 
 
@@ -134,3 +135,131 @@ async def test_cache_is_dropped_before_the_attempt() -> None:
     assert seen["cache_after_vibe"] is None, (
         "run_vibe left the previous attempt's tree in the cache while Vibe ran"
     )
+
+
+class StreamingThenHangingHost(SwarmHost):
+    """Emits a few stream lines, then hangs past the timeout.
+
+    This is what a real attempt looks like when the clock cuts it: Vibe has
+    already streamed N complete turns and is mid-way through the next one
+    when it is killed.
+    """
+
+    def __init__(self, lines: list[str], hang: float) -> None:
+        super().__init__(host="fake", port=22, identity=Path("/dev/null"))
+        self.lines, self.hang = lines, hang
+
+    def argv(self, command: str) -> list[str]:
+        script = "".join(f"printf '%s\\n' {line!r}; " for line in self.lines)
+        return ["sh", "-c", f"{script} sleep {self.hang}"]
+
+    def argv_as(self, agent_user: str, command: str) -> list[str]:
+        return self.argv(command)
+
+
+@pytest.mark.asyncio
+async def test_a_timeout_keeps_the_stream_that_already_arrived() -> None:
+    """Run 10 attempt 3, in miniature.
+
+    That attempt worked for 59 turns, took the suite to 33/33 -- the only
+    passing attempt in the run -- hit its timeout, and ingested ZERO steps,
+    because `proc.communicate()` buffered the stream inside a coroutine
+    that was then cancelled. The agent's whole record of how it succeeded
+    went out with it.
+
+    Under a task that cannot be one-shotted this is the common case:
+    attempts that run out of clock are exactly the ones carrying the
+    failure information the distiller needs.
+    """
+    entries = [
+        '{"type":"reasoning","turnId":"t1","text":"Read the models first."}',
+        '{"type":"message","turnId":"t1","role":"assistant","content":[]}',
+    ]
+    ws = AgentWorkspace(host=StreamingThenHangingHost(entries, hang=30.0),
+                        label="warm-0", model="m",
+                        model_base_url="http://127.0.0.1:1")
+    ws._cache = {"tree": {}, "sessions": []}
+    ws._kill_remote_vibe = lambda: None  # type: ignore[method-assign]
+
+    proc = await ws.invoke_vibe_async("task", timeout=1.0)
+
+    assert proc.returncode == 1
+    assert "timed out" in proc.stderr
+    parsed = ws.stream_entries(proc.stdout)
+    assert len(parsed) == 2, (
+        f"the timeout threw away the stream: got {parsed}")
+    assert parsed[0]["text"] == "Read the models first."
+
+
+# ---- progressive disclosure: the model does not follow pointers ----------
+
+
+def _pkg() -> dict[str, bytes]:
+    """A relocated AIP package, in the shape v1 actually took."""
+    return {
+        "SKILL.md": (b"---\nname: s\n---\n\n```yaml\nsteps:\n"
+                     b"  - name: migrate-field-validators\n"
+                     b"    description: >\n"
+                     b"      Before changing field validators, read the "
+                     b"matching step in references/validator-migration.md "
+                     b"and follow it.\n```\n"),
+        "references/validator-migration.md":
+            b"# Validators\nRemove allow_reuse. pre=True becomes "
+            b'mode="before".\n',
+        "references/anti-patterns.md":
+            b"# Anti-patterns\nNever import pydantic.v1.\n",
+        "source/procedure.schema.json": b"{}",
+    }
+
+
+def test_references_are_inlined_into_the_body() -> None:
+    """Measured: zero reference reads across all six attempts of
+    swarm-1789903474, despite Vibe handing the agent the absolute base
+    directory and the file list. The content has to come to the model."""
+    out = agent_workspace.inline_references(_pkg())
+    body = out["SKILL.md"].decode()
+    assert "Remove allow_reuse" in body
+    assert "Never import pydantic.v1" in body
+    assert 'mode="before"' in body
+
+
+def test_the_authored_body_survives_inlining() -> None:
+    """Appended, never replaced -- the author's procedure is the skill."""
+    out = agent_workspace.inline_references(_pkg())
+    body = out["SKILL.md"].decode()
+    assert "migrate-field-validators" in body
+    assert body.index("migrate-field-validators") < body.index("Remove allow_reuse")
+
+
+def test_the_reference_files_are_still_written() -> None:
+    """The package stays AIP-shaped. This changes the RENDERING handed to
+    one model, not the artifact that gets validated and archived."""
+    out = agent_workspace.inline_references(_pkg())
+    assert out["references/validator-migration.md"] == \
+        _pkg()["references/validator-migration.md"]
+    assert set(out) == set(_pkg())
+
+
+def test_inlining_is_idempotent() -> None:
+    """install_skill runs every attempt; twice must not double the tail."""
+    once = agent_workspace.inline_references(_pkg())
+    twice = agent_workspace.inline_references(once)
+    assert once["SKILL.md"] == twice["SKILL.md"]
+
+
+def test_a_package_with_no_references_is_untouched() -> None:
+    """v2 and v3 kept their content inline. Nothing to do, and no marker
+    appended to a body that does not need one."""
+    pkg = {"SKILL.md": b"---\nname: s\n---\nbody\n"}
+    assert agent_workspace.inline_references(pkg) == pkg
+
+
+def test_the_version_hash_stays_the_authored_one() -> None:
+    """Otherwise every install reports a version mismatch against what
+    `propose` accepted, on every attempt, forever."""
+    import inspect
+    src = inspect.getsource(agent_workspace.AgentWorkspace.install_skill)
+    assert "canonical_body" in src
+    assert '"body": _body_sha(canonical_body)' in src
+    # and what the model really read is still reported, from the read-back
+    assert "body_rendered" in src

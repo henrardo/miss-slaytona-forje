@@ -1,0 +1,10 @@
+{
+  "fixture": "x12sdk",
+  "package": "x12sdk",
+  "graded_at": 1789859821,
+  "baseline_passed": 0,
+  "baseline_v1_surfaces": 383,
+  "baseline_signature": "pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.",
+  "answer_key_passed": 261,
+  "answer_key_v1_surfaces": 2
+}

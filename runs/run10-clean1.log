@@ -1,0 +1,41 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:105: DeprecationWarning: Use `streamable_http_client` instead.
+  self.gen = func(*args, **kwds)
+  MCP neo4j-agent-memory: 16 tool(s)
+  MCP neo4j-agent-memory: memory_get_context answered 5369 chars -- working
+  MCP web: 1 tool(s)
+  MCP web: lookup answered 1051 chars -- working
+gpu: 1x NVIDIA H200, 143771 MiB | harness: 16161a2
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixture
+tarball: 18,487 bytes
+distiller: gpt-5.5-2026-04-23  (EXTERNAL model: this run does not measure self-improvement)
+skill: v5 | dir d378158b6751 | body 889196a26d19 | 2 file(s) | 1647 approx tokens | derived from 9 trace(s)
+  warm-0 seeded (memory)
+  cold-0 seeded
+  arms match exactly: 10 tool(s) each, hooks none, mcp ['local', 'mistralai/Mistral-Small-4-119B-2603', 'web']
+baseline: 0 passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+provenance: {'prov_model': 'mistralai/Mistral-Small-4-119B-2603', 'prov_gpu': '1x NVIDIA H200, 143771 MiB', 'prov_commit': '16161a2', 'prov_writable': True}
+  entity extraction for warm-0 exceeded 240s and was abandoned -- the run's own numbers are unaffected, the graph has fewer entity edges
+  step entity linking for warm-0 exceeded 240s and was abandoned
+  warm-0: skill loaded but it is NOT v5 -- Vibe served different text than the file on disk (a resumed session replays the version it first loaded).
+
+============================================================
+hardware: 1x NVIDIA H200, 143771 MiB | model: mistralai/Mistral-Small-4-119B-2603
+WARM (shared memory): 1/1 converged | 3 attempts | errors cleared 1 | best tests passing 33 | in 5,629,684 / out 24,793
+COLD (no memory)  : 1/1 converged | 2 attempts | errors cleared 0 | best tests passing 33 | in 3,063,296 / out 15,525
+     BLOCKING EVENT LOOP: 18 callback(s) over the threshold -- agents cannot run concurrently while this happens
+     28.6s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:637> wait_for=
+     4.2s  Executing <Task pending name='Task-563' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:373> cb=[_
+     4.1s  Executing <Task pending name='Task-563' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:373> cb=[_
+
+GATE ok: 5 attempt(s) graded by 5 real Daytona run(s); 0 sandbox(es) swept
+     ingestion (off the clock): 113 step(s) from 3 attempt(s), 56 with the model's own reasoning, 15 failed tool call(s) recorded
+     skill v5 (889196a26d19, 1647 approx tokens) reached 0/1 warm agent(s)
+     entities extracted after the clock stopped: 0 from messages, 0 TOUCHED edge(s) from reasoning steps
+metrics: skill v5 (1647 approx tokens, d378158b6751) | counts toward clearly-working: YES
+  cold: 33 passed, 2 attempt(s), 118 turn(s), 200s attempt / 0s distil | attempt tokens 3,058,137 in / 15,523 out | distil tokens 0 in / 0 out
+  warm: 33 passed, 3 attempt(s), 176 turn(s), 370s attempt / 56s distil | attempt tokens 5,624,436 in / 24,791 out | distil tokens 37,374 in / 5,992 out
+    distillation: 3/3 accepted, versions [6, 7, 8], 0 memory tool call(s)
+event log: runs/swarm-1789679031.jsonl | metrics: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/swarm-1789679031-metrics.json | table: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/cross-run.md

@@ -1,0 +1,43 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+host script: /opt/swarm/hook.py sha256 58dafc7c76c3
+host script: /opt/swarm/reasoning_relay.py sha256 2c493c03cee4
+host script: /opt/swarm/id_fix_proxy.py sha256 217ed12ff314
+host script: /opt/swarm/web/server.py sha256 9530cf75edd9
+host script: /opt/swarm/web/requirements.txt sha256 9434fbe28613
+host script: /opt/swarm/swarm/sidecar_main.py sha256 a63bab517ca9
+host script: /opt/swarm/orchestrator/__init__.py sha256 e3b0c44298fc
+host script: /opt/swarm/orchestrator/memory.py sha256 c3e18d1400f1
+host script: /opt/swarm/orchestrator/step_memory.py sha256 355a8ddac5e9
+/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:105: DeprecationWarning: Use `streamable_http_client` instead.
+  self.gen = func(*args, **kwds)
+  MCP neo4j-agent-memory: 16 tool(s)
+  MCP neo4j-agent-memory: memory_get_context answered 91 chars -- working
+  MCP web: 1 tool(s)
+  MCP web: lookup answered 1275 chars -- working
+gpu: 1x NVIDIA H200, 143771 MiB | harness: 16161a2
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixtures/x12sdk
+tarball: 274,816 bytes
+distiller: gpt-5.6-sol  (EXTERNAL model: this run does not measure self-improvement)
+skill: v0 | dir ffd42f681f2c | body ce1e5133fcda | 2 file(s) | 569 approx tokens | derived from 0 trace(s)
+  cold-0 seeded
+baseline: 0 passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+provenance: {'prov_model': 'mistralai/Mistral-Small-4-119B-2603', 'prov_gpu': '1x NVIDIA H200, 143771 MiB', 'prov_commit': '16161a2', 'prov_writable': True, 'prov_fixture': 'x12sdk'}
+
+============================================================
+hardware: 1x NVIDIA H200, 143771 MiB | model: mistralai/Mistral-Small-4-119B-2603
+WARM (shared memory): 0/1 converged | 0 attempts | errors cleared 0 | best tests passing 0 | in 0 / out 0
+COLD (no memory)  : 0/1 converged | 3 attempts | errors cleared 3 | best tests passing 58 | in 10,217,751 / out 25,981
+     BLOCKING EVENT LOOP: 8 callback(s) over the threshold -- agents cannot run concurrently while this happens
+     21.7s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:578> wait_for=
+     11.6s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:726> wait_for=
+     1.6s  Executing <Task pending name='Task-563' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:415> wait_
+
+GATE ok: 3 attempt(s) graded by 3 real Daytona run(s); 1 sandbox(es) swept
+     graph writes: 0 step(s) from 0 attempt(s), 0 with the model's own reasoning, 0 failed tool call(s) recorded
+     entities extracted after the clock stopped: 0 from messages, 0 TOUCHED edge(s) from reasoning steps
+metrics: skill v0 (569 approx tokens, ffd42f681f2c) | counts toward clearly-working: YES
+  GPU: 1x NVIDIA H200, 143771 MiB at $4.59/hr x 458s = $0.58 for this RUN -- provisioning and the model download are before the first event and are not counted here
+  cold: 58 passed, 3 attempt(s), 241 turn(s), 405s attempt / 0s distil | attempt tokens 10,212,581 in / 25,979 out | distil tokens 0 in / 0 out
+event log: runs/swarm-1789861804.jsonl | metrics: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/swarm-1789861804-metrics.json | table: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/cross-run.md | series: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/swarm-1789861804-series.json

@@ -1,0 +1,30 @@
+__pycache__/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.venv
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# JetBrains
+.idea/
+
+test-reports/
+
+/coverage.xml
+/.coverage
+htmlcov/
+
+# Generated end to end test data
+my-test-api-client/
+custom-e2e/

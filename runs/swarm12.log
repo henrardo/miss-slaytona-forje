@@ -1,0 +1,50 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:105: DeprecationWarning: Use `streamable_http_client` instead.
+  self.gen = func(*args, **kwds)
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+  MCP neo4j-agent-memory: 16 tool(s)
+  MCP neo4j-agent-memory: memory_get_context answered 4279 chars -- working
+  MCP web: 1 tool(s)
+  MCP web: lookup answered 1086 chars -- working
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixture
+tarball: 18,487 bytes
+  warm-0 memory tools: 16 loaded
+  warm-0 seeded (memory)
+  cold-0 seeded
+baseline: 0 passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+  [warm] an agent converged -- stopping the rest of this swarm
+
+============================================================
+WARM (shared memory): 1/1 converged | 2 attempts | errors cleared 0 | best tests passing 33 | in 4,265,653 / out 12,568
+COLD (no memory)  : 0/1 converged | 17 attempts | errors cleared 1 | best tests passing 32 | in 4,823,664 / out 16,990
+
+GATE ok: 19 attempt(s) graded by 19 real Daytona run(s); 0 sandbox(es) swept
+     step hook (this run): 0 step(s) written by the agents (0 of them turns that called no tool), 0 injection(s), 0 error(s)
+     entities extracted after the clock stopped: 148 from messages, 194 TOUCHED edge(s) from reasoning steps
+     the step hook wrote nothing -- warm's graph is empty, so warm == cold and any token comparison above is a null result.
+event log: runs/swarm-1789590770.jsonl

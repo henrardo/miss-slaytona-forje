@@ -1,0 +1,11 @@
+2026-09-20T16:02:04.044555+00:00 3741 3743 WARNING Tool call failed tool=bash tool_call_id=91iIjbGn5 outcome=error error=ToolError
+2026-09-20T16:02:05.577213+00:00 3741 3743 WARNING Tool call failed tool=bash tool_call_id=YYIZHipp2 outcome=error error=ToolError
+2026-09-20T16:08:21.263527+00:00 4128 4130 WARNING Tool call failed tool=edit tool_call_id=tT20LvgLT outcome=error error=ToolError
+2026-09-20T16:08:36.990188+00:00 4128 4130 WARNING Tool call failed tool=edit tool_call_id=v2xFHKhvG outcome=error error=ToolError
+2026-09-20T16:08:54.167514+00:00 4128 4130 WARNING Tool call failed tool=edit tool_call_id=zahXxWXiZ outcome=error error=ToolError
+2026-09-20T16:15:52.015145+00:00 4724 4726 WARNING Tool call failed tool=read_file tool_call_id=OeYev4KbQ outcome=error error=ToolError
+2026-09-20T16:16:23.783846+00:00 4724 4726 WARNING Tool call failed tool=bash tool_call_id=zKQNee44X outcome=error error=ToolError
+2026-09-20T16:16:39.182642+00:00 4724 4726 WARNING Tool call failed tool=edit tool_call_id=75s5jcGJn outcome=error error=ToolError
+2026-09-20T16:17:26.274470+00:00 4724 4726 WARNING Tool call failed tool=bash tool_call_id=W7DRBT2TV outcome=error error=ToolError
+2026-09-20T16:17:28.093323+00:00 4724 4726 WARNING Tool call failed tool=bash tool_call_id=Yd9IO80mE outcome=error error=ToolError
+2026-09-20T16:17:29.069677+00:00 4724 4726 WARNING Tool call failed tool=bash tool_call_id=DrnKwJc9W outcome=error error=ToolError

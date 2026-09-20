@@ -1,0 +1,39 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:105: DeprecationWarning: Use `streamable_http_client` instead.
+  self.gen = func(*args, **kwds)
+  MCP neo4j-agent-memory: 16 tool(s)
+  MCP neo4j-agent-memory: memory_get_context answered 3266 chars -- working
+  MCP web: 1 tool(s)
+  MCP web: lookup answered 1443 chars -- working
+gpu: 1x NVIDIA H200, 143771 MiB | harness: 16161a2
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixture
+tarball: 18,487 bytes
+skill: v1 | dir a77846ebc092 | body 6495a7bdf32c | 2 file(s) | 1718 approx tokens | derived from 2 trace(s)
+  warm-0 seeded (memory)
+  cold-0 seeded
+  arms match exactly: 10 tool(s) each, hooks none, mcp ['local', 'mistralai/Mistral-Small-4-119B-2603', 'web']
+baseline: 0 passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+provenance: {'prov_model': 'mistralai/Mistral-Small-4-119B-2603', 'prov_gpu': '1x NVIDIA H200, 143771 MiB', 'prov_commit': '16161a2', 'prov_writable': True}
+  [warm-0] distillation: kept v1: invalid_schema after 2 repair turn(s)
+  warm-0: skill v1 (6495a7bdf32c) reached the model
+
+============================================================
+hardware: 1x NVIDIA H200, 143771 MiB | model: mistralai/Mistral-Small-4-119B-2603
+WARM (shared memory): 1/1 converged | 1 attempts | errors cleared 0 | best tests passing 33 | in 1,298,964 / out 6,494
+COLD (no memory)  : 1/1 converged | 1 attempts | errors cleared 0 | best tests passing 33 | in 2,425,328 / out 8,860
+     BLOCKING EVENT LOOP: 13 callback(s) over the threshold -- agents cannot run concurrently while this happens
+     28.8s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:618> wait_for=
+     3.9s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:485> wait_for=
+     0.9s  Executing <Task pending name='Task-563' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:368> wait_
+
+GATE ok: 2 attempt(s) graded by 2 real Daytona run(s); 0 sandbox(es) swept
+     ingestion (off the clock): 50 step(s) from 1 attempt(s), 27 with the model's own reasoning, 9 failed tool call(s) recorded
+     skill v1 (6495a7bdf32c, 1718 approx tokens) reached 1/1 warm agent(s)
+     entities extracted after the clock stopped: 405 from messages, 427 TOUCHED edge(s) from reasoning steps
+metrics: skill v1 (1718 approx tokens, a77846ebc092) | counts toward clearly-working: YES
+  cold: 33 passed, 1 attempt(s), 79 turn(s), 120s attempt / 0s distil | attempt tokens 2,420,168 in / 8,858 out | distil tokens 0 in / 0 out
+  warm: 33 passed, 1 attempt(s), 52 turn(s), 84s attempt / 54s distil | attempt tokens 1,293,678 in / 6,492 out | distil tokens 437,601 in / 12,632 out
+    distillation: 0/1 accepted, versions -, 6 memory tool call(s)
+event log: runs/swarm-1789657795.jsonl | metrics: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/swarm-1789657795-metrics.json | table: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/cross-run.md

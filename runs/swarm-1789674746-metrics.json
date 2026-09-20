@@ -1,0 +1,45 @@
+{
+  "run_id": "swarm-1789674746",
+  "gpu": "1x NVIDIA H200, 143771 MiB",
+  "model": "mistralai/Mistral-Small-4-119B-2603",
+  "commit": "16161a2",
+  "skill_version": 0,
+  "skill_approx_tokens": 565,
+  "skill_dir_sha": "e77db7780125",
+  "arms_identical": true,
+  "known_differences": [],
+  "arms": {
+    "warm": {
+      "arm": "warm",
+      "tests_passed": 33,
+      "attempts": 1,
+      "converged": true,
+      "turns": 93,
+      "attempt_seconds": 207.9,
+      "attempt_prompt_tokens": 3438442,
+      "attempt_completion_tokens": 12297,
+      "distil_seconds": 0.0,
+      "distil_prompt_tokens": 1417150,
+      "distil_completion_tokens": 37910,
+      "steps_ingested": 91,
+      "steps_with_reasoning": 67,
+      "skill_versions": [],
+      "distillations": 0,
+      "distillations_accepted": 0,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": 5,
+          "tests_passed": 33,
+          "turns": 93,
+          "seconds": 207.9,
+          "prompt_tokens": 3438442,
+          "completion_tokens": 12297,
+          "ended_cleanly": true
+        }
+      ]
+    }
+  },
+  "counts_toward_clearly_working": true
+}

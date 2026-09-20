@@ -1,119 +1,41 @@
 /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
 It will be compatible before version 2.0.0.
   from authlib.jose import JsonWebKey, JsonWebToken
-
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                                                                              │
-│                                                                              │
-│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
-│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                FastMCP 4.0.3                                 │
-│                            https://gofastmcp.com                             │
-│                                                                              │
-│                  🖥  Server:      web, 4.0.3                                  │
-│                  🚀 Deploy free: https://horizon.prefect.io                  │
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-
-[09/13/26 23:49:11] INFO     Starting MCP server 'web' with     transport.py:242
-                             transport 'stdio'                                  
-/Users/t6w652j6ft/.cache/uv/archive-v0/stZJDwAjmd3TgwG8OW_rv/lib/python3.12/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
-It will be compatible before version 2.0.0.
-  from authlib.jose import JsonWebKey, JsonWebToken
-/Users/t6w652j6ft/.cache/uv/archive-v0/stZJDwAjmd3TgwG8OW_rv/lib/python3.12/site-packages/authlib/integrations/httpx_client/assertion_client.py:5: AuthlibDeprecationWarning: The httpx module is deprecated; please use httpx2 instead.
-  from ._compat import httpx2
-
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                                                                              │
-│                                                                              │
-│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
-│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                FastMCP 2.14.7                                │
-│                            https://gofastmcp.com                             │
-│                                                                              │
-│                    🖥  Server:      neo4j-agent-memory                        │
-│                    🚀 Deploy free: https://fastmcp.cloud                     │
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                          ✨ FastMCP 3.0 is coming!                           │
-│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                          🎉 Update available: 4.0.3                          │
-│                      Run: pip install --upgrade fastmcp                      │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-
-LLM extractor not available, skipping: No llm adapter available for provider 'openai'.
-
-Install one of the following:
-  pip install 'neo4j-agent-memory[openai]'      # native adapter
-  pip install 'neo4j-agent-memory[litellm]'  # universal adapter (recommended)
-[09/13/26 23:49:13] INFO     Starting MCP server                  server.py:2506
-                             'neo4j-agent-memory' with transport                
-                             'stdio'                                            
-
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                                                                              │
-│                                                                              │
-│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
-│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                FastMCP 4.0.3                                 │
-│                            https://gofastmcp.com                             │
-│                                                                              │
-│                  🖥  Server:      web, 4.0.3                                  │
-│                  🚀 Deploy free: https://horizon.prefect.io                  │
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-
-[09/13/26 23:49:14] INFO     Starting MCP server 'web' with     transport.py:242
-                             transport 'stdio'                                  
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-Received notification from DBMS server: <GqlStatusObject gql_status='01N52', status_description='warn: property key does not exist. The property `observation` does not exist. Verify that the spelling is correct.', position=<SummaryInputPosition line=4, column=76, offset=193>, raw_classification='UNRECOGNIZED', classification=<NotificationClassification.UNRECOGNIZED: 'UNRECOGNIZED'>, raw_severity='WARNING', severity=<NotificationSeverity.WARNING: 'WARNING'>, diagnostic_record={'_classification': 'UNRECOGNIZED', '_severity': 'WARNING', '_position': {'offset': 193, 'line': 4, 'column': 76}, 'OPERATION': '', 'OPERATION_CODE': '0', 'CURRENT_SCHEMA': '/'}> for query: '\n            MATCH (rt:ReasoningTrace {id: $id})-[:HAS_STEP]->(s:ReasoningStep)\n            WHERE s.embedding IS NULL\n            RETURN s.id AS id, s.thought AS thought, s.action AS action, s.observation AS observation\n            '
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-Received notification from DBMS server: <GqlStatusObject gql_status='01N52', status_description='warn: property key does not exist. The property `observation` does not exist. Verify that the spelling is correct.', position=<SummaryInputPosition line=4, column=76, offset=193>, raw_classification='UNRECOGNIZED', classification=<NotificationClassification.UNRECOGNIZED: 'UNRECOGNIZED'>, raw_severity='WARNING', severity=<NotificationSeverity.WARNING: 'WARNING'>, diagnostic_record={'_classification': 'UNRECOGNIZED', '_severity': 'WARNING', '_position': {'offset': 193, 'line': 4, 'column': 76}, 'OPERATION': '', 'OPERATION_CODE': '0', 'CURRENT_SCHEMA': '/'}> for query: '\n            MATCH (rt:ReasoningTrace {id: $id})-[:HAS_STEP]->(s:ReasoningStep)\n            WHERE s.embedding IS NULL\n            RETURN s.id AS id, s.thought AS thought, s.action AS action, s.observation AS observation\n            '
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-Received notification from DBMS server: <GqlStatusObject gql_status='01N52', status_description='warn: property key does not exist. The property `observation` does not exist. Verify that the spelling is correct.', position=<SummaryInputPosition line=4, column=76, offset=193>, raw_classification='UNRECOGNIZED', classification=<NotificationClassification.UNRECOGNIZED: 'UNRECOGNIZED'>, raw_severity='WARNING', severity=<NotificationSeverity.WARNING: 'WARNING'>, diagnostic_record={'_classification': 'UNRECOGNIZED', '_severity': 'WARNING', '_position': {'offset': 193, 'line': 4, 'column': 76}, 'OPERATION': '', 'OPERATION_CODE': '0', 'CURRENT_SCHEMA': '/'}> for query: '\n            MATCH (rt:ReasoningTrace {id: $id})-[:HAS_STEP]->(s:ReasoningStep)\n            WHERE s.embedding IS NULL\n            RETURN s.id AS id, s.thought AS thought, s.action AS action, s.observation AS observation\n            '
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-Stage 'GLiNEREntityExtractor' failed: GLiNER is required for GLiNEREntityExtractor. Install with: pip install gliner
-  MCP web: lookup
-  MCP neo4j-agent-memory: memory_search, memory_get_context, memory_store_message, memory_add_entity, memory_add_preference, memory_add_fact, memory_get_conversation, memory_list_sessions, memory_get_entity, memory_export_graph, memory_create_relationship, memory_start_trace, memory_record_step, memory_complete_trace, memory_get_observations, graph_query
-  MCP web: lookup
-  --reset-memory: deleted 5 node(s) from the shared graph
-  graph at start: (empty)
-  [cold-0] TimeoutError() -- retrying
-  [cold-1] TimeoutError() -- retrying
-  [cold-3] TimeoutError() -- retrying
-  [cold-2] TimeoutError() -- retrying
-  [warm-0] TimeoutError() -- retrying
-  [warm-3] TimeoutError() -- retrying
-  [warm-1] TimeoutError() -- retrying
-  [warm-2] TimeoutError() -- retrying
+/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:105: DeprecationWarning: Use `streamable_http_client` instead.
+  self.gen = func(*args, **kwds)
+  MCP neo4j-agent-memory: 16 tool(s)
+  MCP neo4j-agent-memory: memory_get_context answered 5369 chars -- working
+  MCP web: 1 tool(s)
+  MCP web: lookup answered 1186 chars -- working
+gpu: 1x NVIDIA H200, 143771 MiB | harness: 16161a2
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixture
+tarball: 18,487 bytes
+distiller: gpt-5.5-2026-04-23  (EXTERNAL model: this run does not measure self-improvement)
+skill: v8 | dir 5ee11fe19d9d | body d8b03414c2e5 | 2 file(s) | 1816 approx tokens | derived from 18 trace(s)
+  warm-0 seeded (memory)
+  cold-0 seeded
+  arms match exactly: 10 tool(s) each, hooks none, mcp ['local', 'mistralai/Mistral-Small-4-119B-2603', 'web']
+baseline: 0 passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+provenance: {'prov_model': 'mistralai/Mistral-Small-4-119B-2603', 'prov_gpu': '1x NVIDIA H200, 143771 MiB', 'prov_commit': '16161a2', 'prov_writable': True}
+  entity extraction for warm-0 exceeded 240s and was abandoned -- the run's own numbers are unaffected, the graph has fewer entity edges
+  step entity linking for warm-0 exceeded 240s and was abandoned
+  warm-0: skill v8 (d8b03414c2e5) reached the model
 
 ============================================================
-WARM (shared memory):  0/4 agents converged | 45 LLM calls | 630011 prompt + 22036 completion = 652047 tokens
-COLD (no memory):      0/4 agents converged | 54 LLM calls | 535715 prompt + 23193 completion = 558908 tokens
-token_ratio (cold/warm): 0.857
-wall-clock: 411.5s
-GPU cost (this run, $0.49/hr): $0.0560
-event log: runs/m4-1789339742.jsonl
+hardware: 1x NVIDIA H200, 143771 MiB | model: mistralai/Mistral-Small-4-119B-2603
+WARM (shared memory): 1/1 converged | 1 attempts | errors cleared 0 | best tests passing 33 | in 2,847,992 / out 14,632
+COLD (no memory)  : 1/1 converged | 2 attempts | errors cleared 1 | best tests passing 33 | in 5,395,269 / out 20,147
+     BLOCKING EVENT LOOP: 12 callback(s) over the threshold -- agents cannot run concurrently while this happens
+     28.6s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:637> wait_for=
+     4.0s  Executing <Task finished name='Task-563' coro=<agent_worker() done, defined at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:349
+     2.3s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:490> wait_for=
+
+GATE ok: 3 attempt(s) graded by 3 real Daytona run(s); 0 sandbox(es) swept
+     ingestion (off the clock): 81 step(s) from 1 attempt(s), 36 with the model's own reasoning, 11 failed tool call(s) recorded
+     skill v8 (d8b03414c2e5, 1816 approx tokens) reached 1/1 warm agent(s)
+     entities extracted after the clock stopped: 0 from messages, 0 TOUCHED edge(s) from reasoning steps
+metrics: skill v8 (1816 approx tokens, 5ee11fe19d9d) | counts toward clearly-working: YES
+  cold: 33 passed, 2 attempt(s), 162 turn(s), 262s attempt / 0s distil | attempt tokens 5,390,107 in / 20,145 out | distil tokens 0 in / 0 out
+  warm: 33 passed, 1 attempt(s), 83 turn(s), 157s attempt / 17s distil | attempt tokens 2,842,745 in / 14,630 out | distil tokens 12,345 in / 2,146 out
+    distillation: 1/1 accepted, versions [9], 0 memory tool call(s)
+event log: runs/swarm-1789680178.jsonl | metrics: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/swarm-1789680178-metrics.json | table: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/cross-run.md

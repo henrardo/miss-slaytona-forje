@@ -1,0 +1,131 @@
+{
+  "run_id": "swarm-1789777832",
+  "gpu": "1x NVIDIA H200, 143771 MiB",
+  "model": "mistralai/Mistral-Small-4-119B-2603",
+  "commit": "16161a2",
+  "skill_version": 42,
+  "skill_approx_tokens": 12471,
+  "skill_dir_sha": "547e9506c14e",
+  "arms_identical": false,
+  "known_differences": [
+    "config_names",
+    "hook_files",
+    "tools"
+  ],
+  "arms": {
+    "cold": {
+      "arm": "cold",
+      "tests_passed": 0,
+      "attempts": 3,
+      "converged": false,
+      "turns": 122,
+      "attempt_seconds": 493.2,
+      "attempt_prompt_tokens": 3751330,
+      "attempt_completion_tokens": 31870,
+      "distil_seconds": 0.0,
+      "distil_prompt_tokens": 0,
+      "distil_completion_tokens": 0,
+      "steps_ingested": 0,
+      "steps_with_reasoning": 0,
+      "skill_versions": [],
+      "distillations": 0,
+      "distillations_accepted": 0,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 63,
+          "turns": 38,
+          "seconds": 162.9,
+          "prompt_tokens": 852291,
+          "completion_tokens": 8567,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 15,
+          "turns": 69,
+          "seconds": 229.5,
+          "prompt_tokens": 2755873,
+          "completion_tokens": 21366,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 15,
+          "turns": 15,
+          "seconds": 100.8,
+          "prompt_tokens": 143166,
+          "completion_tokens": 1937,
+          "ended_cleanly": true
+        }
+      ]
+    },
+    "warm": {
+      "arm": "warm",
+      "tests_passed": 310,
+      "attempts": 3,
+      "converged": false,
+      "turns": 117,
+      "attempt_seconds": 417.3,
+      "attempt_prompt_tokens": 3903979,
+      "attempt_completion_tokens": 19897,
+      "distil_seconds": 165.8,
+      "distil_prompt_tokens": 102901,
+      "distil_completion_tokens": 31278,
+      "steps_ingested": 108,
+      "steps_with_reasoning": 0,
+      "skill_versions": [
+        43,
+        44
+      ],
+      "distillations": 2,
+      "distillations_accepted": 2,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": 42,
+          "tests_passed": 0,
+          "v1_remaining": 62,
+          "turns": 52,
+          "seconds": 171.0,
+          "prompt_tokens": 1641144,
+          "completion_tokens": 10372,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": 43,
+          "tests_passed": 0,
+          "v1_remaining": 62,
+          "turns": 23,
+          "seconds": 91.1,
+          "prompt_tokens": 626506,
+          "completion_tokens": 1361,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": 44,
+          "tests_passed": 310,
+          "v1_remaining": 58,
+          "turns": 42,
+          "seconds": 155.2,
+          "prompt_tokens": 1636329,
+          "completion_tokens": 8164,
+          "ended_cleanly": true
+        }
+      ]
+    }
+  },
+  "run_seconds": 1169.92,
+  "gpu_usd_per_hour": 4.59,
+  "counts_toward_clearly_working": true
+}

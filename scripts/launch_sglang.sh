@@ -34,29 +34,66 @@
 # versions' own reported sizing), CUDA graph capture completes (~37s),
 # coherent chat output, and tool_choice="auto" correctly triggers real tool
 # calls, 4/4 reproducible.
+#
+# TP defaults to 1 (one H200/B200 holds the FP8 weights at ~113 GB). Pass a
+# different count as $1 for a multi-GPU box: `launch_sglang.sh 2`.
+#
+#   bash scripts/launch_sglang.sh              # foreground, for a log tail
+#   nohup setsid bash scripts/launch_sglang.sh > /root/sglang.log 2>&1 &
+#
+# The detached form is the one to use over ssh. A plain `nohup ... &` inside
+# an `ssh "..."` command does NOT survive the session closing: the log is
+# never written and the GPU sits at 0 MiB, which looks exactly like a model
+# that failed to load.
 set -euo pipefail
 
+TP="${1:-1}"
 VENV=/root/sglang-venv
-python3 -m venv "$VENV"
-source "$VENV/bin/activate"
-pip install --upgrade pip -q
-pip install uv -q
-uv pip install "sglang==0.5.14"
+[ -x "$VENV/bin/python" ] || python3 -m venv "$VENV"
+"$VENV/bin/pip" install --upgrade pip -q
+"$VENV/bin/pip" install uv -q
+"$VENV/bin/uv" pip install --python "$VENV/bin/python" "sglang[all]==0.5.14" ninja
+
+# THE CUDA GATE, before the 113 GB download rather than after it.
+#
+# sglang[all]==0.5.14 pins torch==2.11.0+cu130, which installs perfectly
+# happily on a CUDA 12.8 host and then dies with "No accelerator available"
+# while `nvidia-smi` looks healthy. A pod created with `minCudaVersion:
+# "12.8"` -- a FLOOR -- got a 12.8 host and cost ~$0.40 and 20 minutes.
+# Create pods with `gpu.allowedCudaVersions: ["13.0"]`, an exact set.
+"$VENV/bin/python" - <<'PY'
+import sys
+import torch
+ok = torch.cuda.is_available()
+print(f"torch {torch.__version__} cuda {torch.version.cuda} available {ok} "
+      f"cap {torch.cuda.get_device_capability() if ok else '-'}")
+if not ok:
+    sys.exit("ABORT: no accelerator. This host is not CUDA 13.0 -- terminate "
+             "the pod rather than downloading 113 GB onto it.")
+PY
 
 for pid in $(pgrep -f "sglang serve" || true); do kill -9 "$pid" 2>/dev/null || true; done
 for pid in $(pgrep -f "sglang::" || true); do kill -9 "$pid" 2>/dev/null || true; done
 sleep 2
 
-nohup sglang serve --model-path mistralai/Mistral-Small-4-119B-2603 \
-  --tp 2 \
+# PATH MUST CARRY THE VENV'S BIN. flashinfer JIT-compiles attention kernels
+# and shells out to `ninja`; invoking sglang by absolute path does not put
+# the venv's bin on PATH for its children, so the scheduler dies with
+#   FileNotFoundError: [Errno 2] No such file or directory: 'ninja'
+# AFTER the weights have finished loading. It is model-specific -- a model
+# whose kernel variant is already cached never hits it -- so it reappears on
+# every model swap. Cost a swap on 2026-09-14 and a start on 2026-09-18,
+# both times rediscovered from scratch. Hence this line.
+export PATH="$VENV/bin:/usr/local/bin:/usr/bin:/bin"
+
+# `--load-format mistral` is required for this checkpoint; read back off a
+# known-good server's own log rather than retyped.
+exec sglang serve --model-path mistralai/Mistral-Small-4-119B-2603 \
+  --load-format mistral \
+  --tp "$TP" \
   --reasoning-parser mistral \
   --tool-call-parser mistral \
-  --host 0.0.0.0 --port 30000 \
-  > /root/sglang.log 2>&1 &
-
-echo "started, pid $!, logs at /root/sglang.log"
-echo "tail -f /root/sglang.log to watch it come up, then:"
-echo 'curl -s localhost:30000/v1/models'
+  --host 0.0.0.0 --port 30000
 echo
 echo "Vibe (or any client relying on tool_choice=auto) must NOT point at"
 echo "port 30000 directly -- SGLang's tool_call ids are OpenAI-style"

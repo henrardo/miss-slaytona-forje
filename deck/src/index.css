@@ -1,0 +1,226 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fonts, self-hosted. See public/brand/SOURCES.md.
+   Syne Neo is Neo4j's own display cut — not Google's Syne. Three weights,
+   declared exactly as Neo4j declare them in their monorepo. */
+@font-face {
+  font-family: 'Syne Neo';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('/fonts/syne-neo/SyneNeo-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Syne Neo';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url('/fonts/syne-neo/SyneNeo-SemiBold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Syne Neo';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('/fonts/syne-neo/SyneNeo-Bold.woff2') format('woff2');
+}
+/* Shrikhand — the wordmark's display face. SIL OFL 1.1, Jonny Pinhorn; the
+   latin and latin-ext subsets from Google Fonts v17, self-hosted like the rest.
+   Chosen against eleven other candidates by rendering the actual wordmark in
+   each (see public/brand/SOURCES.md): it is the only one that is fat enough to
+   hold an outline, has real lowercase, and has enough swagger to sit next to
+   SGLang's swashed L without looking like a caption. */
+@font-face {
+  font-family: 'Shrikhand';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/shrikhand-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Shrikhand';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/shrikhand-latin-ext.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'VT323';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/vt323-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+2000-206F, U+2122, U+2212, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'VT323';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/vt323-latin-ext.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+1E00-1E9F, U+2020, U+20A0-20AB, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@layer base {
+  :root {
+    /* --- Ground.
+       Stranger Graphs' structure — near-black, one saturated accent, glow —
+       rotated off its blue-grey hue onto violet, so the HUD reads whimsical
+       rather than terminal. The surface value is Neo4j's own
+       `--tint-lavender-deep: #1a1730`; the rest is that hue held steady up
+       and down the ramp. Greys are warm and violet-leaning on purpose: a
+       neutral grey is what made this look like a hacker in a hoodie. --- */
+    --bg: 249 34% 7%;
+    --surface: 249 34% 14%; /* #1a1730, Neo4j lavender-deep */
+    --surface-2: 249 28% 19%;
+    --muted: 248 20% 32%;
+    --muted-fg: 250 30% 76%;
+    --fg: 250 45% 98%;
+    --border: 249 26% 30%;
+    --purple: 262 83% 58%;
+    --blue: 217 91% 60%;
+    --red: 357 82% 52%; /* alarms only — see StatusRail */
+    --gradient-primary: linear-gradient(135deg, #6a82ff, hsl(262 83% 58%));
+    --shadow-glow: 0 0 60px hsl(232 100% 71% / 0.35);
+
+    /* --- Brand accents. Values and provenance in src/lib/brand.ts. ---
+       Neo4j's are their product palette, from
+       neo4j-graphacademy/monorepo packages/ui/src/styles.css. --- */
+    --neo4j: #8fe3e8; /* light baltic */
+    --neo4j-deep: #014063; /* baltic, primary brand blue */
+    --neo4j-darkest: #012437; /* dark baltic */
+    --neo4j-cream: #fcf9f6;
+    --neo4j-periwinkle: #6a82ff; /* the deck's primary accent */
+    --neo4j-periwinkle-light: #9aa9ff; /* 6.2:1 on card — safe for text */
+    --neo4j-hibiscus: #f96746;
+    --neo4j-marigold: #f5b642;
+    --neo4j-forest: #4a8e57;
+    --neo4j-forest-light: #b6d4ae;
+    --neo4j-yellow: #ffeb6a;
+    --mistral: #ff8205;
+    --mistral-deep: #e92700;
+    --sglang: #d55816;
+    --sglang-deep: #a5300f;
+    --daytona: #00bbff;
+    --daytona-deep: #0099ff;
+
+    /* Arm identity. Warm carries the memory graph, so it takes Neo4j's
+       cyan; cold takes periwinkle. Never coloured the same, because the
+       whole talk turns on telling them apart — and separated by hue, not
+       just lightness, so it survives a badly calibrated projector. */
+    --warm: var(--neo4j);
+    --cold: var(--neo4j-periwinkle-light);
+
+    /* One pixel of the 8-bit grid, at canonical scale. */
+    --px: 4px;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden; /* the HUD owns the frame; nothing scrolls */
+  }
+
+  body {
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
+    font-family: 'VT323', ui-monospace, monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  /* Outlined display type — the Stranger Graphs heading treatment, now cut in
+     Neo4j's own display face.
+
+     No `font-variant: small-caps`. Cinzel is a Roman face where small caps are
+     idiomatic and genuine; Syne Neo has no small-cap glyphs, so the browser
+     would synthesise them by shrinking full caps — which reads as a botched
+     font at 190px. Letter-spacing carries the display presence instead. */
+  .heading-outline {
+    font-family: 'Syne Neo', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    -webkit-text-stroke: 2px var(--neo4j-periwinkle);
+    -webkit-text-fill-color: transparent;
+    paint-order: stroke fill;
+    /* The glow is what turns an outline from "wireframe" into "neon". */
+    filter: drop-shadow(0 0 24px hsl(232 100% 71% / 0.45));
+  }
+
+  /* Opt-in variants, so a slide can pick its own neon without redefining the
+     treatment. Hue is the only thing that changes. */
+  .heading-outline--marigold {
+    -webkit-text-stroke-color: var(--neo4j-marigold);
+    filter: drop-shadow(0 0 24px hsl(41 89% 61% / 0.45));
+  }
+  .heading-outline--hibiscus {
+    -webkit-text-stroke-color: var(--neo4j-hibiscus);
+    filter: drop-shadow(0 0 24px hsl(11 93% 62% / 0.45));
+  }
+  .heading-outline--baltic {
+    -webkit-text-stroke-color: var(--neo4j);
+    filter: drop-shadow(0 0 24px hsl(183 62% 74% / 0.45));
+  }
+
+  /* 600, not 700: Neo4j's own note in packages/ui/src/styles.css is that
+     "Syne semi-bold — bold reads too heavy/stretched at display sizes". */
+  .heading-solid {
+    font-family: 'Syne Neo', system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* Hard-edged, no anti-aliasing: pixel art must stay pixels when scaled. */
+  .pixelated {
+    image-rendering: pixelated;
+    shape-rendering: crispEdges;
+  }
+
+  /* The 8-bit ground the whole HUD sits on. Periwinkle-tinted rather than
+     grey — it is the difference between graph paper and a terminal. */
+  .pixel-grid {
+    background-image:
+      linear-gradient(hsl(232 100% 71% / 0.14) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(232 100% 71% / 0.14) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* NOTE: a `.scanlines` rule lived here and is deliberately gone. It was
+     unused, and it carried `mix-blend-mode: multiply`, which forces an extra
+     compositing pass over whatever it covers. Given what the twenty promoted
+     tile layers already cost the compositor (see hud/Hud.tsx), leaving a
+     blend mode lying around for someone to reach for is a trap, not a
+     feature. CRT nostalgia is also the wrong register for this deck. */
+
+  .vignette::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      ellipse at center,
+      transparent 52%,
+      hsl(249 40% 4% / 0.6) 100%
+    );
+  }
+}

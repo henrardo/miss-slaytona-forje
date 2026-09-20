@@ -59,35 +59,45 @@ from typing import Any
 
 from orchestrator.memory import ScopedMemory
 
-# Cap on anything handed to the graph or to an embedder. A `read_file`
-# observation is an entire source file and a `bash` observation can be a full
-# pytest log; embedding either is slow, and storing either is what previously
-# filled a third of the graph with line-number "entities".
-_OBS_CAP = 2000
-_QUERY_CAP = 600
-# Reasoning runs long on hybrid reasoning models -- 2,913 characters for a
-# single turn, measured. Capped because it is embedded and because it is
-# rendered back into another agent's context window, which is 32k.
-_THOUGHT_CAP = 1500
+# NO CAPS. The step is stored and embedded AS THE AGENT PRODUCED IT.
+#
+# There were four here -- _OBS_CAP 2000, _EXPLORATION_OBS_CAP 200,
+# _THOUGHT_CAP 1500, _QUERY_CAP 600 -- and every one was mine. Audited
+# 2026-09-19:
+#
+#   _THOUGHT_CAP   my own comment recorded "2,913 characters for a single
+#                  turn, measured", and then capped at 1,500. It halved a
+#                  typical turn's reasoning on every write. Its other
+#                  justification, "rendered back into a 32k context
+#                  window", is stale: the run uses --auto-compact 128000.
+#   _OBS_CAP,      justified by "storing either filled a third of the
+#   _EXPLORATION_  graph with line-number entities" -- 78 of 229 :Entity
+#   OBS_CAP        nodes named '100->', '171->'. That is real and it is
+#                  about storing tool results as :Message nodes, which go
+#                  through entity extraction. `add_step` has no extraction
+#                  path at all (verified, see vibe_agent._entry_consumer).
+#                  Evidence from a different code path, applied here.
+#   _QUERY_CAP     no evidence of any kind.
+#
+# And the fact that made them look cheap was wrong: add_step embeds
+# "Thought: ... Action: ... Observation: ..." -- ALL THREE
+# (neo4j_agent_memory/memory/reasoning.py:546). Truncating an observation
+# at 200 characters degraded the retrieval these caps claimed to protect.
+#
+# The only real bound is the embedding model's own input limit, which
+# belongs to the package and not to this file. The shipped OpenAI embedder
+# does not truncate; it raises EmbeddingError, which the write queue counts
+# and the run reports. If that ever fires, it is a fact to report, not a
+# number for me to invent.
 
 # Tools whose RESULT is evidence -- something failed, passed, or changed.
-# `read_file`/`grep` are exploration: their output is the file the agent asked
-# for, which says nothing about whether an approach worked and is the most
-# expensive thing to embed or to render back into a 32k window.
-#
-# This now governs the OBSERVATION ONLY, never whether the step is recorded.
-# It used to skip the whole step for a non-evidence tool, and that was a
-# straight conflation of "expensive observation" with "worthless step".
-# Measured against the transcripts of the run it shipped in: 12 of 37 assistant
-# turns issued only non-evidence calls, and dropping those steps threw away
-# 23,930 characters of the agent's reasoning -- 36% of everything it thought.
-# The reasoning behind "let me read schemas.py, the traceback points there" is
-# the agent's reasoning whether or not the file that came back is worth
-# storing.
+# NOT a cap and never was: every tool call is recorded as a step with its
+# full observation. This decides only whether the step's output is used as
+# a RETRIEVAL QUERY. Searching the graph on the contents of a file the
+# agent just opened returns whatever else mentions that file, which is not
+# what it needs to know; searching on a pytest failure returns other
+# agents who hit that failure, which is the whole mechanism.
 _EVIDENCE_TOOLS = ("bash", "edit", "write_file", "git_bash", "experimental_bash")
-# What an exploration tool's observation is reduced to. Enough to say what the
-# agent looked at and what happened, not the file itself.
-_EXPLORATION_OBS_CAP = 200
 
 # Below this cosine similarity a "related" step is noise. The package's own
 # default for search_steps.
@@ -102,13 +112,6 @@ _THRESHOLD = 0.7
 _TRANSCRIPT_TAIL_BYTES = 512 * 1024
 
 
-def _cap(text: str | None, limit: int) -> str:
-    if not text:
-        return ""
-    text = str(text)
-    return text if len(text) <= limit else text[:limit] + "\n... (truncated)"
-
-
 def _query_text(tool_error: str | None, tool_output_text: str | None) -> str:
     """What this step is ABOUT, as search text.
 
@@ -119,9 +122,8 @@ def _query_text(tool_error: str | None, tool_output_text: str | None) -> str:
     the current failure is what distinguishes one attempt from another.
     """
     if tool_error:
-        return _cap(tool_error, _QUERY_CAP)
-    tail = (tool_output_text or "").strip()
-    return _cap(tail[-_QUERY_CAP:], _QUERY_CAP)
+        return tool_error
+    return (tool_output_text or "").strip()
 
 
 def _text_only_turns(transcript_path: str | None) -> list[str]:
@@ -183,19 +185,21 @@ def _render(hits: list, metrics: dict[str, dict] | None = None) -> str | None:
     for h in hits:
         step = h.step
         lines.append("- step:")
-        for label, value, limit in (
-            ("thought", step.thought, 400),
-            ("action", step.action, 200),
-            ("observation", step.observation, 400),
-        ):
+        # WHOLE, not trimmed to 400/200/400 characters. That trim was
+        # mine too: what search_steps returns is what another agent
+        # actually did, and handing over the first 400 characters of it is
+        # handing over the part before the point.
+        for label, value in (("thought", step.thought),
+                             ("action", step.action),
+                             ("observation", step.observation)):
             if value:
-                lines.append(f"    {label}: {_cap(value, limit)}")
+                lines.append(f"    {label}: {value}")
         # The rest of what search_steps returns. `parent_task` is the trace
         # this step belongs to and `similarity` is how close it is to the
         # query -- both were being dropped, which left the model unable to
         # tell a 0.71 match from a 0.98 one.
         if h.parent_task:
-            lines.append(f"    task: {_cap(h.parent_task, 200)}")
+            lines.append(f"    task: {h.parent_task}")
         if h.similarity is not None:
             lines.append(f"    similarity: {h.similarity:.2f}")
         # tests_passed, not a bare success flag. The flag used to mean
@@ -229,7 +233,19 @@ class StepMemoryService:
     it, which has no idea that attempts or traces exist.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, retrieval: bool = True) -> None:
+        # WRITES ARE ALWAYS ON. Retrieval is separable because the two
+        # have completely different costs, and conflating them is what
+        # caused the whole mechanism to be deleted:
+        #
+        #   write      1.30-1.49s per tool call, ZERO tokens -- it sends
+        #              data out and puts nothing in the context
+        #   retrieval  ~556 tokens per injection; 12,236 of warm's 20,814
+        #              extra tokens/turn, i.e. 59% of the gap
+        #
+        # With retrieval off, warm still builds the graph live and its
+        # prompt is not inflated by it.
+        self.retrieval = retrieval
         self._mem: dict[str, ScopedMemory] = {}
         self._trace: dict[str, Any] = {}
         # agent -> (turn_id, reasoning text) for the turn currently in flight.
@@ -240,9 +256,27 @@ class StepMemoryService:
         # Counted so a run can say whether the hook actually did anything,
         # rather than leaving it to be reconstructed from Neo4j afterwards.
         self.steps_written = 0
+        self.last_error: str | None = None
         self.text_turns_written = 0
         self.context_returned = 0
         self.errors = 0
+        # WHERE EACH `thought` CAME FROM. Counted here because this is the
+        # only place that knows: on the live-hook path nothing downstream
+        # re-reads the steps, so `with_reasoning` is emitted as None and the
+        # run's own summary could not say whether the relay delivered.
+        #
+        # It had not. Six pod runs on 2026-09-18/19 wrote 993 steps of which
+        # 988 held serialised tool input, and every surface the operator
+        # could see -- `steps_written`, `errors`, the cross-run table --
+        # looked exactly like a working run. These two counters are the
+        # difference between "the hook fired" and "the agent's reasoning
+        # reached the graph", which are not the same claim.
+        self.thoughts_from_reasoning = 0
+        self.thoughts_from_tool_input = 0
+        # Reasoning pushes received from harness/reasoning_relay.py. Zero
+        # here with a non-zero step count localises the fault precisely: the
+        # hook is alive and the relay is not reaching us.
+        self.reasoning_pushes = 0
         # THE WRITE QUEUE.
         #
         # add_step + record_tool_call go to Aura, 175ms RTT from the pod, and
@@ -338,6 +372,12 @@ class StepMemoryService:
                 raise
             except Exception as exc:
                 self.errors += 1
+                # KEEP THE LAST ONE. `errors` alone says a write failed and
+                # nothing about why, and this queue is drained in the
+                # background where the traceback goes nowhere -- which is
+                # how "0 steps written, 0 errors" and "0 steps written, 40
+                # errors" both looked like a working run.
+                self.last_error = repr(exc)
                 logger.error("STEP WRITE FAILED for trace %s (%s): %r",
                              item[1], item[3], exc)
             finally:
@@ -397,7 +437,22 @@ class StepMemoryService:
 
         Several tool calls in ONE turn share this text, which is correct: they
         were decided in the same piece of reasoning. Tool calls in a LATER turn
-        must not, and `turn_id` is what tells them apart -- see note_turn()."""
+        must not, and `turn_id` is what tells them apart -- see note_turn().
+
+        ACCUMULATES WITHIN A TURN rather than overwriting, because a turn
+        delivers its reasoning in more than one entry and
+        `orchestrator/ingest.py` -- the reference implementation for this
+        -- joins them: `thought_parts.append(...)` for both the reasoning
+        entry and the assistant message, `"\\n\\n".join(...)` at the end.
+        Overwriting kept only the last fragment.
+        """
+        self.reasoning_pushes += 1
+        previous = self._pending_reasoning.get(agent)
+        if previous is not None and previous[0] == turn_id and previous[1]:
+            if text not in previous[1]:
+                text = f"{previous[1]}\n\n{text}"
+            else:
+                text = previous[1]
         self._pending_reasoning[agent] = (turn_id, text)
 
     def note_turn(self, agent: str, turn_id: str | None) -> None:
@@ -471,7 +526,7 @@ class StepMemoryService:
                 self._seen_text_turns.add(key)
                 await mem.add_step(
                     trace_id,
-                    thought=_cap(text, _THOUGHT_CAP),
+                    thought=text,
                     action="(ended its turn without calling a tool)",
                     observation=None,
                     generate_embedding=False,
@@ -497,18 +552,16 @@ class StepMemoryService:
         tool_name = request.get("tool_name") or ""
         is_evidence = any(tool_name.endswith(t) for t in _EVIDENCE_TOOLS)
 
-        # EVERY tool call is recorded as a step; only the observation is
-        # reduced for exploration tools. See _EVIDENCE_TOOLS.
-        observation = _cap(
-            request.get("tool_error") or request.get("tool_output_text"),
-            _OBS_CAP if is_evidence else _EXPLORATION_OBS_CAP,
-        )
+        # EVERY tool call is a step, and the observation is stored WHOLE.
+        # It used to be cut to 2000 chars, or 200 for grep/read_file.
+        observation = (request.get("tool_error")
+                       or request.get("tool_output_text") or "")
         # ...and only evidence produces a retrieval query. Searching on the
         # contents of a file the agent just opened returns whatever else
         # mentions that file, which is not what it needs to know.
         query = (
             _query_text(request.get("tool_error"), request.get("tool_output_text"))
-            if is_evidence else ""
+            if is_evidence and self.retrieval else ""
         )
         trace_id = self._trace.get(agent)
 
@@ -526,10 +579,18 @@ class StepMemoryService:
                 # Falls back to the tool input when a turn carried no reasoning
                 # (it happens) or when the stream is not being consumed.
                 pending = self._pending_reasoning.get(agent)
-                thought = (
-                    _cap(pending[1] if pending else "", _THOUGHT_CAP)
-                    or _cap(json.dumps(request.get("tool_input") or {}), 800)
-                )
+                thought = (pending[1] if pending else "")
+                if thought:
+                    self.thoughts_from_reasoning += 1
+                else:
+                    # COUNTED, not silent. The fall-back is legitimate for a
+                    # turn that genuinely carried no reasoning, and it is
+                    # also exactly what a dead relay looks like. The two are
+                    # indistinguishable from inside this function, so the
+                    # only honest thing to do is keep the tally and let the
+                    # run summary decide the alarm threshold.
+                    self.thoughts_from_tool_input += 1
+                    thought = json.dumps(request.get("tool_input") or {})
                 # Queued, not awaited -- see self._queue. `trace_id` is bound
                 # into the item now, so a later set_trace cannot redirect it.
                 self._enqueue_write(
@@ -574,7 +635,7 @@ class StepMemoryService:
         self.injections.append({
             "agent": agent,
             "into_trace": str(trace_id),
-            "query": _cap(query, 300),
+            "query": query,
             "returned": [
                 {
                     "step_id": str(getattr(h.step, "id", "")),
@@ -655,5 +716,20 @@ class StepMemoryService:
             f"step hook: {self.steps_written} step(s) written by the agents "
             f"({self.text_turns_written} of them turns that called no tool), "
             f"{self.context_returned} injection(s) of prior agents' steps, "
-            f"{self.errors} error(s); write queue: {self.queue_report()}"
+            f"{self.errors} error(s); write queue: {self.queue_report()}; "
+            f"thoughts: {self.thoughts_from_reasoning} from the model's own "
+            f"reasoning, {self.thoughts_from_tool_input} fell back to tool "
+            f"input, {self.reasoning_pushes} push(es) from the relay"
         )
+
+    def reasoning_report(self) -> dict:
+        """The numbers that say whether the relay is delivering.
+
+        Read by the runner at end of run and emitted as a `STEP_WRITES`
+        event, so the judgement lives in the event log with everything else
+        and can be re-derived from the record."""
+        return {
+            "thoughts_from_reasoning": self.thoughts_from_reasoning,
+            "thought_fallbacks": self.thoughts_from_tool_input,
+            "reasoning_pushes": self.reasoning_pushes,
+        }

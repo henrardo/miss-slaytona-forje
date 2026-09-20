@@ -1,0 +1,24 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+packet queue is empty, aborting
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixture
+tarball: 18,487 bytes
+  warm-0 memory tools: 16 loaded
+  warm-0 seeded (memory)
+  cold-0 seeded
+baseline: 0 passing | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+
+============================================================
+WARM (shared memory): 0/1 converged | 2 attempts | errors cleared 1 | best tests passing 0 | in 310,407 / out 11,119
+COLD (no memory)  : 0/1 converged | 2 attempts | errors cleared 2 | best tests passing 4 | in 264,848 / out 10,553
+
+GATE ok: 4 attempt(s) graded by 4 real Daytona run(s); 0 sandbox(es) swept
+     step hook (this run): 18 step(s) written by the agents (2 of them turns that called no tool), 7 injection(s), 0 error(s)
+     entities extracted after the clock stopped: 26 from messages, 155 TOUCHED edge(s) from reasoning steps
+event log: runs/swarm-1789582838.jsonl

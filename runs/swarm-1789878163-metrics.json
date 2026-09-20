@@ -1,0 +1,63 @@
+{
+  "run_id": "swarm-1789878163",
+  "gpu": "1x NVIDIA H200, 143771 MiB",
+  "model": "mistralai/Mistral-Small-4-119B-2603",
+  "commit": "16161a2",
+  "skill_version": 81,
+  "skill_approx_tokens": 3354,
+  "skill_dir_sha": "aae8fc628802",
+  "arms_identical": false,
+  "known_differences": [
+    "config_names",
+    "hook_files",
+    "tools"
+  ],
+  "arms": {
+    "warm": {
+      "arm": "warm",
+      "tests_passed": 0,
+      "attempts": 0,
+      "converged": false,
+      "turns": 0,
+      "attempt_seconds": 0.0,
+      "attempt_prompt_tokens": 0,
+      "attempt_completion_tokens": 0,
+      "distil_seconds": 0.0,
+      "distil_prompt_tokens": 0,
+      "distil_completion_tokens": 0,
+      "steps_ingested": 0,
+      "steps_with_reasoning": -2450,
+      "thought_fallbacks": 0,
+      "skill_versions": [],
+      "distillations": 0,
+      "distillations_accepted": 0,
+      "memory_tool_calls": 0,
+      "per_attempt": []
+    },
+    "cold": {
+      "arm": "cold",
+      "tests_passed": 0,
+      "attempts": 0,
+      "converged": false,
+      "turns": 0,
+      "attempt_seconds": 0.0,
+      "attempt_prompt_tokens": 0,
+      "attempt_completion_tokens": 0,
+      "distil_seconds": 0.0,
+      "distil_prompt_tokens": 0,
+      "distil_completion_tokens": 0,
+      "steps_ingested": 0,
+      "steps_with_reasoning": null,
+      "thought_fallbacks": null,
+      "skill_versions": [],
+      "distillations": 0,
+      "distillations_accepted": 0,
+      "memory_tool_calls": 0,
+      "per_attempt": []
+    }
+  },
+  "run_seconds": 487.39,
+  "gpu_usd_per_hour": 4.59,
+  "counts_toward_clearly_working": true,
+  "gpu_usd": 0.6214222500000001
+}

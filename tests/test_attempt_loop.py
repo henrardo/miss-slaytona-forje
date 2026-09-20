@@ -78,12 +78,25 @@ def test_verdict_timeout_is_the_reserve_as_a_floor_not_a_ceiling() -> None:
     gets its full reserve when there is none -- so the wait can only expire at
     or after the deadline, which is what the handler claims to detect."""
     src = inspect.getsource(vibe_agent.migrate_codebase)
-    assert "timeout=max(VERDICT_RESERVE_S, deadline - time.monotonic())" in src, (
+    # `deadline + off_clock` since ingestion moved off the agent's clock:
+    # time the harness spends writing the graph after an attempt is added
+    # back, so grading still gets whatever ATTEMPT clock is left. The
+    # property under test is unchanged -- the reserve is the floor, the
+    # remaining clock is the ceiling -- so the string is updated and both
+    # negative assertions below stay exactly as they were.
+    timeout_expr = ("timeout=max(VERDICT_RESERVE_S,\n"
+                    "                            (deadline + off_clock) "
+                    "- time.monotonic()),")
+    assert timeout_expr in src, (
         "the verdict timeout is no longer max(reserve, remaining); a bare "
         "reserve caps grading and ends the agent's run, a bare remaining "
         "leaves it no time to grade at all"
     )
     assert "timeout=max(0.0, deadline - time.monotonic())" not in src
+    # The two original bugs, in whichever form the clock now takes.
+    for clock in ("deadline", "(deadline + off_clock)"):
+        assert f"timeout={clock} - time.monotonic()" not in src
+    assert "timeout=VERDICT_RESERVE_S," not in src
 
 
 @pytest.mark.parametrize(
@@ -514,6 +527,119 @@ def test_summary_and_success_flag_agree_when_more_tests_pass() -> None:
     assert "no additional tests pass" in stuck
 
 
+def test_the_attempt_budget_hands_out_exactly_n() -> None:
+    from orchestrator.vibe_agent import AttemptBudget
+
+    budget = AttemptBudget(3)
+    assert [budget.take() for _ in range(5)] == [True, True, True, False, False]
+    assert budget.remaining == 0
+
+
+def test_the_budget_is_claimed_before_the_attempt_counter() -> None:
+    """Claimed on START, so a crash loop spends the budget instead of
+    spinning inside it. If it were decremented after a completed attempt, an
+    agent that died mid-attempt every time would never exhaust it."""
+    import inspect
+
+    src = inspect.getsource(vibe_agent.migrate_codebase)
+    take = src.index("budget.take()")
+    bump = src.index("attempt += 1")
+    assert take < bump, (
+        "the budget must be claimed before the attempt counter advances")
+
+
+def test_a_retry_cannot_hand_the_agent_a_fresh_allowance() -> None:
+    """The reason the budget is a shared mutable object and not an int.
+
+    `_attempt_until_done` re-enters `migrate_codebase` after any non-harness
+    exception, and `attempt` restarts at 0 in there -- the reset that made
+    2026-09-19 run 6 report one attempt where three had run. So the budget
+    has to be created ONCE, outside the retry, and forwarded into every
+    re-entry.
+    """
+    import inspect
+
+    from swarm import run as swarm_run
+
+    worker = inspect.getsource(swarm_run.agent_worker)
+    assert "AttemptBudget(" not in worker, (
+        "agent_worker must RECEIVE a budget, not build one -- it is the "
+        "function the retry loop lives in")
+    assert "budget=budget" in worker, "the budget must reach _attempt_until_done"
+
+    until_done = inspect.getsource(swarm_run._attempt_until_done)
+    assert "AttemptBudget(" not in until_done, (
+        "the retry loop must not mint a new budget per re-entry")
+    assert "budget=budget" in until_done, (
+        "the same budget object must be forwarded into every migrate_codebase "
+        "call, or a retry starts the experiment over")
+
+    # And the object really is shared: two "re-entries" draw from one pool.
+    budget = vibe_agent.AttemptBudget(3)
+    first_entry = [budget.take(), budget.take()]     # two attempts, then a crash
+    second_entry = [budget.take(), budget.take()]    # the retry
+    assert first_entry == [True, True]
+    assert second_entry == [True, False], (
+        "the retry got more than the experiment's remaining attempts")
+
+
+def test_the_trace_summary_diffs_source_and_not_hashes() -> None:
+    """The 2026-09-20 defect, and why the test above could not catch it.
+
+    `observed_fix` was always tested by handing it source text directly, so
+    it passed while the CALLER handed it `workspace.snapshot()` -- documented
+    as "path -> sha256, for the 'did anything change' check". Every trace
+    summary in the graph therefore held a diff of hashes:
+
+        --- x12sdk/models.py
+        @@ -1 +1 @@
+        -6c8ad5c43b1c9b19261919460f6a005fea8f2dc312a500d8b5216a278992b894
+        +8b733746a82d85f7e886c3fed9cbf64f915df1909f71ac3e5ffb416b8d340778
+
+    which records WHICH file changed and nothing about WHAT changed -- in the
+    one field whose job is to tell another agent what edit fixed an error.
+
+    So this test goes through `source_tree`, the seam that was wrong."""
+    import hashlib
+
+    from orchestrator.vibe_agent import observed_fix, source_tree
+
+    class _Workspace:
+        """Both views of the same tree, exactly as AgentWorkspace offers."""
+
+        def __init__(self, body: str) -> None:
+            self.body = body
+
+        def collect_file_contents(self) -> dict[str, bytes]:
+            return {"/repo/pkg/models.py": self.body.encode()}
+
+        def snapshot(self) -> dict[str, str]:
+            return {"pkg/models.py":
+                    hashlib.sha256(self.body.encode()).hexdigest()}
+
+    before = source_tree(_Workspace("class A(BaseModel):\n    class Config:\n        pass\n"))
+    after = source_tree(_Workspace("class A(BaseModel):\n    model_config = ConfigDict()\n"))
+
+    # The /repo/ prefix is the grader's upload path, not part of the file's
+    # name in a diff header.
+    assert list(before) == ["pkg/models.py"], before
+
+    summary = observed_fix(
+        before, after,
+        prior_error="PydanticUserError: class Config is removed",
+        next_error=None, suite_passed=True, tests_delta=5,
+    )
+    assert summary is not None
+    assert "model_config = ConfigDict()" in summary, summary
+    assert "class Config:" in summary, summary
+    # A sha256 is 64 hex characters; no line of the diff should be one.
+    for line in summary.splitlines():
+        stripped = line.lstrip("+- ").strip()
+        assert not (len(stripped) == 64
+                    and all(c in "0123456789abcdef" for c in stripped)), (
+            f"the summary still contains a bare hash: {line}")
+
+
 def test_neo4j_settings_have_no_silent_default() -> None:
     """A default URI sent the orchestrator to a local Neo4j while the agents'
     MCP server used the hosted one, so the two halves of a run read different
@@ -533,3 +659,149 @@ def test_neo4j_settings_have_no_silent_default() -> None:
     )
     assert result.returncode != 0, "orchestrator.memory imported with no NEO4J_URI set"
     assert "NEO4J_URI is not set" in result.stderr, result.stderr[-500:]
+
+
+def test_both_arms_are_barrier_parties() -> None:
+    """Cold must arrive at the barrier under its own name.
+
+    `agent_label` was passed as `ws.label if warm else None`, so cold
+    arrived as "anonymous" -- not a party -- and `arrive()` returned 0.0
+    every time. Cold never synchronised; warm waited at barrier 1 for an
+    arm that never came and was released only when cold LEFT. On the first
+    pod run warm idled from t=195 to t=776 and took 2 attempts to cold's
+    4, which is exactly the GPU-contention confound the barrier exists to
+    remove.
+    """
+    import re
+    from pathlib import Path
+    src = Path(__file__).resolve().parent.parent / "swarm" / "run.py"
+    text = src.read_text()
+    assigns = re.findall(r"agent_label\s*=\s*([^,\n]+)", text)
+    assert assigns, "agent_label is no longer passed from swarm/run.py"
+    for value in assigns:
+        assert "if warm" not in value, (
+            f"agent_label={value.strip()} makes cold a non-party at the "
+            f"attempt barrier, so the arms do not synchronise")
+
+
+def test_a_stranger_at_the_barrier_is_reported() -> None:
+    """Passing through unrecognised must never be silent again."""
+    import asyncio
+
+    from orchestrator.sync import AttemptSync
+
+    async def scenario() -> AttemptSync:
+        sync = AttemptSync(["warm-0", "cold-0"], timeout=1.0)
+        assert await sync.arrive("anonymous") == 0.0
+        # An arm that has genuinely left passes through too, but that is
+        # expected and must NOT be counted as a stranger.
+        sync.leave("cold-0")
+        await sync.arrive("cold-0")
+        return sync
+
+    sync = asyncio.run(scenario())
+    assert sync.strangers == 1, "an unknown arrival was not counted"
+
+
+# ---- truncated turns: a tool call that never parsed ----------------------
+#
+# Experiment swarm-1789903474 lost three of its six attempts to this, and it
+# read as "the agent plateaued". It had not; it had been cut off.
+
+
+def _stream(*entries: dict) -> str:
+    return "\n".join(json.dumps(e) for e in entries)
+
+
+def _assistant(text: str, tool_calls: list | None = None) -> dict:
+    e = {"type": "message", "role": "assistant",
+         "content": [{"type": "text", "text": text}]}
+    if tool_calls:
+        e["tool_calls"] = tool_calls
+    return e
+
+
+def test_a_leaked_tool_call_is_a_truncated_turn() -> None:
+    """warm attempt 3 and cold attempt 3, verbatim in shape.
+
+    The model emitted `[TOOL_CALLS]edit_file[ARGS]{...}` as message TEXT.
+    Vibe saw no tool call and ended the attempt at 14 and 20 turns.
+    """
+    out = _stream(_assistant(
+        "I can see the issues now. Let me start by updating the dependency "
+        'metadata:[TOOL_CALLS]edit_file[ARGS]{"file_path": "pyproject.toml"}'))
+    why = vibe_agent.truncated_turn(out)
+    assert why is not None
+    assert "leaked" in why and "edit_file" in why
+
+
+def test_stopping_mid_task_without_a_tool_call_is_a_truncated_turn() -> None:
+    """warm attempt 2: no leak, no tool call, sentence ends on a colon."""
+    out = _stream(_assistant(
+        "Good! The v5010 segments already have the correct annotations. Now "
+        "let me update the todo and move to the next task - fixing the "
+        "deprecated Field usage:"))
+    assert vibe_agent.truncated_turn(out) is not None
+
+
+@pytest.mark.parametrize("text", [
+    "Task completed.",
+    "Done.",                       # the rehearsal's fake model
+    "The migration is finished and the suite passes.",
+    "I could not resolve the remaining failures.",
+])
+def test_a_finished_agent_is_not_resumed(text: str) -> None:
+    """Attempt 1 of both arms ended this way and must be left alone.
+
+    A false positive is expensive, not free: an unnecessary resume replays
+    work and doubles the step count. "Done." is here because the first
+    version of this detector keyed on a list of completion PHRASES and so
+    judged every one of the fake model's turns truncated -- 61/61 became
+    59/61 and attempt 1's live steps went 3 -> 6.
+    """
+    assert vibe_agent.truncated_turn(_stream(_assistant(text))) is None
+
+
+def test_a_turn_that_made_a_tool_call_is_not_truncated() -> None:
+    """The turn ended for some other reason; resuming would be wrong."""
+    out = _stream(_assistant("Let me read the file.", tool_calls=[
+        {"function": {"name": "read_file", "arguments": "{}"}}]))
+    assert vibe_agent.truncated_turn(out) is None
+
+
+def test_only_the_last_assistant_turn_decides() -> None:
+    """A leak mid-session that the model then recovered from is not a
+    truncation -- otherwise every long attempt would resume forever."""
+    out = _stream(
+        _assistant("oops [TOOL_CALLS]edit_file[ARGS]{}"),
+        _assistant("Recovered.", tool_calls=[
+            {"function": {"name": "bash", "arguments": "{}"}}]),
+        _assistant("Task completed."),
+    )
+    assert vibe_agent.truncated_turn(out) is None
+
+
+def test_no_output_is_not_treated_as_a_truncated_turn() -> None:
+    """That case is ATTEMPT_ABORTED already and has its own handling."""
+    assert vibe_agent.truncated_turn("") is None
+    assert vibe_agent.truncated_turn("not json at all") is None
+
+
+def test_continuations_are_bounded_and_emitted() -> None:
+    """A serving layer emitting nothing parseable must fail the attempt
+    rather than spin on it, and every continuation has to be countable."""
+    src = inspect.getsource(vibe_agent.migrate_codebase)
+    assert "MAX_CONTINUATIONS" in src
+    assert "ATTEMPT_CONTINUED" in src
+    assert vibe_agent.MAX_CONTINUATIONS >= 1
+    assert vibe_agent.MAX_CONTINUATIONS <= 5, (
+        "an unbounded retry on a broken endpoint eats the run's clock")
+
+
+def test_the_continuation_resumes_rather_than_restarting() -> None:
+    """`--continue` inside ONE attempt. Restarting would throw away the
+    work the truncated turn had already done, which is the whole point."""
+    src = inspect.getsource(vibe_agent.migrate_codebase)
+    head, _, tail = src.partition("ATTEMPT_CONTINUED")
+    assert "resume=True" in tail.split("last_ended_cleanly")[0], (
+        "the continuation must resume this attempt's own session")

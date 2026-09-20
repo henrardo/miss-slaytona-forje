@@ -1,0 +1,24 @@
+# The POST-migration dependency set for owgreen-dev/x12sdk#8.
+#
+# MEASURED against the human's own merged answer (reference_v2/), which
+# must score 100% or the fixture is unsolvable and every run measures
+# noise. With the versions below the answer key scores:
+#
+#     261 passed, 0 failed  in 2.9s
+#
+# No upper pins were needed -- unlike the oapi fixture, nothing in this
+# suite is coupled to a click/typer API. Latest-at-build is recorded here
+# so a rebuild is reproducible, not because a ceiling was required.
+#
+# pydantic-settings IS PART OF THE TASK, not a convenience. The
+# pre-migration source does `from pydantic import BaseSettings`, and in
+# v2 that raises PydanticImportError pointing at the separate
+# pydantic-settings distribution -- so the agent has to discover the
+# package split, not just rename a symbol. It is the FIRST error the
+# baseline hits, and it is available in the sandbox for that reason.
+pydantic>=2.13,<3.0
+pydantic-settings>=2.15,<3.0
+python-dotenv>=1.2,<2.0
+pytest>=9.0,<10.0
+pytest-cov>=7.0,<8.0
+hypothesis>=6.168,<7.0

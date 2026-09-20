@@ -19,6 +19,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import difflib
+import functools
 import json
 import os
 import re
@@ -34,8 +35,10 @@ from typing import Any, Awaitable, Callable, Protocol
 from neo4j_agent_memory.mcp._instructions import get_instructions
 from neo4j_agent_memory.schema.models import TraceOutcome
 
+from orchestrator.ingest import ingest
 from orchestrator.manifest import REPO_ROOT
 from orchestrator.memory import EMBEDDING_MODEL, NEO4J_PASSWORD, NEO4J_URI, ScopedMemory
+from orchestrator import surfaces
 from orchestrator.sandbox import SandboxPool
 
 HARNESS_DIR = REPO_ROOT / "harness"
@@ -193,6 +196,11 @@ MCP_SHIM_DIR = Path("/private/tmp/msf-mcp")
 # create, and on run 8 the service was returning 404s and hanging. Grading
 # is the only thing that decides success, and it comes out of a 1500s clock.
 VERDICT_RESERVE_S = 240.0
+# How many times one attempt may be resumed after a truncated turn. Three is
+# enough for the observed failure (one bad turn, then the model carries on)
+# and small enough that a serving layer emitting nothing but unparseable
+# calls fails the attempt rather than spinning on it. See truncated_turn().
+MAX_CONTINUATIONS = 3
 
 Emit = Callable[..., Awaitable[Any]]
 
@@ -241,6 +249,78 @@ def stop_reason(output: str) -> str:
            f"(no stop event) last entry {kind}"
 
 
+# The model's tool call, arriving as ordinary text instead of a parsed
+# `tool_calls` field. Mistral's wire format for a call is
+# `[TOOL_CALLS]name[ARGS]{json}`; when the serving layer fails to lift it out
+# of the content, Vibe sees an assistant message with nothing to execute and
+# the turn simply ends.
+_TOOL_CALL_LEAK = re.compile(r"\[TOOL_CALLS\]\s*(\w+)?")
+# A turn that ends on a colon is a lead-in to an action that never arrived:
+# "...move to the next task - fixing the deprecated Field usage:". Syntactic
+# on purpose. The first version of this asked instead whether the text
+# matched a list of completion phrases ("task completed", "migration
+# complete", ...), which is guesswork about one model's wording: the
+# rehearsal's fake model ends every turn with "Done.", so EVERY clean turn
+# was judged truncated and resumed, and attempt 1's steps doubled from 3 to
+# 6 while attempt 2's live-write accounting broke outright. A false positive
+# is not free -- it replays work and corrupts the step counts -- so this
+# stays narrow and misses truncations rather than inventing them.
+_UNFINISHED_LEAD_IN = re.compile(r":\s*$")
+
+
+def _last_assistant_entry(output: str) -> dict | None:
+    """The final assistant message in a streamed run, or None."""
+    last = None
+    for line in (output or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if entry.get("type") == "message" and entry.get("role") == "assistant":
+            last = entry
+    return last
+
+
+def truncated_turn(output: str) -> str | None:
+    """Did the model mean to keep working and fail to say so parseably?
+
+    THE FAILURE THIS EXISTS FOR, measured in experiment swarm-1789903474
+    (x12sdk, 3 attempts each arm): three of the six attempts ended early
+    because the final assistant message carried no executable tool call.
+
+      * warm attempt 3 (14 turns) and cold attempt 3 (20 turns) ended with
+        `[TOOL_CALLS]edit_file[ARGS]{"file_path": ...}` sitting in the
+        message TEXT -- a real tool call the serving layer never lifted out.
+      * warm attempt 2 (46 turns) ended `"...move to the next task - fixing
+        the deprecated Field usage:"`, mid-sentence, with no tool call at
+        all.
+
+    Vibe reads "assistant message, no tool calls" as "the model is done" and
+    ends the attempt, so warm looked like it plateaued at 304 surfaces on
+    attempts 2 AND 3 with byte-identical results. It had not plateaued; it
+    had been cut off. The 4-request control test cannot see this -- it runs
+    at 551 tokens and these failures start around 20k of context.
+
+    Returns a short reason to log, or None if the turn ended legitimately.
+    """
+    entry = _last_assistant_entry(output)
+    if entry is None:
+        return None
+    # A parsed call means the turn ended for some other reason entirely.
+    if entry.get("tool_calls"):
+        return None
+    text = _entry_text(entry)
+    leak = _TOOL_CALL_LEAK.search(text or "")
+    if leak:
+        return f"tool call leaked into message text ({leak.group(1) or '?'})"
+    if text and _UNFINISHED_LEAD_IN.search(text):
+        return "turn ended on a lead-in to an action that never arrived"
+    return None
+
+
 def _ended_cleanly(exit_code: int | None, output: str) -> bool:
     """Is this session safe to `--continue` from?
 
@@ -263,6 +343,35 @@ def _ended_cleanly(exit_code: int | None, output: str) -> bool:
       made against an older config.
     """
     return exit_code == 0 or bool(_TURN_LIMIT_STOP.search(output or ""))
+
+
+@dataclass
+class AttemptBudget:
+    """How many attempts the whole EXPERIMENT has left. Shared and mutable.
+
+    An experiment is N attempts on one checkout: attempt, distil a skill,
+    continue from where the agent left off, distil again, stop. Attempts
+    were bounded by the clock instead (`--deadline-s`), which is why runs
+    came out anywhere between 2 and 4 of them.
+
+    MUTABLE, AND DECREMENTED WHERE THE ATTEMPT STARTS, for one reason:
+    `swarm/run.py:_attempt_until_done` re-enters `migrate_codebase` after any
+    non-harness exception, and the local `attempt` counter restarts at 0
+    there. That is the same reset that made run 6 of the 2026-09-19 series
+    report one attempt where three had run. An integer argument would hand
+    the retry a fresh allowance; a shared object cannot.
+
+    Decremented on START, not on completion, so a crash loop consumes the
+    budget instead of spinning inside it.
+    """
+    remaining: int
+
+    def take(self) -> bool:
+        """Claim one attempt. False when the experiment is out."""
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
 
 
 @dataclass
@@ -563,6 +672,7 @@ _MEMORY_TOOLS_GUIDE = get_instructions("extended")
 def _task_prompt(
     last_error: str | None,
     memory_enabled: bool = False,
+    skill_command: str | None = None,
 ) -> str:
     """The user's request, and nothing else of ours.
 
@@ -674,7 +784,76 @@ def _task_prompt(
         base += (
             f"\n\nThe test suite still fails:\n```\n{last_error}\n```"
         )
+    # LAST, so it is the very first thing in the message. Vibe only treats a
+    # prompt as a skill invocation when it STARTS with `/<name>`
+    # (SkillManager.parse_skill_command: `stripped.startswith("/")`, then
+    # `split(None, 1)` -- so the rest of the prompt arrives intact as
+    # `extra_instructions`). When it matches, Vibe appends a real `skill`
+    # tool call and its result to the conversation before the model's first
+    # turn (_inject_invoked_skill), which is how the skill gets into context
+    # deterministically instead of depending on the model choosing to call
+    # the `skill` tool. This harness has already learned what that dependency
+    # costs: agents made 0 memory-tool calls across 15 sessions while being
+    # told to use them.
+    #
+    # It also means the prefix is not a patch. The loading is Vibe's, through
+    # a documented surface; the harness only decides which skill and when.
+    #
+    # Cost: warm's prompt no longer shares a prefix with cold's, so
+    # RadixAttention cannot reuse the cache across the arms. Warm's own
+    # prefix is stable across its attempts, which is where the reuse matters.
+    if skill_command:
+        base = f"/{skill_command} " + base
     return base
+
+
+def _stream_entries(stdout: str) -> list[dict]:
+    """Vibe's streamed history entries, one JSON object per line.
+
+    The same parse as AgentWorkspace.stream_entries; both exist because
+    `swarm/` does not import from `orchestrator/`. A non-JSON line is
+    skipped rather than fatal: Vibe writes progress text to the same
+    stream, and an unparseable line must never cost an attempt its steps.
+    """
+    entries: list[dict] = []
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return entries
+
+
+def attempt_prompt(last_error: str | None, skill_name: str | None) -> str:
+    """The prompt for one attempt. IDENTICAL BETWEEN THE ARMS except for the
+    skill prefix.
+
+    This is a function, rather than a call to `_task_prompt` at the one site
+    that builds it, so the property can be tested directly instead of being
+    asserted about the source.
+
+    `memory_enabled=False` for BOTH arms, always. It used to be
+    `mem is not None`, which added three numbered steps and a closing note
+    about memory tools to warm's prompt only -- a longer prompt, more
+    instructions and more tokens before warm started work, on top of the
+    difference the experiment was trying to measure. In the current design
+    warm has no memory tools during an attempt at all: the graph is written
+    after the attempt, from the transcript, and the model's only contact
+    with what it learned before is the skill it distilled. So there is
+    nothing to instruct it about, and the guide moves to the distillation
+    turn, which is where memory tools now live.
+
+    The feedback from the previous attempt -- the grader's own pytest
+    output, trimmed by `_trim_error_for_prompt` -- is passed through
+    unchanged for both arms, in the same place and the same format. Neither
+    arm resumes a session, so this is the ONLY thing either of them carries
+    from its last attempt, and warm additionally carries the skill.
+    """
+    return _task_prompt(last_error, memory_enabled=False,
+                        skill_command=skill_name)
 
 
 def _entry_text(entry: dict) -> str:
@@ -1157,6 +1336,34 @@ _V1_SHIM = re.compile(
 )
 
 
+@functools.lru_cache(maxsize=4)
+def _reference_trees(package_path: str) -> tuple[tuple, tuple]:
+    """Cached, because it is read once per graded attempt and the files
+    do not change during a run. Tuples so lru_cache can hold them."""
+    from orchestrator.manifest import FIXTURE_DIR
+    base, answer = surfaces.reference_trees(FIXTURE_DIR, package_path)
+    return tuple(base.items()), tuple(answer.items())
+
+
+def _closeness(file_contents: dict[str, bytes],
+               package_path: str | None) -> float | None:
+    """`None` when the fixture ships no answer key -- which is a different
+    fact from 0.0, and 0.0 is the score of an untouched checkout."""
+    if not package_path:
+        return None
+    try:
+        base, answer = _reference_trees(package_path)
+        if not answer:
+            return None
+        return surfaces.closeness(file_contents, dict(base), dict(answer),
+                                  within=package_path)
+    except Exception as exc:                  # never cost a graded attempt
+        # `print`, because this module has no logger -- which the
+        # symtable test caught here before it reached a pod.
+        print(f"  closeness could not be computed: {exc!r}")
+        return None
+
+
 def v1_shim_files(file_contents: dict[str, bytes]) -> list[str]:
     """Files importing pydantic's v1 compatibility shim, which is not a
     migration -- it is the opposite of one.
@@ -1181,6 +1388,15 @@ def v1_shim_files(file_contents: dict[str, bytes]) -> list[str]:
         name for name, blob in file_contents.items()
         if name.endswith(".py") and _V1_SHIM.search(blob.decode("utf-8", "replace"))
     )
+
+
+# Errors that mean the agent's own edit left the tree unparseable. The
+# pre-migration fixture parses cleanly, so any of these in a graded result
+# is damage this attempt did.
+_SYNTAX_ERRORS = ("SyntaxError", "IndentationError", "TabError")
+
+class _LiveWritesPresent(Exception):
+    """The post_tool hook already wrote this attempt's steps."""
 
 
 _TERMINATORS = (ast.Return, ast.Raise, ast.Continue, ast.Break)
@@ -1339,6 +1555,30 @@ def _snapshot(repo_dir: Path) -> dict[str, str]:
             continue
         out[path.relative_to(repo_dir).as_posix()] = path.read_text(errors="replace")
     return out
+
+
+def source_tree(workspace) -> dict[str, str]:
+    """path -> SOURCE TEXT, for observed_fix's diff.
+
+    Not `workspace.snapshot()`, which is documented as "path -> sha256, for
+    the 'did anything change' check" and was being passed here anyway. The
+    effect, measured on Aura on 2026-09-20: every trace summary in the graph
+    -- the one field whose job is to tell another agent what edit fixed an
+    error -- held a diff of hashes.
+
+        --- x12sdk/models.py
+        +++ x12sdk/models.py
+        @@ -1 +1 @@
+        -6c8ad5c43b1c9b19261919460f6a005fea8f2dc312a500d8b5216a278992b894
+        +8b733746a82d85f7e886c3fed9cbf64f915df1909f71ac3e5ffb416b8d340778
+
+    It recorded WHICH files changed and nothing about WHAT changed. Reads
+    the same cached tree `snapshot()` did, so this costs no extra round
+    trip; `/repo/` is stripped because `collect_file_contents` keys for the
+    grader's upload path, and a diff header should name the file.
+    """
+    return {path.removeprefix("/repo/"): data.decode("utf-8", "replace")
+            for path, data in workspace.collect_file_contents().items()}
 
 
 def observed_fix(
@@ -1574,6 +1814,19 @@ class Workspace(Protocol):
     def assistant_turns_total(self) -> int: ...
     def tool_calls_total(self) -> Counter: ...
     def steps_used(self) -> int: ...
+    # Vibe's streamed history entries, parsed from the stdout run_vibe
+    # returned. The whole input to ingestion -- see orchestrator/ingest.py.
+    def stream_entries(self, stdout: str) -> list[dict]: ...
+
+    # Which AIP version is installed HERE, or None. The attempt loop records
+    # this rather than asking the skill registry, because the registry
+    # answers "what is newest on the orchestrator's disk" and the agent runs
+    # whatever reached its own VIBE_HOME.
+    installed_skill_version: int | None
+
+    # There is deliberately NO checkpoint/restore here. See the attempt
+    # loop, "NO ROLLBACK": attempts continue from where the last one left
+    # the tree, and an agent that breaks its own code fixes its own code.
 
 
 @dataclass
@@ -1584,6 +1837,9 @@ class LocalWorkspace:
     repo_dir: Path
     vibe_home: Path = VIBE_HOME
     vibe_cwd: Path = HARNESS_DIR
+    # Local runs install skills by hand, if at all; whoever does it sets
+    # this, and None honestly means "no skill recorded here".
+    installed_skill_version: int | None = None
 
     async def run_vibe(self, task: str, *, timeout_s: float, resume: bool,
                        on_entry: Any | None) -> tuple[int, str]:
@@ -1605,6 +1861,9 @@ class LocalWorkspace:
     def steps_used(self) -> int:
         return _steps_used(self.vibe_home)
 
+    def stream_entries(self, stdout: str) -> list[dict]:
+        return _stream_entries(stdout)
+
 
 async def migrate_codebase(
     *,
@@ -1622,6 +1881,24 @@ async def migrate_codebase(
     baseline_passed: int = 0,
     step_memory: Any | None = None,
     agent_label: str | None = None,
+    skill_name: str | None = None,
+    distiller: Any | None = None,
+    usage_probe: Any | None = None,
+    sync: Any | None = None,
+    # Which directory the migration is IN. Scopes the progress count: the
+    # fixture also ships `tests/`, `end_to_end_tests/` and
+    # `integration-tests/`, which together contribute 29 constructs the
+    # agent never touches -- a constant that swamps the signal and never
+    # moves. Unset, the whole tree is counted.
+    package_path: str | None = None,
+    # How many attempts this EXPERIMENT still has. See AttemptBudget: it is
+    # shared and mutable precisely so a retry cannot hand out a fresh three.
+    # None means unbounded, which is what the local orchestrator and the
+    # rehearsal still want.
+    budget: "AttemptBudget | None" = None,
+    # Called with (attempt, file_contents) just before each attempt is
+    # graded, so the experiment can keep every tree and not only the last.
+    on_attempt_tree: Any | None = None,
 ) -> MigrationResult:
     """One agent, one local checkout, one whole-codebase task: "migrate this
     codebase from Pydantic v1 to Pydantic v2." Vibe edits `repo_dir` (a real
@@ -1704,21 +1981,61 @@ async def migrate_codebase(
     # silently discarded because there was "no baseline to compare against".
     last_passed: int = baseline_passed
     last_ended_cleanly: bool = False
+    # Seconds spent AFTER an attempt on work that is not the agent's:
+    # ingestion, and later distillation. Added back to the deadline so the
+    # two arms get the same amount of ATTEMPT time even though warm does
+    # more work per round. Cold never accumulates any -- it has no `mem` --
+    # so `off_clock` is the whole of the asymmetry, and it is visible.
+    #
+    # Without this the mission's "off the clock" would be a figure of
+    # speech: a shared wall-clock deadline charges warm's bookkeeping to
+    # warm's own thinking time.
+    off_clock: float = 0.0
     # Seeded with the baseline so the starting failure is not counted as one
     # this agent cleared; errors_cleared subtracts one for it.
     seen_signatures: set[str] = {baseline_signature} if baseline_signature else set()
     best_passed: int = baseline_passed
     attempt = 0
     while True:
-        remaining = deadline - time.monotonic()
+        remaining = (deadline + off_clock) - time.monotonic()
         # An attempt is only worth starting if it can still afford its own
         # verdict. Starting one with less than that left is what produced 19
         # consecutive runs of ungraded work: Vibe ran, the clock expired, and
         # the Daytona check got 0.0 seconds and raised.
         if remaining <= VERDICT_RESERVE_S:
             break
+        # THE EXPERIMENT'S OWN BOUND, checked before the clock's. The
+        # deadline is a safety net; this is the thing that decides how many
+        # attempts an experiment gets. Claimed here, at the start, so the
+        # retry wrapper cannot re-enter and hand out more -- see
+        # AttemptBudget.
+        if budget is not None and not budget.take():
+            break
         attempt += 1
-        await emit("ATTEMPT_START", attempt=attempt)
+        # The version the agent is about to work from, read once per
+        # attempt. Distillation changes it between attempts, so recording
+        # it at the end would attribute the result to the wrong skill.
+        #
+        # Read off the WORKSPACE, not the local registry. This used to call
+        # skills.current(), which answers a different question -- "what is
+        # the newest version on the orchestrator's disk" -- and the two
+        # diverge in both directions. Pin a version with --skill-version and
+        # every attempt was logged as the newest one instead of the one
+        # installed; distil between attempts and an attempt was credited to
+        # a procedure that had not reached the pod. Either way the label was
+        # not the skill the model read.
+        skill_version = getattr(workspace, "installed_skill_version", None) \
+            if skill_name else None
+        await emit("ATTEMPT_START", attempt=attempt,
+                   skill_version=skill_version)
+        attempt_started = time.monotonic()
+        off_clock_at_start = off_clock
+        # CUMULATIVE across the run, so the back-fill decision has to be a
+        # DELTA. Read before the attempt: a hook that wrote 40 steps in
+        # attempt 1 and then died would otherwise look alive forever.
+        steps_before_attempt = (
+            getattr(step_memory, "steps_written", 0) or 0
+            if step_memory is not None else 0)
 
         trace_id = None
 
@@ -1768,27 +2085,98 @@ async def migrate_codebase(
             if step_memory is not None and agent_label:
                 step_memory.set_trace(agent_label, trace_id)
 
-        task = _task_prompt(last_error, memory_enabled=mem is not None)
-        before_snapshot = workspace.snapshot()
+        # Token counters at the attempt boundary, so ATTEMPT tokens can be
+        # reported apart from distillation tokens. The sampling itself is
+        # charged to off_clock: it is the harness measuring, not the agent
+        # working, and it happens for both arms either way.
+        probe_started = time.monotonic()
+        usage_before = usage_probe() if usage_probe else {}
+        off_clock += time.monotonic() - probe_started
+
+        task = attempt_prompt(last_error, skill_name)
+        before_snapshot = source_tree(workspace)
         turns_before = workspace.assistant_turns_total()
         tools_before = workspace.tool_calls_total()
         try:
-            # Resume only a session that ended cleanly -- see _ended_cleanly()
-            # for what that means and why it is not an exit-code check.
-            resume = attempt > 1 and last_ended_cleanly
+            # EVERY ATTEMPT STARTS A FRESH SESSION, IN BOTH ARMS.
+            #
+            # This used to be `attempt > 1 and last_ended_cleanly`: resume a
+            # session that ended cleanly, so the agent kept its context
+            # across attempts. Two things made that untenable.
+            #
+            # 1. A resumed session cannot reload a changed skill. Vibe
+            #    checks whether the skill's marker is already in the
+            #    conversation (_skill_already_loaded) and, if it is, answers
+            #    "already loaded earlier in this conversation. Reuse those
+            #    instructions." Correct for an unchanged skill; wrong once
+            #    distillation has written a new version, because the agent
+            #    would work from the superseded text while the run recorded
+            #    the new number.
+            #
+            # 2. Fixing that for warm alone would make warm restart while
+            #    cold carried its history forward, so the arms would differ
+            #    in TWO ways instead of one, and any difference in their
+            #    results could be attributed to either. The skill is meant
+            #    to be the only thing warm carries between attempts.
+            #
+            # The cost is real and is the point: neither arm accumulates
+            # conversation across attempts, so both start each attempt from
+            # the task plus the previous verdict, and warm additionally from
+            # a procedure it wrote itself. That is what the experiment is
+            # trying to measure -- whether the distilled skill carries more
+            # than a transcript would.
+            #
+            # `last_ended_cleanly` is still computed and now reported on
+            # ATTEMPT_DONE rather than steering anything: whether the agent
+            # stopped on its own terms is worth knowing, and it was only
+            # ever visible through the resume decision.
+            resume = False
             # Unleashed: the agent ends its own attempt. The only bound is
             # what is left of the RUN's clock after reserving the verdict --
             # see _run_vibe() on why that is the run's budget rather than a
             # cap on the agent.
             vibe_exit_code, vibe_output = await workspace.run_vibe(
                 task,
-                timeout_s=max(1.0, deadline - time.monotonic() - VERDICT_RESERVE_S),
+                timeout_s=max(1.0, (deadline + off_clock) - time.monotonic()
+                                   - VERDICT_RESERVE_S),
                 resume=resume,
                 on_entry=(
                     _entry_consumer(mem, session_id, step_memory, agent_label)
                     if mem is not None and session_id else None
                 ),
             )
+            # RECOVER A TRUNCATED TURN, WITHIN THIS ATTEMPT.
+            #
+            # See truncated_turn(): three of six attempts in
+            # swarm-1789903474 ended because a tool call arrived as text.
+            # `--continue` here resumes THIS attempt's own session, which is
+            # a different thing from the cross-attempt resume banned above
+            # and reopens neither of its two problems: the skill cannot have
+            # changed inside one attempt, and both arms get this identically
+            # so the arms still differ only in the treatment.
+            #
+            # Bounded, and every continuation is emitted. If this fires
+            # constantly the serving layer is broken and that should be
+            # loud, not absorbed.
+            for _cont in range(MAX_CONTINUATIONS):
+                why = truncated_turn(vibe_output)
+                if why is None:
+                    break
+                left = (deadline + off_clock) - time.monotonic() - VERDICT_RESERVE_S
+                if left <= 1.0:
+                    break
+                await emit("ATTEMPT_CONTINUED", attempt=attempt,
+                           continuation=_cont + 1, reason=why)
+                more_code, more_output = await workspace.run_vibe(
+                    task, timeout_s=max(1.0, left), resume=True,
+                    on_entry=(
+                        _entry_consumer(mem, session_id, step_memory,
+                                        agent_label)
+                        if mem is not None and session_id else None
+                    ),
+                )
+                vibe_exit_code = more_code
+                vibe_output = f"{vibe_output}\n{more_output}"
             last_ended_cleanly = _ended_cleanly(vibe_exit_code, vibe_output)
 
             # Did the agent actually take a turn? If Vibe exited without
@@ -1848,6 +2236,19 @@ async def migrate_codebase(
             # The hook pays one loopback round-trip per tool call instead, and
             # defers embedding to complete_trace's batch.
             file_contents = workspace.collect_file_contents()
+            # THE TREE THIS ATTEMPT PRODUCED, handed out before it is
+            # graded. Free: the grader needs it anyway, so nothing extra is
+            # collected or transferred. Only the FINAL tree was ever kept,
+            # which is why per-attempt `closeness` could not be recomputed
+            # after the 2026-09-19 or 2026-09-20 runs -- and it matters more
+            # now that attempts accumulate on one checkout, so the series of
+            # trees IS the experiment's record of progress.
+            if on_attempt_tree is not None:
+                try:
+                    on_attempt_tree(attempt, file_contents)
+                except Exception as exc:     # never cost an attempt
+                    print(f"  [{agent_label}] could not archive attempt "
+                          f"{attempt}'s tree: {exc!r}")
             # Gets its own reserved slice rather than `deadline - now`. That
             # expression is the bug that made this project measure nothing: by
             # the time Vibe had consumed the rest of the clock it evaluated to
@@ -1866,7 +2267,8 @@ async def migrate_codebase(
             # which is the condition the handler already claims to detect.
             result = await asyncio.wait_for(
                 pool.run_pytest(file_contents=file_contents, test_command=test_command),
-                timeout=max(VERDICT_RESERVE_S, deadline - time.monotonic()),
+                timeout=max(VERDICT_RESERVE_S,
+                            (deadline + off_clock) - time.monotonic()),
             )
             await emit("SANDBOX_CREATED", create_ms=result.create_ms)
         except asyncio.TimeoutError:
@@ -1906,9 +2308,72 @@ async def migrate_codebase(
                 chars=0,
                 query=trace_task[:120],
             )
+        probe_started = time.monotonic()
+        usage_after = usage_probe() if usage_probe else {}
+        off_clock += time.monotonic() - probe_started
+        attempt_tokens = {
+            k: usage_after.get(k, 0) - usage_before.get(k, 0)
+            for k in ("prompt_tokens", "completion_tokens")
+        }
+        # Elapsed minus everything the harness did in the middle, so the
+        # number is the agent's own time and is comparable between arms.
+        attempt_seconds = ((time.monotonic() - attempt_started)
+                           - (off_clock - off_clock_at_start))
+        # Unpack the grader's verdict BEFORE the event that reports it.
+        # These used to be derived after the emit, so ATTEMPT_DONE could not
+        # carry `tests_passed` -- and metrics read 0 passed for a run where
+        # both arms scored 33 of 33. `result` is already the Daytona result
+        # here, so there is nothing to wait for.
+        success = result.exit_code == 0
+        signature = error_signature(result.output)
+        passed = tests_passed(result.output)
+
         await emit(
             "ATTEMPT_DONE",
             attempt=attempt,
+            # The grader's own number, not the agent's claim.
+            tests_passed=passed,
+            # HOW MUCH MIGRATION IS LEFT, counted off the source rather
+            # than by running it. `tests_passed` is 0 both when nothing
+            # has been migrated yet and when the agent has broken the
+            # package -- 70% of 77 graded attempts scored exactly 0, so
+            # the oracle cannot tell progress from damage. This can: it is
+            # defined even when the tree does not parse, and it moves when
+            # an attempt fixes 12 of 40 sites. Not an oracle; the suite
+            # stays the only thing that decides success.
+            v1_remaining=surfaces.count(file_contents,
+                                        within=package_path),
+            # IS THE CODE INTACT? The other half of the pair, and the half
+            # that was missing. `v1_remaining` says how much migration
+            # exists; this says whether it still compiles. Together they
+            # separate "did the work and broke it" (few surfaces, files
+            # not parsing) from "kept it valid by not doing it" (many
+            # surfaces, all parsing) -- which `tests_passed` scores 0 both
+            # times. Measured mid-run on 2026-09-19: warm 16 surfaces at
+            # 28/49 parsing, cold 63 at 49/49.
+            **dict(zip(("parse_ok", "parse_total"),
+                       surfaces.parses(file_contents, within=package_path))),
+            # HOW FAR ALONG THE v1 -> v2 PATH, as a gradient. 0.0 is the
+            # untouched checkout, 1.0 is the human's merged PR. Normalised
+            # against the baseline because RAW similarity to the answer is
+            # a dud -- the untouched tree already scores 0.915 and every
+            # arm lands within 0.006 of it. Approximate, and ranks the
+            # arms against each other rather than grading either; the
+            # suite stays the oracle of success.
+            closeness=_closeness(file_contents, package_path),
+            # WHY it failed. This was only ever recorded on MEMORY_WRITE,
+            # which is warm-only -- so cold's failures were invisible and
+            # a run where cold scored 0 on five straight attempts could
+            # not be diagnosed at all. Both arms, every attempt.
+            error_signature=signature,
+            # SELF-INFLICTED, by definition. The pre-migration source
+            # parses -- its failure is a pydantic error raised at import,
+            # not a SyntaxError -- so a syntax error in the graded tree can
+            # only have come from the agent's own edit. Recorded because it
+            # is the difference between "has not migrated it yet" and "broke
+            # it with a bad edit", which `tests_passed` flattens to 0 both
+            # times. Nothing acts on it: the agent fixes its own tree.
+            broke_syntax=bool(signature and signature.startswith(_SYNTAX_ERRORS)),
             exit_code=result.exit_code,
             vibe_exit_code=vibe_exit_code,
             # Why Vibe's turn ended, and how many turns it actually used.
@@ -1917,7 +2382,19 @@ async def migrate_codebase(
             # in the event log, and they mean opposite things.
             vibe_stop=stop_reason(vibe_output),
             turns_used=workspace.steps_used(),
+            # Wall-clock the AGENT spent, with the harness's own
+            # bookkeeping subtracted -- see off_clock.
+            attempt_seconds=round(attempt_seconds, 1),
+            attempt_prompt_tokens=attempt_tokens.get("prompt_tokens", 0),
+            attempt_completion_tokens=attempt_tokens.get("completion_tokens", 0),
+            skill_version=skill_version,
             resumed=resume,
+            # Did Vibe stop on its own terms, or was it cut off? This used
+            # to decide whether the next attempt resumed; now that no
+            # attempt ever resumes, it is the only remaining record of the
+            # distinction, and it separates "the agent finished thinking"
+            # from "the clock or the server ended it".
+            ended_cleanly=last_ended_cleanly,
             # What the agent chose to do with its turns, and -- the point of
             # the warm/cold comparison -- whether it ever asked the graph
             # anything itself. See _tool_calls_total().
@@ -1927,9 +2404,6 @@ async def migrate_codebase(
             ),
         )
 
-        success = result.exit_code == 0
-        signature = error_signature(result.output)
-        passed = tests_passed(result.output)
 
         # Two holes the suite cannot see, because `tests/` comes from the real
         # merge commit and never calls a v2-only API:
@@ -2028,69 +2502,236 @@ async def migrate_codebase(
         # `passed` telling the truth for everything else.
         rejected = bool(shimmed or gutted)
         advanced = not success and not rejected and passed > last_passed
-        if mem is not None:
-            # TraceOutcome rather than a bare string, so the fix is retrievable
-            # two ways: `error_kind` is written as a top-level indexed property
-            # (agents on an identical codebase hit byte-identical signatures,
-            # and an exact match beats a vector search on a string two agents
-            # both have verbatim), while `summary` carries the diff that
-            # cleared it and is what reasoning.get_context() surfaces.
-            # `success` NOW MEANS THE FULL SUITE PASSED. It used to be
-            # `resolved = success or advanced`, so a trace could carry
-            # success=True under a summary reading "The suite still fails
-            # with the same first error" -- observed in the graph at
-            # tests_passed=32. `_render` shows that flag to the next warm
-            # agent, so memory was reporting failures as successes.
-            #
-            # "Advanced" is still worth recording, so it becomes its own
-            # metric rather than being folded into the flag. `outcome_schema`
-            # marks which definition a trace was written under: 1 is the old
-            # conflated flag, 2 is this one. Older traces are stamped 1 by
-            # scripts/mark_legacy_traces.py rather than deleted, so they can
-            # be excluded from analysis without losing the reasoning in them.
-            await mem.complete_trace(
-                trace_id,
-                outcome=TraceOutcome(
-                    success=success,
-                    summary=(
-                        observed_fix(
-                            before_snapshot,
-                            workspace.snapshot(),
-                            prior_error=last_signature,
-                            next_error=signature,
-                            suite_passed=success,
-                            # The same delta `advanced` is computed from, so
-                            # the stored summary and the stored success flag
-                            # cannot contradict each other. See observed_fix().
-                            tests_delta=passed - last_passed,
-                        )
-                        or (
-                            "suite passed" if success else
-                            f"No edit was made. The suite still fails with:\n{signature}"
-                        )
+
+        # BARRIER 1: nobody starts off-clock work until BOTH arms have
+        # finished attempt N.
+        #
+        # Warm and cold share one SGLang server. A distillation turn
+        # running while the other arm is still working is load the other
+        # arm did not have in its previous attempt, and per-stream
+        # throughput on this hardware roughly halves under contention
+        # (182.6 tok/s single, 320.1 across four). That difference would
+        # land in the wall-clock comparison as if it were an effect of
+        # memory.
+        #
+        # The wait is off_clock for whoever waits -- cold is not working
+        # during warm's distillation, so it is not charged for it, and
+        # both arms still get the same amount of ATTEMPT time out of the
+        # shared deadline.
+        if sync is not None:
+            off_clock += await sync.arrive(agent_label or "anonymous")
+
+        # A MEMORY FAILURE MUST NOT END THE AGENT'S RUN.
+        #
+        # This block was unguarded, so anything raised inside it escaped
+        # into `_attempt_until_done`'s `except Exception`, which retries by
+        # calling migrate_codebase AGAIN -- restarting the attempt counter
+        # at 1 and losing the run's own accounting. Observed 2026-09-19,
+        # run 6: warm's counter went 1, 2, 1 and FILE_DONE recorded one
+        # attempt where three had run.
+        #
+        # What raised was the EMBEDDER, inside complete_trace(
+        # generate_step_embeddings=True):
+        #
+        #     Invalid 'input[75]': maximum input length is 8192 tokens
+        #
+        # text-embedding-3-small's hard input limit, reached because steps
+        # are now stored whole. That is a real constraint of the package,
+        # reported as one -- but the agent had already done the work and
+        # already been graded, and losing one vector is not a reason to
+        # restart it.
+        #
+        # The write queue swallows its own failures for exactly this
+        # reason (StepMemoryService._drain_forever). This is the same rule
+        # applied to the memory calls that are awaited inline.
+        try:
+            if mem is not None:
+                # TraceOutcome rather than a bare string, so the fix is retrievable
+                # two ways: `error_kind` is written as a top-level indexed property
+                # (agents on an identical codebase hit byte-identical signatures,
+                # and an exact match beats a vector search on a string two agents
+                # both have verbatim), while `summary` carries the diff that
+                # cleared it and is what reasoning.get_context() surfaces.
+                # `success` NOW MEANS THE FULL SUITE PASSED. It used to be
+                # `resolved = success or advanced`, so a trace could carry
+                # success=True under a summary reading "The suite still fails
+                # with the same first error" -- observed in the graph at
+                # tests_passed=32. `_render` shows that flag to the next warm
+                # agent, so memory was reporting failures as successes.
+                #
+                # "Advanced" is still worth recording, so it becomes its own
+                # metric rather than being folded into the flag. `outcome_schema`
+                # marks which definition a trace was written under: 1 is the old
+                # conflated flag, 2 is this one. Older traces are stamped 1 by
+                # scripts/mark_legacy_traces.py rather than deleted, so they can
+                # be excluded from analysis without losing the reasoning in them.
+                await mem.complete_trace(
+                    trace_id,
+                    outcome=TraceOutcome(
+                        success=success,
+                        summary=(
+                            observed_fix(
+                                before_snapshot,
+                                source_tree(workspace),
+                                prior_error=last_signature,
+                                next_error=signature,
+                                suite_passed=success,
+                                # The same delta `advanced` is computed from, so
+                                # the stored summary and the stored success flag
+                                # cannot contradict each other. See observed_fix().
+                                tests_delta=passed - last_passed,
+                            )
+                            or (
+                                "suite passed" if success else
+                                f"No edit was made. The suite still fails with:\n{signature}"
+                            )
+                        ),
+                        error_kind=trace_task,
+                        metrics={
+                            "attempt": float(attempt),
+                            "tests_passed": float(passed),
+                            "suite_passed": float(bool(success)),
+                            "advanced": float(bool(advanced)),
+                            "outcome_schema": 2.0,
+                        },
                     ),
-                    error_kind=trace_task,
-                    metrics={
-                        "attempt": float(attempt),
-                        "tests_passed": float(passed),
-                        "suite_passed": float(bool(success)),
-                        "advanced": float(bool(advanced)),
-                        "outcome_schema": 2.0,
-                    },
-                ),
-                generate_step_embeddings=True,
-            )
-            if resolved:
-                await emit("MEMORY_WRITE", error_kind=trace_task[:60], on=("pass" if success else "progress"))
-            # The record of what happened, kept short on purpose. An earlier
-            # revision stored the entire Vibe stdout here, and since
-            # short_term.get_context() replays stored messages verbatim, the
-            # transcript came straight back out into the next prompt. The
-            # workshop stores str(result.output) -- one answer, not a log.
-            await mem.add_message(
-                session_id, "assistant",
-                f"attempt {attempt}: " + ("suite passed" if success else (signature or "no change")),
-            )
+                    generate_step_embeddings=True,
+                )
+                # `success or advanced`, written out. This line used to read
+                # `if resolved:`, a variable deleted when the trace outcome was
+                # made honest -- `resolved = success or advanced` was exactly
+                # the conflation that let a trace claim success at
+                # tests_passed=32. The name went; this reference did not, so
+                # every warm attempt would have died with NameError here,
+                # AFTER grading and inside the memory block. Found by the local
+                # rehearsal rather than by a pod.
+                if success or advanced:
+                    await emit("MEMORY_WRITE", error_kind=trace_task[:60],
+                               on=("pass" if success else "progress"))
+                # The record of what happened, kept short on purpose. An earlier
+                # revision stored the entire Vibe stdout here, and since
+                # short_term.get_context() replays stored messages verbatim, the
+                # transcript came straight back out into the next prompt. The
+                # workshop stores str(result.output) -- one answer, not a log.
+                await mem.add_message(
+                    session_id, "assistant",
+                    f"attempt {attempt}: " + ("suite passed" if success else (signature or "no change")),
+                )
+
+                # BACK-FILL ONLY, and only when the live hook wrote nothing.
+                #
+                # This used to REPLACE the native writes. That was wrong: the
+                # hook writes cost latency, not tokens, so removing them saved
+                # nothing measurable and replaced the agent's real tool calls
+                # with my reconstruction of them from a transcript. The hook
+                # is wired back in (`enable_memory`), so in a healthy run this
+                # block is a no-op.
+                #
+                # It stays as a safety net because a silently dead hook has
+                # happened before -- "0 step(s) written, 0 errors" while the
+                # agent made 85 tool calls -- and an empty warm graph makes
+                # warm == cold and the whole run a null result.
+                #
+                # Everything the agent actually did,
+                # written once, after the verdict is known -- so each step is
+                # stored under a trace whose outcome is already honest, and the
+                # agent paid nothing for the writing during its own turn.
+                #
+                # `complete_trace` above closes the trace before this adds steps
+                # to it. That order is deliberate: the steps are evidence about
+                # an attempt that is already decided, and if ingestion dies
+                # halfway the trace still carries the right verdict.
+                ingest_started = time.monotonic()
+                try:
+                    live_steps = 0
+                    if step_memory is not None:
+                        live_steps = max(
+                            0, (getattr(step_memory, "steps_written", 0) or 0)
+                            - steps_before_attempt)
+                    if live_steps:
+                        # The hook did its job live. Replaying the transcript
+                        # on top would double every step.
+                        print(f"  [{agent_label}] hook wrote {live_steps} step(s) "
+                              f"live; skipping back-fill")
+                        raise _LiveWritesPresent
+                    ingested = await ingest(mem, trace_id,
+                                            workspace.stream_entries(vibe_output))
+                    await emit(
+                        "INGESTED", attempt=attempt, steps=len(ingested.steps),
+                        with_reasoning=ingested.steps_with_reasoning,
+                        tool_calls=ingested.tool_calls,
+                        failed_tool_calls=ingested.failed_tool_calls,
+                        skill_loaded=bool(ingested.skill_content),
+                    )
+                    if ingested.steps and not ingested.steps_with_reasoning:
+                        # The exact failure this design exists to fix. Loud,
+                        # because a graph of steps with empty `thought` is
+                        # searchable only by what was typed, and that looks
+                        # identical to a working graph from the outside.
+                        print(f"  [{agent_label}] WARNING: ingested "
+                              f"{len(ingested.steps)} step(s), NONE with "
+                              f"reasoning. search_steps embeds thought+action, "
+                              f"so this graph cannot be retrieved on why.")
+                except _LiveWritesPresent:
+                    await emit("INGESTED", attempt=attempt, steps=live_steps,
+                               with_reasoning=None, tool_calls=None,
+                               failed_tool_calls=None, skill_loaded=None,
+                               source="live_hook")
+                except Exception as exc:
+                    # Never fatal. The attempt is graded and the trace closed;
+                    # losing its steps costs a later distillation some recall.
+                    print(f"  [{agent_label}] ingestion failed: {exc!r}")
+                off_clock += time.monotonic() - ingest_started
+
+                # DISTILLATION, also off the clock, also after the verdict.
+                #
+                # Once per attempt -- never per model turn. The agent has just
+                # been told by an independent grader whether its work passed,
+                # which is the only moment it has something new and true to
+                # write down. Doing it per turn would have it revising a
+                # procedure against its own unverified belief.
+                if distiller is not None:
+                    distil_started = time.monotonic()
+                    try:
+                        outcome = await distiller(
+                            attempt=attempt, tests_passed=passed,
+                            suite_passed=bool(success), error=last_error,
+                        )
+                        await emit(
+                            "DISTILLED", attempt=attempt,
+                            version=outcome.version,
+                            accepted=outcome.accepted is not None,
+                            reason=(outcome.rejection.reason
+                                    if outcome.rejection else None),
+                            # The category alone ("invalid_schema") is not
+                            # actionable; the validator's own first diagnostic
+                            # is what names the offending field.
+                            reason_detail=((outcome.rejection.detail or "")[:400]
+                                           if outcome.rejection else None),
+                            repairs=outcome.repairs,
+                            seconds=round(outcome.seconds, 1),
+                            memory_tool_calls=outcome.memory_tool_calls,
+                            eligible_traces=outcome.eligible_traces,
+                        )
+                        if outcome.note:
+                            print(f"  [{agent_label}] distillation: {outcome.note}")
+                    except Exception as exc:
+                        print(f"  [{agent_label}] distillation failed: {exc!r}")
+                    off_clock += time.monotonic() - distil_started
+
+        except Exception as exc:
+            # Loud, and not fatal. The attempt stands, the verdict stands,
+            # and the run continues; what is lost is this trace's closing
+            # record. Silence here would be worse than the failure -- it
+            # is how "the graph is fine" survived six runs of tool-JSON.
+            print(f"  [{agent_label}] MEMORY WRITE FAILED after the verdict "
+                  f"(attempt kept, run continues): {exc!r}")
+        # BARRIER 2: neither arm starts attempt N+1 until the off-clock
+        # work is done. Without this, cold would be released by barrier 1
+        # and start its next attempt straight into warm's distillation --
+        # which is the contention this is here to remove.
+        if sync is not None:
+            off_clock += await sync.arrive(agent_label or "anonymous")
 
         # Distinct failures this agent has moved the suite through, counted
         # off the orchestrator's own test runs. The baseline signature is
@@ -2105,6 +2746,35 @@ async def migrate_codebase(
             if signature and signature not in seen_signatures:
                 seen_signatures.add(signature)
             best_passed = max(best_passed, passed)
+
+        # NO ROLLBACK. THE AGENT CONTINUES FROM WHERE IT IS.
+        #
+        # There was a checkpoint/restore here. It was never asked for; I
+        # added it, and the operator's instruction is explicit: "They should
+        # just continue on each attempt. Never start from scratch. Never
+        # 'pick some random code you can't test'."
+        #
+        # It also did measurable harm. It keyed on `tests_passed`, which on
+        # `fixtures/oapi` has three values -- 0 (does not import), ~310
+        # (imports) and 445 (finished) -- and is therefore blind to how much
+        # of the migration exists. Two attempts in the 2026-09-18/19 series
+        # were rolled back:
+        #
+        #   run 2 warm attempt 3   scored 0 at 8 v1 surfaces (floor is 3)
+        #                          -> restored a 310-passing tree at 40
+        #   run 5 warm attempt 2   scored 0 at 8, one syntax error
+        #                          -> restored a 311-passing tree at 55
+        #
+        # Both hits landed on warm, the arm under test, and both discarded
+        # the most complete migration the series produced in order to
+        # recover a barely-migrated tree that scored better on a metric that
+        # cannot see migration. A safety net that throws away the work it is
+        # supposed to protect is worse than none.
+        #
+        # An agent that breaks its own tree now fixes its own tree, which is
+        # what a developer does and what the next attempt's fed-back error
+        # tells it to do. The failure KIND is still recorded, on
+        # ATTEMPT_DONE's `broke_syntax` -- reported, never acted on.
 
         if success:
             await emit("FILE_DONE", success=True, attempts=attempt)

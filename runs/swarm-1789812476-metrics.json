@@ -1,0 +1,172 @@
+{
+  "run_id": "swarm-1789812476",
+  "gpu": "1x NVIDIA H200, 143771 MiB",
+  "model": "mistralai/Mistral-Small-4-119B-2603",
+  "commit": "16161a2",
+  "skill_version": 0,
+  "skill_approx_tokens": 569,
+  "skill_dir_sha": "ffd42f681f2c",
+  "arms_identical": false,
+  "known_differences": [
+    "config_names",
+    "hook_files",
+    "tools"
+  ],
+  "arms": {
+    "cold": {
+      "arm": "cold",
+      "tests_passed": 0,
+      "attempts": 4,
+      "converged": false,
+      "turns": 237,
+      "attempt_seconds": 721.1999999999999,
+      "attempt_prompt_tokens": 7168298,
+      "attempt_completion_tokens": 49304,
+      "distil_seconds": 0.0,
+      "distil_prompt_tokens": 0,
+      "distil_completion_tokens": 0,
+      "steps_ingested": 0,
+      "steps_with_reasoning": null,
+      "thought_fallbacks": null,
+      "skill_versions": [],
+      "distillations": 0,
+      "distillations_accepted": 0,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 62,
+          "parse_ok": 49,
+          "parse_total": 49,
+          "turns": 77,
+          "seconds": 200.7,
+          "prompt_tokens": 2501980,
+          "completion_tokens": 13553,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 62,
+          "parse_ok": 49,
+          "parse_total": 49,
+          "turns": 73,
+          "seconds": 216.4,
+          "prompt_tokens": 2666734,
+          "completion_tokens": 18470,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 10,
+          "parse_ok": 28,
+          "parse_total": 49,
+          "turns": 57,
+          "seconds": 184.2,
+          "prompt_tokens": 1572843,
+          "completion_tokens": 13498,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 4,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 8,
+          "parse_ok": 29,
+          "parse_total": 49,
+          "turns": 30,
+          "seconds": 119.9,
+          "prompt_tokens": 426741,
+          "completion_tokens": 3783,
+          "ended_cleanly": false
+        }
+      ]
+    },
+    "warm": {
+      "arm": "warm",
+      "tests_passed": 310,
+      "attempts": 4,
+      "converged": false,
+      "turns": 170,
+      "attempt_seconds": 689.8,
+      "attempt_prompt_tokens": 5143024,
+      "attempt_completion_tokens": 33993,
+      "distil_seconds": 717.4,
+      "distil_prompt_tokens": 133605,
+      "distil_completion_tokens": 60103,
+      "steps_ingested": 159,
+      "steps_with_reasoning": 159,
+      "thought_fallbacks": 0,
+      "skill_versions": [
+        1,
+        2,
+        4
+      ],
+      "distillations": 4,
+      "distillations_accepted": 3,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": 0,
+          "tests_passed": 0,
+          "v1_remaining": 64,
+          "parse_ok": 49,
+          "parse_total": 49,
+          "turns": 55,
+          "seconds": 207.1,
+          "prompt_tokens": 1691942,
+          "completion_tokens": 12473,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": 0,
+          "tests_passed": 0,
+          "v1_remaining": 64,
+          "parse_ok": 49,
+          "parse_total": 49,
+          "turns": 39,
+          "seconds": 193.6,
+          "prompt_tokens": 1041805,
+          "completion_tokens": 10877,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": 1,
+          "tests_passed": 310,
+          "v1_remaining": 54,
+          "parse_ok": 49,
+          "parse_total": 49,
+          "turns": 48,
+          "seconds": 186.6,
+          "prompt_tokens": 1602816,
+          "completion_tokens": 8605,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 4,
+          "skill_version": 2,
+          "tests_passed": 310,
+          "v1_remaining": 54,
+          "parse_ok": 49,
+          "parse_total": 49,
+          "turns": 28,
+          "seconds": 102.5,
+          "prompt_tokens": 806461,
+          "completion_tokens": 2038,
+          "ended_cleanly": true
+        }
+      ]
+    }
+  },
+  "run_seconds": 1564.33,
+  "gpu_usd_per_hour": 4.59,
+  "counts_toward_clearly_working": true
+}

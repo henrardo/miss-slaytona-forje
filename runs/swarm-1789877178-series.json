@@ -1,0 +1,686 @@
+{
+  "schema_version": 1,
+  "scope": "within_run",
+  "run_id": "swarm-1789877178",
+  "fixture": "x12sdk",
+  "oracle": {
+    "fixture": "x12sdk",
+    "package": "x12sdk",
+    "graded_at": 1789859821,
+    "baseline_passed": 0,
+    "baseline_v1_surfaces": 383,
+    "baseline_signature": "pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.",
+    "answer_key_passed": 261,
+    "answer_key_v1_surfaces": 2
+  },
+  "arms": [
+    "cold",
+    "warm"
+  ],
+  "panels": [
+    {
+      "id": "convergence",
+      "title": "Best tests passing so far",
+      "kind": "step",
+      "x_label": "attempt",
+      "y_label": "tests passing (best so far)",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 1,
+              "y": 0,
+              "raw": 0
+            },
+            {
+              "x": 2,
+              "y": 0,
+              "raw": 0
+            },
+            {
+              "x": 3,
+              "y": 0,
+              "raw": 0
+            },
+            {
+              "x": 4,
+              "y": 0,
+              "raw": 0
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 0,
+              "raw": 0
+            },
+            {
+              "x": 2,
+              "y": 58,
+              "raw": 58
+            }
+          ]
+        }
+      ],
+      "annotations": [
+        {
+          "kind": "hline",
+          "y": 261,
+          "label": "answer key = 261",
+          "note": "the human's own merged PR, on this grader"
+        }
+      ],
+      "y_starts_at_zero": true,
+      "caveat": "Monotone by construction -- the harness restores the best tree after a regression. A flat line means no attempt beat the first, not that nothing happened."
+    },
+    {
+      "id": "attempt_score",
+      "title": "Tests passing, per attempt",
+      "kind": "scatter",
+      "x_label": "attempt",
+      "y_label": "tests passing",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 1,
+              "y": 0,
+              "signature": "pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.",
+              "ended_cleanly": true
+            },
+            {
+              "x": 2,
+              "y": 0,
+              "signature": "pydantic.errors.PydanticUserError: `regex` is removed. use `pattern` instead",
+              "ended_cleanly": true
+            },
+            {
+              "x": 3,
+              "y": 0,
+              "signature": "NameError: name 'root_validator' is not defined",
+              "ended_cleanly": true
+            },
+            {
+              "x": 4,
+              "y": 0,
+              "signature": "NameError: name 'root_validator' is not defined",
+              "ended_cleanly": false
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 0,
+              "signature": "NameError: name 'validator' is not defined",
+              "ended_cleanly": true
+            },
+            {
+              "x": 2,
+              "y": 58,
+              "signature": "AttributeError: 'FieldInfo' object has no attribute 'outer_type_'",
+              "ended_cleanly": true
+            }
+          ]
+        }
+      ],
+      "annotations": [
+        {
+          "kind": "hline",
+          "y": 261,
+          "label": "answer key = 261"
+        }
+      ],
+      "y_starts_at_zero": true,
+      "caveat": "0 means two opposite things -- migration not started, or the agent broke the package so the suite cannot import. Read this panel WITH v1_remaining, never alone."
+    },
+    {
+      "id": "work_remaining",
+      "title": "Pydantic v1 surfaces left in the package",
+      "kind": "line",
+      "x_label": "attempt",
+      "y_label": "v1-only constructs remaining",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 1,
+              "y": 383
+            },
+            {
+              "x": 2,
+              "y": 376
+            },
+            {
+              "x": 3,
+              "y": 361
+            },
+            {
+              "x": 4,
+              "y": 361
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 373
+            },
+            {
+              "x": 2,
+              "y": 328
+            }
+          ]
+        }
+      ],
+      "annotations": [
+        {
+          "kind": "hline",
+          "y": 383,
+          "label": "pre-migration = 383"
+        },
+        {
+          "kind": "hline",
+          "y": 2,
+          "label": "floor = 2 (a COMPLETED migration)",
+          "note": "not zero: the merged PR still counts this many, so the axis must not imply 0 is the target"
+        }
+      ],
+      "y_starts_at_zero": true,
+      "caveat": "A source count, not an oracle: reaching the floor does not mean the migration is correct, only that the v1 spellings are gone. The suite remains the only thing that decides."
+    },
+    {
+      "id": "files_parsing",
+      "title": "Files in the package that still compile",
+      "kind": "line",
+      "x_label": "attempt",
+      "y_label": "files parsing",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 1,
+              "y": 65
+            },
+            {
+              "x": 2,
+              "y": 65
+            },
+            {
+              "x": 3,
+              "y": 65
+            },
+            {
+              "x": 4,
+              "y": 65
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 65
+            },
+            {
+              "x": 2,
+              "y": 65
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": true,
+      "caveat": "Read WITH work_remaining. Few surfaces left and files not parsing is 'did the work and broke it'; many surfaces and everything parsing is 'kept it valid by not doing it'. Both score 0 on the suite."
+    },
+    {
+      "id": "closeness",
+      "title": "Distance travelled from v1 to the merged PR",
+      "kind": "line",
+      "x_label": "attempt",
+      "y_label": "0 = untouched, 1 = the human's answer",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 1,
+              "y": 0.0
+            },
+            {
+              "x": 2,
+              "y": 0.0041
+            },
+            {
+              "x": 3,
+              "y": 0.0123
+            },
+            {
+              "x": 4,
+              "y": 0.0123
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 0.0018
+            },
+            {
+              "x": 2,
+              "y": 0.0418
+            }
+          ]
+        }
+      ],
+      "annotations": [
+        {
+          "kind": "hline",
+          "y": 1.0,
+          "label": "the merged PR"
+        },
+        {
+          "kind": "hline",
+          "y": 0.0,
+          "label": "untouched checkout"
+        }
+      ],
+      "y_starts_at_zero": true,
+      "caveat": "A normalised diff similarity, weighted by how much the reference changed each file; files it left alone are excluded. RAW similarity to the answer is useless here -- the untouched tree scores 0.915 of it. Approximate: an agent that migrates correctly in different words is under-credited, so this ranks the arms against each other rather than grading either."
+    },
+    {
+      "id": "token_burn",
+      "title": "Cumulative attempt tokens",
+      "kind": "line",
+      "x_label": "attempt",
+      "y_label": "tokens (prompt + completion)",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 1,
+              "y": 91521
+            },
+            {
+              "x": 2,
+              "y": 3155779
+            },
+            {
+              "x": 3,
+              "y": 6451272
+            },
+            {
+              "x": 4,
+              "y": 7168932
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 2570150
+            },
+            {
+              "x": 2,
+              "y": 7300535
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": true,
+      "caveat": "ATTEMPT tokens only. Distillation is off the clock and counted separately -- see the distillation panel. Warm's prompt carries the skill, so a bigger skill costs warm tokens on every turn and that is a real cost, not noise."
+    },
+    {
+      "id": "efficiency",
+      "title": "Score against spend, per attempt",
+      "kind": "scatter",
+      "x_label": "tokens spent on the attempt",
+      "y_label": "tests passing",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": 91521,
+              "y": 0,
+              "attempt": 1
+            },
+            {
+              "x": 3064258,
+              "y": 0,
+              "attempt": 2
+            },
+            {
+              "x": 3295493,
+              "y": 0,
+              "attempt": 3
+            },
+            {
+              "x": 717660,
+              "y": 0,
+              "attempt": 4
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 2570150,
+              "y": 0,
+              "attempt": 1
+            },
+            {
+              "x": 4730385,
+              "y": 58,
+              "attempt": 2
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": true,
+      "caveat": "Deliberately not a tokens-per-test ratio: most attempts score 0 and the ratio is undefined for them, so a mean would be computed over the minority that happened to pass."
+    },
+    {
+      "id": "memory_activity",
+      "title": "Graph writes and agent retrievals",
+      "kind": "bar",
+      "x_label": "attempt",
+      "y_label": "count",
+      "series": [
+        {
+          "label": "warm: steps written",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 65,
+              "with_reasoning": null,
+              "tool_calls": null,
+              "failed_tool_calls": null
+            },
+            {
+              "x": 2,
+              "y": 102,
+              "with_reasoning": null,
+              "tool_calls": null,
+              "failed_tool_calls": null
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": true,
+      "caveat": "Zero retrievals is a finding, not a gap in the chart: it means the agent had memory and chose not to use it. Writes happening while retrievals stay at 0 is the exact shape that went unnoticed for ~40 runs."
+    },
+    {
+      "id": "skill_history",
+      "title": "Skill version, and what each attempt ran on",
+      "kind": "step",
+      "x_label": "attempt",
+      "y_label": "skill version",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": []
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 77
+            },
+            {
+              "x": 2,
+              "y": 79
+            }
+          ]
+        },
+        {
+          "label": "warm: distillation",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": 1,
+              "y": 79,
+              "accepted": true,
+              "repairs": 0,
+              "seconds": 147.2,
+              "memory_tool_calls": 0,
+              "eligible_traces": 42,
+              "reason": null
+            },
+            {
+              "x": 2,
+              "y": 81,
+              "accepted": true,
+              "repairs": 0,
+              "seconds": 136.4,
+              "memory_tool_calls": 0,
+              "eligible_traces": 43,
+              "reason": null
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": false,
+      "caveat": "Distillation happens AFTER an attempt, so attempt N's result belongs to the version that existed before it. A rejected proposal leaves the version unchanged and is marked -- rejections are the interesting points."
+    },
+    {
+      "id": "stability",
+      "title": "How attempts ended",
+      "kind": "grouped_bar",
+      "x_label": "outcome",
+      "y_label": "attempts",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "x": "attempts",
+              "y": 4
+            },
+            {
+              "x": "rolled back",
+              "y": 0
+            },
+            {
+              "x": "rejected (shim/gutted)",
+              "y": 0
+            },
+            {
+              "x": "aborted (no turn)",
+              "y": 0
+            },
+            {
+              "x": "ended cleanly",
+              "y": 3
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "x": "attempts",
+              "y": 2
+            },
+            {
+              "x": "rolled back",
+              "y": 0
+            },
+            {
+              "x": "rejected (shim/gutted)",
+              "y": 0
+            },
+            {
+              "x": "aborted (no turn)",
+              "y": 0
+            },
+            {
+              "x": "ended cleanly",
+              "y": 2
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": true,
+      "caveat": "A rollback is not a failure -- it is the harness keeping the best tree after a regression. A silent rollback and an agent that recovered by itself look identical without this."
+    },
+    {
+      "id": "timeline",
+      "title": "When each arm was working",
+      "kind": "gantt",
+      "x_label": "seconds since run start",
+      "y_label": "attempt",
+      "series": [
+        {
+          "label": "cold (control)",
+          "arm": "cold",
+          "colour": "#0369a1",
+          "points": [
+            {
+              "start": 82.747,
+              "end": 117.747,
+              "label": "attempt 1",
+              "y": 1
+            },
+            {
+              "start": 373.40400000000005,
+              "end": 521.604,
+              "label": "attempt 2",
+              "y": 2
+            },
+            {
+              "start": 772.1099999999999,
+              "end": 912.91,
+              "label": "attempt 3",
+              "y": 3
+            },
+            {
+              "start": 914.527,
+              "end": 979.827,
+              "label": "attempt 4",
+              "y": 4
+            }
+          ]
+        },
+        {
+          "label": "warm (memory + skill)",
+          "arm": "warm",
+          "colour": "#c2410c",
+          "points": [
+            {
+              "start": 81.77300000000001,
+              "end": 203.573,
+              "label": "attempt 1",
+              "y": 1
+            },
+            {
+              "start": 373.25999999999993,
+              "end": 610.56,
+              "label": "attempt 2",
+              "y": 2
+            }
+          ]
+        },
+        {
+          "label": "warm: distillation (off the clock)",
+          "arm": "warm",
+          "colour": "#7c3aed",
+          "points": [
+            {
+              "start": 224.49099999999999,
+              "end": 371.691,
+              "label": "distil after attempt 1",
+              "y": 1
+            },
+            {
+              "start": 634.2620000000001,
+              "end": 770.662,
+              "label": "distil after attempt 2",
+              "y": 2
+            }
+          ]
+        }
+      ],
+      "annotations": [],
+      "y_starts_at_zero": false,
+      "caveat": "Distillation bars are OFF the attempt clock -- the deadline is extended by their duration, so warm does not lose thinking time to bookkeeping. If the arms are not overlapping, they were not running concurrently and the wall-clock comparison is worthless."
+    }
+  ],
+  "completed": true,
+  "cost": {
+    "gpu": "1x NVIDIA H200, 143771 MiB",
+    "model": "mistralai/Mistral-Small-4-119B-2603",
+    "gpu_usd_per_hour": 4.59,
+    "gpu_usd": 1.25221575,
+    "run_seconds": 982.13,
+    "attempt_tokens": {
+      "cold": 7168932,
+      "warm": 7300535
+    },
+    "note": "GPU spend covers this RUN only; provisioning and the model download happen before the first event."
+  },
+  "incomplete_note": null
+}

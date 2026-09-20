@@ -1,0 +1,153 @@
+{
+  "run_id": "swarm-1789919913",
+  "gpu": "1x NVIDIA H200, 143771 MiB",
+  "model": "mistralai/Mistral-Small-4-119B-2603",
+  "commit": "16161a2",
+  "skill_version": 0,
+  "skill_approx_tokens": 569,
+  "skill_dir_sha": "ffd42f681f2c",
+  "arms_identical": false,
+  "known_differences": [
+    "config_names",
+    "hook_files",
+    "tools"
+  ],
+  "arms": {
+    "warm": {
+      "arm": "warm",
+      "tests_passed": 56,
+      "attempts": 3,
+      "converged": false,
+      "turns": 207,
+      "attempt_seconds": 705.2,
+      "attempt_prompt_tokens": 9363890,
+      "attempt_completion_tokens": 22436,
+      "distil_seconds": 602.3,
+      "distil_prompt_tokens": 262816,
+      "distil_completion_tokens": 45809,
+      "steps_ingested": 199,
+      "steps_with_reasoning": 198,
+      "thought_fallbacks": 0,
+      "skill_versions": [
+        1,
+        2,
+        3
+      ],
+      "distillations": 3,
+      "distillations_accepted": 3,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": 0,
+          "tests_passed": 0,
+          "v1_remaining": 383,
+          "parse_ok": 65,
+          "parse_total": 65,
+          "closeness": 0.0,
+          "turns": 11,
+          "seconds": 78.2,
+          "prompt_tokens": 140090,
+          "completion_tokens": 267,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": 1,
+          "tests_passed": 0,
+          "v1_remaining": 302,
+          "parse_ok": 65,
+          "parse_total": 65,
+          "closeness": 0.0577,
+          "turns": 88,
+          "seconds": 258.0,
+          "prompt_tokens": 4469617,
+          "completion_tokens": 10929,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": 2,
+          "tests_passed": 56,
+          "v1_remaining": 294,
+          "parse_ok": 65,
+          "parse_total": 65,
+          "closeness": 0.0683,
+          "turns": 108,
+          "seconds": 369.0,
+          "prompt_tokens": 4754183,
+          "completion_tokens": 11240,
+          "ended_cleanly": true
+        }
+      ]
+    },
+    "cold": {
+      "arm": "cold",
+      "tests_passed": 0,
+      "attempts": 3,
+      "converged": false,
+      "turns": 209,
+      "attempt_seconds": 560.5999999999999,
+      "attempt_prompt_tokens": 7186992,
+      "attempt_completion_tokens": 24373,
+      "distil_seconds": 0.0,
+      "distil_prompt_tokens": 0,
+      "distil_completion_tokens": 0,
+      "steps_ingested": 0,
+      "steps_with_reasoning": null,
+      "thought_fallbacks": null,
+      "skill_versions": [],
+      "distillations": 0,
+      "distillations_accepted": 0,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 371,
+          "parse_ok": 65,
+          "parse_total": 65,
+          "closeness": 0.0047,
+          "turns": 66,
+          "seconds": 151.1,
+          "prompt_tokens": 2271669,
+          "completion_tokens": 7526,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 360,
+          "parse_ok": 64,
+          "parse_total": 65,
+          "closeness": -0.0465,
+          "turns": 69,
+          "seconds": 161.7,
+          "prompt_tokens": 2079093,
+          "completion_tokens": 7098,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 303,
+          "parse_ok": 60,
+          "parse_total": 65,
+          "closeness": -0.1267,
+          "turns": 74,
+          "seconds": 247.8,
+          "prompt_tokens": 2836230,
+          "completion_tokens": 9749,
+          "ended_cleanly": true
+        }
+      ]
+    }
+  },
+  "run_seconds": 1636.975,
+  "gpu_usd_per_hour": 4.59,
+  "counts_toward_clearly_working": true,
+  "gpu_usd": 2.087143125
+}

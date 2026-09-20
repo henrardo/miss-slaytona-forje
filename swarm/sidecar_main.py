@@ -32,9 +32,10 @@ from orchestrator.memory import ScopedMemory, build_settings
 from orchestrator.step_memory import StepMemoryService
 
 
-async def serve(port: int, agents: list[str]) -> None:
+async def serve(port: int, agents: list[str], *,
+                retrieval: bool = False) -> None:
     async with MemoryClient(build_settings()) as client:
-        service = StepMemoryService()
+        service = StepMemoryService(retrieval=retrieval)
         for label in agents:
             service.register(label, ScopedMemory(client, user_identifier=label))
 
@@ -80,6 +81,11 @@ async def serve(port: int, agents: list[str]) -> None:
             if control == "summary":
                 return {
                     "summary": service.summary(),
+                    # Where each `thought` came from. On the live-hook path
+                    # this is the ONLY answer available -- the orchestrator
+                    # never re-reads the steps -- and its absence is what
+                    # let six runs write tool-argument JSON unnoticed.
+                    **service.reasoning_report(),
                     "steps_written": service.steps_written,
                     "text_turns_written": service.text_turns_written,
                     "context_returned": service.context_returned,
@@ -98,10 +104,17 @@ async def serve(port: int, agents: list[str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument(
+        "--retrieval", action="store_true",
+        help="also inject retrieved steps into the agent's context. OFF by "
+             "default: writes cost latency and no tokens, injection cost "
+             "~556 tokens each and 59% of warm's token gap.")
     parser.add_argument("--agents", required=True,
                         help="comma-separated labels, e.g. warm-0,warm-1")
     args = parser.parse_args()
-    asyncio.run(serve(args.port, [a for a in args.agents.split(",") if a]))
+    asyncio.run(serve(args.port,
+                      [a for a in args.agents.split(",") if a],
+                      retrieval=args.retrieval))
     return 0
 
 

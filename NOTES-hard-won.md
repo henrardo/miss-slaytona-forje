@@ -550,6 +550,28 @@ bisecting the PyPI release history between 0.5.10 and 0.5.19:
 
 The A40 has no FP8. Don't bump the pin without re-running the bisection.
 
+**THE HOST NEEDS CUDA 13.0.** `sglang[all]==0.5.14` pins
+`torch==2.11.0+cu130` and `flashinfer_python[cu13]`, so a host whose driver
+reports CUDA 12.8 installs cleanly and then dies at startup with
+
+    RuntimeError: No accelerator (CUDA, XPU, HPU, NPU, MUSA, MPS) or
+    platform plugin is available.
+
+`torch.cuda.is_available()` is False while `nvidia-smi` looks perfectly
+healthy, which reads as a broken install rather than a host mismatch. The
+working B200 pod logged `torch 2.11.0+cu130 cuda 13.0 available True cap
+(10, 0)`; a 12.8 host logs the same torch with `available False`.
+
+When creating the pod, pass **`gpu.allowedCudaVersions: ["13.0"]`**, not
+`minCudaVersion: "12.8"` -- the latter is a floor and the scheduler will
+happily hand back a 12.8 host. H200 hosts exist at 12.8, 12.9 and 13.0
+(`get-gpu-type "NVIDIA H200" include=AVAILABILITY product=POD`). Cost of
+learning this the second way: one pod, ~$0.40 and 20 minutes.
+
+Also: RunPod's ubuntu 24.04 images are PEP 668 "externally managed", so
+system-wide `pip install` fails outright. Install into a venv -- the
+working pod used `/root/sglang-venv`.
+
 ## Daytona
 
 Org limits start at roughly 10 vCPU. 12 concurrent sandboxes at 1 vCPU hit a

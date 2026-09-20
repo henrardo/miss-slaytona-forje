@@ -1,0 +1,41 @@
+/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:105: DeprecationWarning: Use `streamable_http_client` instead.
+  self.gen = func(*args, **kwds)
+  MCP neo4j-agent-memory: 16 tool(s)
+  MCP neo4j-agent-memory: memory_get_context answered 5369 chars -- working
+  MCP web: 1 tool(s)
+  MCP web: lookup answered 1328 chars -- working
+gpu: 1x NVIDIA H200, 143771 MiB | harness: 16161a2
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixtures/oapi
+tarball: 198,992 bytes
+distiller: gpt-5.5-2026-04-23  (EXTERNAL model: this run does not measure self-improvement)
+skill: v13 | dir 8b3dcc0916ba | body d84ab64580eb | 2 file(s) | 6233 approx tokens | derived from 18 trace(s)
+  warm-0 seeded (memory)
+  cold-0 seeded
+  arms match exactly: 10 tool(s) each, hooks none, mcp ['local', 'mistralai/Mistral-Small-4-119B-2603', 'web']
+baseline: 0 passing | pydantic.errors.PydanticUserError: `const` is removed, use `Literal` instead
+provenance: {'prov_model': 'mistralai/Mistral-Small-4-119B-2603', 'prov_gpu': '1x NVIDIA H200, 143771 MiB', 'prov_commit': '16161a2', 'prov_writable': True, 'prov_fixture': 'oapi'}
+  entity extraction for warm-0 exceeded 240s and was abandoned -- the run's own numbers are unaffected, the graph has fewer entity edges
+  step entity linking for warm-0 exceeded 240s and was abandoned
+  warm-0: skill v16 reached the model on its last attempt (this run ran v13..v16)
+
+============================================================
+hardware: 1x NVIDIA H200, 143771 MiB | model: mistralai/Mistral-Small-4-119B-2603
+WARM (shared memory): 0/1 converged | 4 attempts | errors cleared 2 | best tests passing 311 | in 7,199,639 / out 51,914
+COLD (no memory)  : 1/1 converged | 3 attempts | errors cleared 2 | best tests passing 445 | in 7,516,428 / out 34,223
+     BLOCKING EVENT LOOP: 22 callback(s) over the threshold -- agents cannot run concurrently while this happens
+     26.1s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:641> wait_for=
+     5.1s  Executing <Task pending name='Task-563' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:374> cb=[_
+     4.3s  Executing <Task pending name='Task-563' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:374> cb=[_
+
+GATE ok: 7 attempt(s) graded by 7 real Daytona run(s); 0 sandbox(es) swept
+     ingestion (off the clock): 220 step(s) from 4 attempt(s), 160 with the model's own reasoning, 17 failed tool call(s) recorded
+     skill started v13 (6233 approx tokens), ended v17 (6958); the version each agent started its last attempt on reached 1/1 warm agent(s)
+     entities extracted after the clock stopped: 0 from messages, 0 TOUCHED edge(s) from reasoning steps
+metrics: skill v13 (6233 approx tokens, 8b3dcc0916ba) | counts toward clearly-working: YES
+  cold: 445 passed, 3 attempt(s), 243 turn(s), 489s attempt / 0s distil | attempt tokens 7,511,262 in / 34,221 out | distil tokens 0 in / 0 out
+  warm: 311 passed, 4 attempt(s), 224 turn(s), 691s attempt / 194s distil | attempt tokens 7,194,381 in / 51,912 out | distil tokens 70,334 in / 24,428 out
+    distillation: 4/4 accepted, versions [14, 15, 16, 17], 0 memory tool call(s)
+event log: runs/swarm-1789729022.jsonl | metrics: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/swarm-1789729022-metrics.json | table: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/cross-run.md

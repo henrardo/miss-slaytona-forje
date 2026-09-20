@@ -1,0 +1,24 @@
+active_model = "swarm-model"
+auto_compact_threshold = 128000
+disabled_tools = ["web_search"]
+
+[[providers]]
+name = "local"
+api_base = "http://127.0.0.1:8821/v1"
+api_style = "openai"
+backend = "generic"
+
+[[models]]
+name = "mistralai/Mistral-Small-4-119B-2603"
+provider = "local"
+alias = "swarm-model"
+
+[[mcp_servers]]
+name = "web"
+transport = "streamable-http"
+url = "http://127.0.0.1:8813/mcp"
+
+[[mcp_servers]]
+name = "neo4j-agent-memory"
+transport = "streamable-http"
+url = "http://127.0.0.1:8811/mcp"

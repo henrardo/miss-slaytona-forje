@@ -468,15 +468,20 @@ def test_an_entry_with_no_turn_id_does_not_discard_the_reasoning() -> None:
 # --- nothing the replay captured may be silently dropped ----------------
 
 
-def test_exploration_steps_are_recorded_with_a_reduced_observation() -> None:
-    """A step is recorded for EVERY tool call; only the observation shrinks.
+def test_exploration_steps_are_recorded_whole_and_do_not_search() -> None:
+    """A step is recorded for EVERY tool call, with its FULL observation.
 
-    Skipping the whole step for a non-evidence tool conflated "expensive
-    observation" with "worthless step". Measured against the run it shipped
-    in: 12 of 37 assistant turns issued only non-evidence calls, carrying
-    23,930 characters of reasoning -- 36% of everything the model thought.
-    "Let me read schemas.py, the traceback points there" is the agent's
-    reasoning whether or not the returned file is worth storing."""
+    The observation used to be cut to 200 characters for grep/read_file
+    and 2,000 otherwise. Both were mine. The evidence I cited -- 78 of 229
+    :Entity nodes named '100->', '171->' -- is about storing tool results
+    as :Message nodes, which go through entity extraction; `add_step` has
+    no extraction path. And `add_step` embeds
+    "Thought: ... Action: ... Observation: ..." (reasoning.py:546), so
+    cutting the observation degraded the retrieval the cap claimed to
+    protect.
+
+    What `_EVIDENCE_TOOLS` still decides -- and all it decides -- is
+    whether the step's output becomes a retrieval QUERY."""
     svc = StepMemoryService()
     mem = _FakeMem()
     svc.register("warm-0", mem)
@@ -491,8 +496,8 @@ def test_exploration_steps_are_recorded_with_a_reduced_observation() -> None:
 
     assert len(mem.steps) == 1, "the exploration step was dropped again"
     assert mem.steps[0]["action"] == "read_file"
-    # The file itself is not stored, and not embedded.
-    assert len(mem.steps[0]["observation"]) < 400
+    # The file is stored WHOLE. No cap.
+    assert mem.steps[0]["observation"] == whole_file
     # ...and exploration does not trigger a retrieval: searching on the
     # contents of a file the agent just opened returns whatever else mentions
     # that file, which is not what it needs.
@@ -554,3 +559,51 @@ def test_post_agent_is_routed_by_vibes_own_event_name() -> None:
     assert '"hook_event_name"' in src
     from orchestrator.step_memory import StepMemoryService as S
     assert hasattr(S, "handle_agent_end")
+
+
+# --- the wire, not the model definition -----------------------------------
+
+
+def test_the_consumer_reads_the_key_vibe_actually_emits() -> None:
+    """Streamed entries are camelCase, so the consumer must read `turnId`.
+
+    Vibe declares the field `turn_id` on `_PublicHistoryEntryBase` and
+    serialises it with `model_dump(mode="json", by_alias=True)`, which emits
+    `turnId`. The consumer was written against the declaration and read
+    `turn_id`, so `.get()` returned None on every entry, `note_turn()` returned
+    immediately, and the whole turn-boundary mechanism did nothing -- through
+    two live runs, with every unit test green, because the tests handed
+    `note_turn` synthetic values directly and never went through the consumer.
+
+    Captured off a real session on the swarm host:
+
+        message    turnId=b7e201f8-1f3b-41bd-886e-af78a4866d8c
+        reasoning  turnId=b7e201f8-1f3b-41bd-886e-af78a4866d8c
+
+    So this test drives the real `_entry_consumer` with wire-shaped entries and
+    asserts the reasoning is actually attributed to its turn."""
+    from orchestrator.vibe_agent import _entry_consumer
+
+    svc = StepMemoryService()
+    mem = _FakeMem()
+    svc.register("warm-0", mem)
+    svc.set_trace("warm-0", "trace-1")
+    consume = _entry_consumer(mem, "warm-0", svc, "warm-0")
+
+    # Turn 1 reasons, then calls a tool.
+    asyncio.run(consume({"type": "reasoning", "text": "turn one's plan",
+                         "turnId": "t-1", "generationStatus": "completed"}))
+    asyncio.run(svc.handle({"agent": "warm-0", "tool_name": "edit",
+                            "tool_input": {"old_string": "first"},
+                            "tool_output_text": "ok"}))
+    # Turn 2 emits an entry but no reasoning of its own.
+    asyncio.run(consume({"type": "effect", "title": "edit", "turnId": "t-2",
+                         "generationStatus": "completed"}))
+    asyncio.run(svc.handle({"agent": "warm-0", "tool_name": "edit",
+                            "tool_input": {"old_string": "second"},
+                            "tool_output_text": "ok"}))
+
+    assert mem.steps[0]["thought"] == "turn one's plan"
+    assert "turn one's plan" not in mem.steps[1]["thought"], (
+        "turn 2 inherited turn 1's reasoning -- the turnId key is wrong again"
+    )

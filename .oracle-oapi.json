@@ -1,0 +1,10 @@
+{
+  "fixture": "oapi",
+  "package": "openapi_python_client",
+  "graded_at": 1789753062,
+  "baseline_passed": 0,
+  "baseline_v1_surfaces": 64,
+  "baseline_signature": "pydantic.errors.PydanticUserError: `const` is removed, use `Literal` instead",
+  "answer_key_passed": 445,
+  "answer_key_v1_surfaces": 3
+}

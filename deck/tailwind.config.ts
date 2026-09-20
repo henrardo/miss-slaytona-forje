@@ -1,0 +1,46 @@
+import type { Config } from 'tailwindcss'
+
+export default {
+  darkMode: ['class'],
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  theme: {
+    extend: {
+      fontFamily: {
+        display: ['Syne Neo', 'system-ui', 'sans-serif'],
+        pixel: ['VT323', 'ui-monospace', 'monospace'],
+      },
+      colors: {
+        bg: 'hsl(var(--bg))',
+        surface: 'hsl(var(--surface))',
+        'surface-2': 'hsl(var(--surface-2))',
+        muted: 'hsl(var(--muted))',
+        'muted-fg': 'hsl(var(--muted-fg))',
+        fg: 'hsl(var(--fg))',
+        border: 'hsl(var(--border))',
+        purple: 'hsl(var(--purple))',
+        blue: 'hsl(var(--blue))',
+        red: 'hsl(var(--red))',
+        neo4j: 'var(--neo4j)',
+        'neo4j-deep': 'var(--neo4j-deep)',
+        'neo4j-darkest': 'var(--neo4j-darkest)',
+        'neo4j-cream': 'var(--neo4j-cream)',
+        periwinkle: 'var(--neo4j-periwinkle)',
+        hibiscus: 'var(--neo4j-hibiscus)',
+        marigold: 'var(--neo4j-marigold)',
+        forest: 'var(--neo4j-forest)',
+        mistral: 'var(--mistral)',
+        'mistral-deep': 'var(--mistral-deep)',
+        sglang: 'var(--sglang)',
+        'sglang-deep': 'var(--sglang-deep)',
+        daytona: 'var(--daytona)',
+        'daytona-deep': 'var(--daytona-deep)',
+        warm: 'var(--warm)',
+        cold: 'var(--cold)',
+      },
+      backgroundImage: { 'gradient-primary': 'var(--gradient-primary)' },
+      boxShadow: { glow: 'var(--shadow-glow)' },
+      borderRadius: { none: '0' },
+    },
+  },
+  plugins: [],
+} satisfies Config

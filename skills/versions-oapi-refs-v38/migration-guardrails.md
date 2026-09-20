@@ -1,0 +1,21 @@
+- Never re-point production imports to `pydantic.v1`, even as a temporary shortcut or compatibility layer
+- Never empty, delete, replace with `pass`, bypass, or neutralize a validator or any other function body merely to make imports or tests pass
+- Do not rewrite tests, fixtures, or expected values to conceal a production regression; change tests only when the intended public contract demonstrably changed and the task authorizes that change
+- Do not stop after writing a plan, inventory, summary, or research notes; execute the first safe edit in the same run and continue through validation
+- Do not stop after an import succeeds, files compile, tests collect, one focused test passes, or hundreds of tests pass while any authoritative test still fails
+- Do not pipe authoritative test commands through `head`, `tail`, or a pipeline that masks the test process exit status
+- Do not infer success from a shell command whose reported exit code belongs to `tee`, `head`, `tail`, `grep`, or `|| true`
+- Do not perform broad regex or `sed` rewrites over nested `Config` classes, large schema examples, imports, or parentheses without inspecting each resulting diff and compiling immediately
+- Do not generate and run unreviewed migration scripts across dozens of files; prove a transformation on one representative file first
+- Do not hand-insert closing parentheses by line number into large model files or JSON-schema examples
+- Do not overwrite complete source files from memory when a narrow edit is possible
+- Do not use `git checkout`, `git restore`, or resets on pre-existing user changes unless provenance is established and the exact files being discarded are known to be agent-owned
+- Do not edit from an assumed absolute path; resolve the repository root once and reuse it to avoid `agent-worm`, `agent-wrap`, and similar path mistakes
+- Do not install Poetry or replace the environment manager merely because an optional command is unavailable; use the repository's supplied environment and authoritative commands
+- Do not repeatedly research well-established conversions while a concrete traceback is waiting; consult documentation only for an unresolved semantic choice
+- Do not classify all test-only Pydantic API usage as irrelevant; tests and fixtures expose constructor, alias, serialization, and compatibility contracts that production must preserve
+- Do not convert dictionary type aliases such as paths, callbacks, responses, or security requirements into `RootModel` casually; first inspect all callers and preserve mapping behavior
+- Do not call `model_rebuild()` blindly on every exported symbol; type aliases are not models, and recursive models may require a complete namespace
+- Do not assume `Optional[T]` means omittable in Pydantic v2; add `= None` only where the established constructor contract permits omission
+- Do not preserve mutable defaults blindly or replace every mutable default mechanically; verify instance isolation and schema behavior
+- Do not declare completion without an unpiped full-suite result, quality-gate results, residual-v1 inventory, and diff review

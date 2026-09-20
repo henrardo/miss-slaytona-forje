@@ -1,0 +1,13 @@
+[[hooks]]
+name = "memory-post_tool"
+type = "post_tool"
+command = "/usr/bin/python3 /opt/swarm/hook.py 8812 warm-0"
+match = "*"
+timeout = 20.0
+
+[[hooks]]
+name = "memory-post_agent"
+type = "post_agent"
+command = "/usr/bin/python3 /opt/swarm/hook.py 8812 warm-0"
+timeout = 20.0
+

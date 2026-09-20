@@ -1,0 +1,21 @@
+  v0 [p0] -> ab-v0-p0.log
+    v0: 33 passed, 1 attempt(s), 93 turns, 3,438,442 in
+  v5 [p0] -> ab-v5-p0.log
+    v5: 33 passed, 1 attempt(s), 58 turns, 1,594,312 in
+  v5 [p1] -> ab-v5-p1.log
+    v5: 33 passed, 1 attempt(s), 71 turns, 2,343,619 in
+  v0 [p1] -> ab-v0-p1.log
+    v0: 33 passed, 1 attempt(s), 78 turns, 2,571,991 in
+  v0 [p2] -> ab-v0-p2.log
+    v0: 33 passed, 1 attempt(s), 70 turns, 2,370,784 in
+  v5 [p2] -> ab-v5-p2.log
+    v5: 33 passed, 1 attempt(s), 70 turns, 2,039,387 in
+
+================================================================
+version   n   converged  turns/att       tokens/att
+v0        3   3/3        80               2,793,739
+v5        3   3/3        66               1,992,439
+
+One number per version is a summary, not a result: with a few runs each
+and per-attempt token counts that ranged 14%-138% across earlier runs,
+only a large gap here means anything.

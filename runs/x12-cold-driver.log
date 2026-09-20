@@ -1,0 +1,13 @@
+=== cold calibration run 1/3 started 23:35:11 ===
+=== cold calibration run 1/3 exit 0 at 23:42:23 ===
+WARM (shared memory): 0/1 converged | 0 attempts | errors cleared 0 | best tests passing 0 | in 0 / out 0
+COLD (no memory)  : 0/1 converged | 3 attempts | errors cleared 3 | best tests passing 0 | in 6,566,645 / out 24,719
+=== cold calibration run 2/3 started 23:42:23 ===
+=== cold calibration run 2/3 exit 0 at 23:50:01 ===
+WARM (shared memory): 0/1 converged | 0 attempts | errors cleared 0 | best tests passing 0 | in 0 / out 0
+COLD (no memory)  : 0/1 converged | 3 attempts | errors cleared 3 | best tests passing 60 | in 9,126,571 / out 27,481
+=== cold calibration run 3/3 started 23:50:01 ===
+=== cold calibration run 3/3 exit 0 at 23:57:43 ===
+WARM (shared memory): 0/1 converged | 0 attempts | errors cleared 0 | best tests passing 0 | in 0 / out 0
+COLD (no memory)  : 0/1 converged | 3 attempts | errors cleared 3 | best tests passing 58 | in 10,217,751 / out 25,981
+=== all three cold runs done 23:57:43 ===

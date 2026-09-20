@@ -1,0 +1,45 @@
+=== shared toolchain at /opt/agent-toolchain (read-only to agents) ===
+vibe 2.25.5
+=== uv, for the memory MCP server (uvx) ===
+/usr/local/bin/uv
+=== agent users ===
+  agent-warm-0  home=/home/agent-warm-0  mode=700
+  agent-cold-0  home=/home/agent-cold-0  mode=700
+=== isolation check ===
+  ok: agent-cold-0 cannot read agent-warm-0's home
+  ok: agent-cold-0 cannot list agent-warm-0's home
+=== counting proxies (one per arm, plus distillation) ===
+  :8821 up
+  :8822 up
+  :8823 up
+=== sshd MaxSessions ===
+  maxsessions now: maxsessions 100
+=== provisioned: 2 agent users ===
+=== sidecar + memory server venv (neo4j-agent-memory==0.5.0) ===
+/opt/swarm/.venv/lib/python3.12/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+  neo4j-agent-memory 0.5.0
+  hook.py 58dafc7c76c3
+  reasoning_relay.py 0a7be1e82faa
+=== memory MCP server, as root, loopback HTTP on :8811 ===
+  ok: agents cannot read the server's environment
+  ok: no secret in any process argv
+  processes: 1
+  log tail:
+    INFO:     Started server process [764]
+    INFO:     Waiting for application startup.
+    INFO:     Application startup complete.
+    INFO:     Uvicorn running on http://127.0.0.1:8811 (Press CTRL+C to quit)
+=== what an agent can and cannot do ===
+  ok: can execute hook.py
+  ok: can read reasoning_relay.py
+  ok: cannot list /opt/swarm
+  ok: cannot read the sidecar venv
+  ok: the Neo4j password is not readable anywhere the agent can reach
+=== step-memory sidecar on 127.0.0.1:8812 for warm-0 ===
+  sidecar listening on 127.0.0.1:8812 for ['warm-0']
+=== provisioned ===
+--- assertions ---
+OK: web server on 127.0.0.1:8813, key unreadable by agents
+PROVISION_RC=0

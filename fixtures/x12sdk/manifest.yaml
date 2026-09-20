@@ -1,0 +1,36 @@
+# Built by scripts/make_fixture.py from a REAL merged migration:
+# owgreen-dev/x12sdk#8 -- Migrate to Pydantic v2 (Python 3.10-3.13)
+# https://github.com/owgreen-dev/x12sdk/pull/8
+#
+# x12sdk/ is at the PRE-migration commit (6db66903).
+# tests/ and reference_v2/ are at the MERGE commit
+# (023471ed) -- the post-migration suite is the success
+# oracle, the reference is the answer key and never reaches the pod.
+#
+# Nothing here is hand-tagged with which v1/v2 patterns appear
+# where. The agent gets the whole codebase and one instruction.
+#
+# Measured at build time: 11/21 migration
+# surfaces, 130-test oracle, warnings-as-errors=False.
+target_version: "pydantic>=2.0,<3.0"
+package_path: x12sdk
+tests_path: tests
+test_command: "python -m pytest tests -q"
+# LAYOUT NOTE -- the one place this fixture departs from upstream.
+# x12sdk ships a src/ layout (src/x12sdk, src/tests). The harness keys
+# an uploaded tree on the package directory's OWN name
+# (vibe_agent._collect_file_contents), so a nested `package_path` of
+# `src/x12sdk` arrives in the sandbox at /repo/x12sdk while the grader
+# looks for /repo/src/x12sdk -- measured: both the baseline and the
+# answer key graded 0 passing with v1_surfaces 0, because nothing the
+# grader uploaded was ever read. Flattening to x12sdk/ + tests/ and
+# repointing pyproject's pythonpath/testpaths/packages.find is the fix
+# that changes the FIXTURE rather than the harness. No source file was
+# touched; only the directories they sit in.
+#
+# No editable install: with the flattened layout and tests/__init__.py
+# present, pytest's prepend import mode puts /repo on sys.path and
+# `import x12sdk` resolves from the uploaded tree directly.
+# The static count above (130) is what make_fixture's AST counter sees.
+# The suite PARAMETRISES heavily and actually collects 261; measured by
+# running the answer key. 261 is the number the grader reports.

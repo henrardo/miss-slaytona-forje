@@ -1,0 +1,155 @@
+{
+  "run_id": "swarm-1789769262",
+  "gpu": "1x NVIDIA H200, 143771 MiB",
+  "model": "mistralai/Mistral-Small-4-119B-2603",
+  "commit": "16161a2",
+  "skill_version": 24,
+  "skill_approx_tokens": 1828,
+  "skill_dir_sha": "3c92732d0957",
+  "arms_identical": false,
+  "known_differences": [
+    "config_names",
+    "hook_files",
+    "tools"
+  ],
+  "arms": {
+    "warm": {
+      "arm": "warm",
+      "tests_passed": 311,
+      "attempts": 4,
+      "converged": false,
+      "turns": 213,
+      "attempt_seconds": 699.0,
+      "attempt_prompt_tokens": 7780766,
+      "attempt_completion_tokens": 42168,
+      "distil_seconds": 287.1,
+      "distil_prompt_tokens": 111880,
+      "distil_completion_tokens": 25303,
+      "steps_ingested": 204,
+      "steps_with_reasoning": 0,
+      "skill_versions": [
+        25,
+        26,
+        27,
+        28
+      ],
+      "distillations": 4,
+      "distillations_accepted": 4,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": 24,
+          "tests_passed": 0,
+          "v1_remaining": 9,
+          "turns": 67,
+          "seconds": 189.5,
+          "prompt_tokens": 1953533,
+          "completion_tokens": 11004,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": 25,
+          "tests_passed": 0,
+          "v1_remaining": 9,
+          "turns": 10,
+          "seconds": 82.0,
+          "prompt_tokens": 145527,
+          "completion_tokens": 2393,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": 26,
+          "tests_passed": 0,
+          "v1_remaining": 8,
+          "turns": 62,
+          "seconds": 196.4,
+          "prompt_tokens": 2546144,
+          "completion_tokens": 13720,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 4,
+          "skill_version": 27,
+          "tests_passed": 311,
+          "v1_remaining": 8,
+          "turns": 74,
+          "seconds": 231.1,
+          "prompt_tokens": 3135562,
+          "completion_tokens": 15051,
+          "ended_cleanly": true
+        }
+      ]
+    },
+    "cold": {
+      "arm": "cold",
+      "tests_passed": 311,
+      "attempts": 4,
+      "converged": false,
+      "turns": 229,
+      "attempt_seconds": 702.8,
+      "attempt_prompt_tokens": 6842037,
+      "attempt_completion_tokens": 48500,
+      "distil_seconds": 0.0,
+      "distil_prompt_tokens": 0,
+      "distil_completion_tokens": 0,
+      "steps_ingested": 0,
+      "steps_with_reasoning": 0,
+      "skill_versions": [],
+      "distillations": 0,
+      "distillations_accepted": 0,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 10,
+          "turns": 77,
+          "seconds": 212.6,
+          "prompt_tokens": 2759660,
+          "completion_tokens": 14758,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 62,
+          "turns": 36,
+          "seconds": 119.3,
+          "prompt_tokens": 575768,
+          "completion_tokens": 7357,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 62,
+          "turns": 52,
+          "seconds": 176.8,
+          "prompt_tokens": 1371877,
+          "completion_tokens": 12883,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 4,
+          "skill_version": null,
+          "tests_passed": 311,
+          "v1_remaining": 8,
+          "turns": 64,
+          "seconds": 194.1,
+          "prompt_tokens": 2134732,
+          "completion_tokens": 13502,
+          "ended_cleanly": true
+        }
+      ]
+    }
+  },
+  "run_seconds": 1183.778,
+  "gpu_usd_per_hour": 4.59,
+  "counts_toward_clearly_working": true
+}

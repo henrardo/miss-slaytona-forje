@@ -1,0 +1,78 @@
+{
+  "run_id": "swarm-1789666583",
+  "gpu": "1x NVIDIA H200, 143771 MiB",
+  "model": "mistralai/Mistral-Small-4-119B-2603",
+  "commit": "16161a2",
+  "skill_version": 4,
+  "skill_approx_tokens": 1538,
+  "skill_dir_sha": "78a1391044c1",
+  "arms_identical": true,
+  "known_differences": [],
+  "arms": {
+    "warm": {
+      "arm": "warm",
+      "tests_passed": 33,
+      "attempts": 1,
+      "converged": true,
+      "turns": 27,
+      "attempt_seconds": 50.5,
+      "attempt_prompt_tokens": 426605,
+      "attempt_completion_tokens": 3500,
+      "distil_seconds": 29.4,
+      "distil_prompt_tokens": 1417150,
+      "distil_completion_tokens": 37910,
+      "steps_ingested": 25,
+      "steps_with_reasoning": 9,
+      "skill_versions": [
+        5
+      ],
+      "distillations": 1,
+      "distillations_accepted": 1,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": 4,
+          "tests_passed": 33,
+          "turns": 27,
+          "seconds": 50.5,
+          "prompt_tokens": 426605,
+          "completion_tokens": 3500,
+          "ended_cleanly": true
+        }
+      ]
+    },
+    "cold": {
+      "arm": "cold",
+      "tests_passed": 32,
+      "attempts": 1,
+      "converged": false,
+      "turns": 87,
+      "attempt_seconds": 372.5,
+      "attempt_prompt_tokens": 3040259,
+      "attempt_completion_tokens": 12537,
+      "distil_seconds": 0.0,
+      "distil_prompt_tokens": 0,
+      "distil_completion_tokens": 0,
+      "steps_ingested": 0,
+      "steps_with_reasoning": 0,
+      "skill_versions": [],
+      "distillations": 0,
+      "distillations_accepted": 0,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": null,
+          "tests_passed": 32,
+          "turns": 87,
+          "seconds": 372.5,
+          "prompt_tokens": 3040259,
+          "completion_tokens": 12537,
+          "ended_cleanly": false
+        }
+      ]
+    }
+  },
+  "counts_toward_clearly_working": true
+}

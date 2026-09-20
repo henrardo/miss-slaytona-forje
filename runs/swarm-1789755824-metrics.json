@@ -1,0 +1,153 @@
+{
+  "run_id": "swarm-1789755824",
+  "gpu": "1x NVIDIA H200",
+  "model": "mistralai/Mistral-Small-4-119B-2603",
+  "commit": "local",
+  "skill_version": 14,
+  "skill_approx_tokens": 1688,
+  "skill_dir_sha": "8d785cc627ea",
+  "arms_identical": false,
+  "known_differences": [
+    "config_names",
+    "hook_files",
+    "tools"
+  ],
+  "arms": {
+    "warm": {
+      "arm": "warm",
+      "tests_passed": 445,
+      "attempts": 4,
+      "converged": true,
+      "turns": 185,
+      "attempt_seconds": 531.8,
+      "attempt_prompt_tokens": 5627667,
+      "attempt_completion_tokens": 18596,
+      "distil_seconds": 167.9,
+      "distil_prompt_tokens": 0,
+      "distil_completion_tokens": 0,
+      "steps_ingested": 177,
+      "steps_with_reasoning": 0,
+      "skill_versions": [
+        15,
+        16
+      ],
+      "distillations": 4,
+      "distillations_accepted": 2,
+      "memory_tool_calls": 31,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": 14,
+          "tests_passed": 0,
+          "v1_remaining": 7,
+          "turns": 33,
+          "seconds": 126.0,
+          "prompt_tokens": 1018321,
+          "completion_tokens": 4907,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": 15,
+          "tests_passed": 311,
+          "v1_remaining": 5,
+          "turns": 62,
+          "seconds": 157.8,
+          "prompt_tokens": 1935008,
+          "completion_tokens": 6131,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": 16,
+          "tests_passed": 311,
+          "v1_remaining": 5,
+          "turns": 21,
+          "seconds": 87.6,
+          "prompt_tokens": 450137,
+          "completion_tokens": 1818,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 4,
+          "skill_version": 16,
+          "tests_passed": 445,
+          "v1_remaining": 5,
+          "turns": 69,
+          "seconds": 160.4,
+          "prompt_tokens": 2224201,
+          "completion_tokens": 5740,
+          "ended_cleanly": true
+        }
+      ]
+    },
+    "cold": {
+      "arm": "cold",
+      "tests_passed": 445,
+      "attempts": 4,
+      "converged": true,
+      "turns": 321,
+      "attempt_seconds": 702.8,
+      "attempt_prompt_tokens": 11671399,
+      "attempt_completion_tokens": 44582,
+      "distil_seconds": 0.0,
+      "distil_prompt_tokens": 0,
+      "distil_completion_tokens": 0,
+      "steps_ingested": 0,
+      "steps_with_reasoning": 0,
+      "skill_versions": [],
+      "distillations": 0,
+      "distillations_accepted": 0,
+      "memory_tool_calls": 0,
+      "per_attempt": [
+        {
+          "attempt": 1,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 12,
+          "turns": 73,
+          "seconds": 185.9,
+          "prompt_tokens": 2260264,
+          "completion_tokens": 11940,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 2,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 12,
+          "turns": 34,
+          "seconds": 95.6,
+          "prompt_tokens": 475834,
+          "completion_tokens": 2032,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 3,
+          "skill_version": null,
+          "tests_passed": 0,
+          "v1_remaining": 10,
+          "turns": 99,
+          "seconds": 236.5,
+          "prompt_tokens": 4575906,
+          "completion_tokens": 18292,
+          "ended_cleanly": true
+        },
+        {
+          "attempt": 4,
+          "skill_version": null,
+          "tests_passed": 445,
+          "v1_remaining": 4,
+          "turns": 115,
+          "seconds": 184.8,
+          "prompt_tokens": 4359395,
+          "completion_tokens": 12318,
+          "ended_cleanly": true
+        }
+      ]
+    }
+  },
+  "run_seconds": 1407.507,
+  "gpu_usd_per_hour": 4.59,
+  "counts_toward_clearly_working": true
+}

@@ -17,10 +17,17 @@ from daytona import (
     Resources,
 )
 
-from orchestrator.manifest import FIXTURE_DIR, REPO_ROOT
+from orchestrator.manifest import FIXTURE_DIR, REPO_ROOT, load_manifest
 
-SNAPSHOT_NAME_DEFAULT = "miss-slaytona-forje-fixture"
-STATE_PATH = REPO_ROOT / ".snapshot_state.json"
+# BOTH keyed on which fixture is active. They used to be single global
+# names, which was fine with one fixture and wrong with two: a saved
+# `mode=snapshot` state would hand back the OTHER fixture's snapshot name,
+# and every attempt would be graded against a package the agent never
+# edited. `is_stale()` compares hashes and would have caught the mismatch
+# only as "stale", i.e. as a rebuild prompt rather than as the wrong
+# answer key.
+SNAPSHOT_NAME_DEFAULT = f"miss-slaytona-forje-{FIXTURE_DIR.name}"
+STATE_PATH = REPO_ROOT / f".snapshot_state-{FIXTURE_DIR.name}.json"
 
 # Everything the sandbox needs to run the suite as-is. Deliberately excludes
 # fixture/reference_v2 (the migration answer key -- never baked into the
@@ -28,7 +35,30 @@ STATE_PATH = REPO_ROOT / ".snapshot_state.json"
 # `fastapi_mail` is fixture/'s actual pydantic v1 source (checked out at
 # sabuhish/fastapi-mail's pre-migration commit); `tests` is the post-
 # migration (v2) test suite -- the real success oracle, not one we wrote.
-INCLUDED_RELATIVE_PATHS = ["fastapi_mail", "tests", "requirements-v2.txt"]
+#
+# Read from the manifest rather than hardcoded, so pointing
+# MSF_FIXTURE_DIR at another fixture does not silently bake the WRONG
+# package into the image -- which would grade every attempt against a
+# directory the agent never edited.
+def _included_paths() -> list[str]:
+    manifest = load_manifest()
+    return [manifest["package_path"], manifest["tests_path"],
+            "requirements-v2.txt"]
+
+
+INCLUDED_RELATIVE_PATHS = _included_paths()
+
+# Some fixtures cannot be imported without installed distribution
+# metadata: openapi-python-client's `__init__.py` calls
+# `importlib.metadata.version(__package__)` at import time, so an
+# un-installed copy raises PackageNotFoundError before a single test runs.
+#
+# `pip install -e . --no-deps` fixes it correctly: EDITABLE so the files
+# the grader uploads are the ones that execute, and --no-deps so the
+# fixture's own pre-migration `pydantic = "^1.6.1"` pin cannot drag v1
+# back into a v2-only sandbox. Declared by the manifest because it is a
+# property of the fixture, not of the harness.
+_EDITABLE_INSTALL = "cd /repo && pip install -e . --no-deps -q"
 
 # Build junk is neither part of the fixture's identity nor wanted in the
 # sandbox. Leaving it in did both kinds of damage: `.pyc` files compiled
@@ -73,6 +103,17 @@ def build_image() -> Image:
             if local_path.is_dir()
             else image.add_local_file(str(local_path), remote_path)
         )
+    # The fixture's own packaging metadata, when it declares one. Needed
+    # both for the editable install below and because a fixture whose
+    # pyproject is part of the migration (dependency pins) must have it
+    # present to be graded on.
+    manifest = load_manifest()
+    if manifest.get("needs_editable_install"):
+        for extra in ("pyproject.toml", "setup.py", "setup.cfg", "README.md"):
+            local = FIXTURE_DIR / extra
+            if local.is_file():
+                image = image.add_local_file(str(local), f"/repo/{extra}")
+        image = image.workdir("/repo").run_commands(_EDITABLE_INSTALL)
     return image.workdir("/repo")
 
 

@@ -298,29 +298,58 @@ class ScopedMemory:
                              trace_id, exc)
         return result
 
-    async def eligible_traces(self, *, model: str, schema: float = 2.0) -> list[dict]:
+    async def eligible_traces(self, *, model: str, schema: float = 2.0,
+                              fixture: str | None = None,
+                              experiment: str | None = None) -> list[dict]:
         """Traces a distiller may learn from.
 
-        Three filters, each for a failure already in the graph:
+        Five filters, each for a failure already in the graph:
           * `prov_model` -- 109 of 187 steps were written by Qwen3-14B, a
             weaker model on different hardware;
           * `prov_writable` -- seven early runs handed agents a chmod a-w
             checkout and recorded 13 graded attempts with zero edits;
           * `outcome_schema >= 2` -- before that, `success` meant "passed OR
             advanced", so two traces claim success at tests_passed<33.
+          * `prov_fixture` -- WHICH CODEBASE the trace came from.
+
+        The last one was added after the second fixture went live and its
+        very FIRST distillation reported 25 eligible traces, before that
+        fixture had produced a single one. All 25 were the previous
+        fixture's. The booklet it wrote said so out loud -- "Attempt 3
+        regressed on a different repository" -- and a procedure distilled
+        for codebase B out of codebase A's failures is exactly the seeding
+        the experiment exists to rule out.
+
+          * `prov_experiment` -- WHICH RUN the trace came from. The fixture
+            filter above stops a distiller learning from a different
+            codebase; it does not stop it learning from every earlier run
+            on the SAME one. Measured 2026-09-20: warm's attempt 1 wrote
+            103 steps and the distiller was handed 2,574, the rest being
+            the previous night's 14 runs. Rendered whole that is 11,818,940
+            characters, and the author's hard ceiling is 10,485,760 per
+            message, so the call 400s and no skill is ever written. An
+            experiment is N attempts on ONE checkout, so this is the scope
+            the unit of work already has.
+
+        `fixture=None` and `experiment=None` keep the old unfiltered
+        behaviour, so traces written before these properties existed are
+        still reachable deliberately rather than by accident.
         """
         rows = await self._client.query.cypher(
             "MATCH (t:ReasoningTrace) WHERE t.user_identifier = $who "
             "AND t.prov_model = $model AND t.prov_writable = true "
-            "OPTIONAL MATCH (t)-[:HAS_STEP]->(s:ReasoningStep) "
-            "WITH t, count(s) AS steps, "
-            "  sum(CASE WHEN s.thought IS NOT NULL AND NOT s.thought STARTS WITH '{' "
-            "      THEN 1 ELSE 0 END) AS real_thoughts "
-            "RETURN toString(t.id) AS id, t.success AS suite_passed, "
-            "  t.metrics_json AS metrics, steps, real_thoughts, "
-            "  t.outcome AS outcome, t.task AS task "
-            "ORDER BY t.started_at",
-            {"who": self.user_identifier, "model": model},
+            + ("AND t.prov_fixture = $fixture " if fixture else "")
+            + ("AND t.prov_experiment = $experiment " if experiment else "")
+            + "OPTIONAL MATCH (t)-[:HAS_STEP]->(s:ReasoningStep) "
+              "WITH t, count(s) AS steps, "
+              "  sum(CASE WHEN s.thought IS NOT NULL AND NOT s.thought STARTS WITH '{' "
+              "      THEN 1 ELSE 0 END) AS real_thoughts "
+              "RETURN toString(t.id) AS id, t.success AS suite_passed, "
+              "  t.metrics_json AS metrics, steps, real_thoughts, "
+              "  t.outcome AS outcome, t.task AS task "
+              "ORDER BY t.started_at",
+            {"who": self.user_identifier, "model": model,
+             "fixture": fixture, "experiment": experiment},
         )
         out = []
         for r in rows:
@@ -471,6 +500,32 @@ class ScopedMemory:
                 )
                 linked += 1
         return linked
+
+    async def trace_steps(self, trace_ids: list[str]) -> list[dict]:
+        """EVERY step inside these traces, oldest first. No cap.
+
+        For a distiller that has no MCP tools -- an external model calling
+        an API cannot query the graph itself, so the evidence has to travel
+        in its prompt. The agent-run distiller does not use this: it has
+        `search_steps` and is expected to choose what to look at, and
+        handing it the answer would remove the thing being measured.
+
+        There was a `per_trace=40` cap here. It was mine, AIP specifies
+        nothing of the kind, and it made AIP section 6.3 -- walk the source
+        material line by line and classify every item -- impossible to
+        honour, because the author cannot classify what it was never
+        shown.
+        """
+        rows = await self._client.query.cypher(
+            "MATCH (t:ReasoningTrace)-[:HAS_STEP]->(s:ReasoningStep) "
+            "WHERE toString(t.id) IN $ids "
+            "RETURN toString(t.id) AS trace, t.success AS suite_passed, "
+            "  s.thought AS thought, s.action AS action, "
+            "  s.observation AS observation, s.created_at AS at "
+            "ORDER BY t.started_at, s.created_at",
+            {"ids": list(trace_ids)},
+        )
+        return [dict(row) for row in rows]
 
     async def trace_metrics(self, trace_ids: list[str]) -> dict[str, dict]:
         """metrics_json for these traces, parsed, keyed by trace id.
