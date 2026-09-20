@@ -16,6 +16,11 @@ target_version: "pydantic>=2.0,<3.0"
 package_path: x12sdk
 tests_path: tests
 test_command: "python -m pytest tests -q"
+# The denominator for the skill's success score. Cognee wants a
+# proportion in [0.0, 1.0]; tests_passed alone is a count and 56 means
+# nothing without it. 261 is measured by running the answer key -- see
+# the note below on why it is not the static 130.
+test_total: 261
 # LAYOUT NOTE -- the one place this fixture departs from upstream.
 # x12sdk ships a src/ layout (src/x12sdk, src/tests). The harness keys
 # an uploaded tree on the package directory's OWN name

@@ -31,10 +31,18 @@ python-dotenv
 # The result was a requirements file that installed a non-working orchestrator
 # on any fresh clone, while the machine it was developed on happened to have
 # the extras from an earlier install.
-neo4j-agent-memory[openai,gliner,spacy]
-
-# spaCy's model is not a PyPI dependency and has to be named explicitly.
-en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+#
+# RETIRED 2026-09-20, along with its three extras and the spaCy model below.
+# Cognee replaces it AND the AIP skill layer; both are archived whole under
+# `archive/`, with READMEs saying why. The extras lesson still applies, which
+# is why `[neo4j]` is spelled out: it is what makes Aura the graph backend
+# rather than the default embedded Kuzu, and getting that wrong would put the
+# graph somewhere nobody is looking.
+#
+#   neo4j-agent-memory[openai,gliner,spacy]
+#   en_core_web_sm @ https://github.com/explosion/spacy-models/releases/...
+cognee[neo4j]==1.6.0
+cognee-mcp
 
 # check_mcp_servers() speaks MCP directly to each registered server before the
 # clock starts, so the orchestrator needs a client of its own.

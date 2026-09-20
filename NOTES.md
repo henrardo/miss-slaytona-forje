@@ -2688,3 +2688,359 @@ Terminate when done: `mcp__runpod__delete-pod id=eowqxi3391tmsz`
 | purpose | first run series with AIP installed whole and the FRONTIER author |
 | author | `gpt-5.6-sol` via OPENAI_AUTHOR (NOT the attempt model) |
 | skill at start | v24, valid under the shipped validator |
+
+---
+
+## 2026-09-21 — Cognee integrated natively: both halves of the treatment
+
+The Cognee migration had shipped **one half** of warm's memory: the MCP
+server. Everything the harness could check was green -- the server
+answered, Vibe registered its tools, the procedure was in the graph --
+and `attempt_prompt` was hard-coded `memory_enabled=False`, so the model
+was handed a prompt byte-identical to cold's. Warm was cold with a longer
+tool list. On top of that the tree was half-migrated: `orchestrator/run.py`
+read `step_memory.port` off `None`, called a `mem_client` that no longer
+existed and an `add_message` that no longer existed; `swarm/run.py`
+required a sidecar nothing installs; `migrate_codebase` still called
+`mem.complete_trace(...)` in the two handlers that run when a run is
+already going wrong.
+
+### What warm's treatment is now
+
+| half | mechanism | whose choice |
+|---|---|---|
+| voluntary | `cognee` MCP server (`cognee_recall`, `cognee_remember`, `cognee_search`) | the agent's |
+| deterministic | `cognee.agent_memory` around each attempt; the procedure and the retrieved context in the prompt; `cognee.improve` bridging the traces | the harness's |
+
+Every deterministic piece is a documented Cognee surface called directly.
+Nothing is versioned, hashed, rendered into frontmatter or installed on
+the pod. `--memory-mode {hybrid,mcp,deterministic,off}` selects which
+halves are live, because "would the model have gone and looked?" is a
+question worth keeping askable -- this project answered it `no` for 40
+consecutive runs under the old server.
+
+The deterministic half is a real arm difference and is reported as one:
+`ATTEMPT_DONE` now carries `memory_chars` and `procedure_chars`, and
+`MEMORY_READ` distinguishes `sources=["cognee.agent_memory"]` (the
+harness retrieved) from the agent's own tool calls.
+
+### `improve` is not optional
+
+`cognee.agent_memory(save_session_traces=True)` writes into SESSION
+memory, which is not graph-queryable: `recall(datasets=[...])` straight
+after a write answers `status='memory_warming_up'`. `cognee.improve(
+dataset, session_ids=[...])` is the documented bridge -- its
+`persist_agent_traces`, `extract_agent_context` and `distill_sessions`
+stages are what put the traces in the graph. Without it every trace is
+visible to its own session and to nothing else: no second agent, no
+second run. It now runs after every attempt, off the clock, and
+`INGESTED` carries each stage's status.
+
+### MEASURED: the dataset is NOT an isolation boundary for graph search
+
+```
+add("Zorblatt Quixnar <stamp> is the secret migration rule.") -> dataset A
+add("Unrelated filler text.")                                 -> dataset B
+cognify A; cognify B
+search(GRAPH_SUMMARY_COMPLETION, datasets=[B], "What is Zorblatt Quixnar?")
+  -> "Zorblatt Quixnar <stamp> contains the secret migration rule"
+```
+
+Dataset B never saw the marker. Writes are scoped; graph reads are not,
+and `GRAPH_SUMMARY_COMPLETION` is exactly what `agent_memory` retrieves
+with. So **warm on one fixture can retrieve a lesson distilled on
+another** -- the contamination `prov_fixture` was added to stop -- and
+`--reset-memory` on one dataset does not give a clean graph. The previous
+design note claiming dataset scoping made fixture isolation structural is
+wrong and is corrected in `cognee_layer`.
+
+Mitigations, in order of what they buy: one Neo4j instance per fixture
+(complete, unavailable on a one-database Aura tier); the new
+`--reset-memory-everything` (a genuinely empty graph, at the cost of every
+earlier experiment); and the preflight now lists the other datasets in the
+graph so no run's reading rests on an assumption.
+
+### Verified
+
+`scripts/rehearse_loop.py`: **53/53**, real Aura, a real `cognee-mcp`
+server, real Vibe. New checks, each pinning a failure the old ones
+reported as healthy:
+
+- the procedure reached the WARM model -- asserted off the fake server's
+  recorded request bodies, i.e. what crossed the wire, not what the
+  harness believes it sent;
+- the procedure never reached the cold model;
+- every attempt ran `cognee.improve()` over its own session, and the
+  traces were bridged (`steps > 0`);
+- the agent's own `cognee_recall` calls are counted, and counted APART
+  from the harness's injection.
+
+Observed in that run: 4 agent-initiated `cognee_recall` calls, 503 chars
+injected on attempt 2, procedure 1,684 -> 5,068 chars over two
+distillations scored 0.242 and 1.000 by the grader. `pytest`: 188 passed.
+
+### Removed, not left dangling
+
+`RemoteTraceBridge`, the sidecar control channel, `_entry_consumer`, the
+`step_memory` parameter and every call on it, `STEP_HOOK_SCRIPT`, the
+`hooks.toml` writer (it now only DELETES a leftover one), `HOOK_PATH`,
+`RELAY_PATH`, `relay_port`'s pipeline, `_sidecar_control`,
+`_sidecar_counter`, and the two dead `mem.complete_trace` calls.
+`tests/test_swarm_signatures.py` pins the seam that replaced them, and
+`tests/test_cognee_memory.py` pins both halves against a fake `cognee`
+so they are checked on every commit rather than when someone rents a pod.
+
+### Addendum, same day: the pod-side MCP server was a SECOND memory
+
+Asked whether this could now run the full e2e pod experiment, the answer
+was no, for one measured reason.
+
+A cognee process keeps its users, datasets and vector index in LOCAL
+SQLite and LanceDB. Only the GRAPH is remote. A fresh cognee pointed at
+the same Aura -- which is exactly what `provision_cognee.sh` starts on a
+pod -- reports:
+
+```
+default user id: ca938241-...        (its own, not the harness's)
+datasets visible: ['podprobe']       (its own; the harness's 31 are not)
+recall(datasets=["msf-rehearsal-..."]) ->
+    DatasetNotFoundError: "Dataset names resolve only among the datasets
+    you own in the current tenant"
+```
+
+So warm's agent would have called `cognee_recall` and got nothing, every
+attempt, all run -- while the server answered, the tools registered and
+the graph filled up. This project's signature failure, one topology
+change away from being shipped again.
+
+**Fixed by moving the server, not the data.** `cognee-mcp` now runs on the
+harness, in the orchestrator's own venv, sharing its SQLite, LanceDB, Aura
+and default user; `ssh -R` puts it on the pod's 127.0.0.1:8811, so the
+agent's URL is unchanged. Two things come free: the Neo4j password never
+reaches the pod, and the topology is the one the rehearsal already proves
+(there, server and harness are on one machine by construction).
+`--cognee-on-pod` keeps the old arrangement for comparison.
+
+**And a gate that has teeth.** `assert_one_memory` writes a marker through
+the harness and reads it back through the AGENTS' server. Verified both
+ways, live: it passes against the shared-store server and fails against a
+pod-like one with its own stores. Every cheaper check -- server answers,
+tools register, graph has nodes -- passes on two separate memories.
+
+### What the leakage note does and does not mean
+
+The cross-dataset reads recorded above do NOT threaten warm vs cold: cold
+has no MCP server, no CogneeMemory and `mem=None`, so it reads nothing by
+any route. Leakage only decides WHICH memories warm draws on. It matters
+when a series follows another fixture on the same instance without a
+reset, and the answer is `--reset-memory-everything` at the start of a
+series.
+
+---
+
+## 2026-09-21 — FIRST POD RUN ON COGNEE: warm 60, cold 0
+
+Pod `yfyk5oc4ogdlas`, 1x H200 143 GB, CUDA 13.0, US-NC-1, $4.59/hr,
+created 22:47Z, terminated 23:32Z (45 min, ~$3.44). SGLang 0.5.14 served
+`mistralai/Mistral-Small-4-119B-2603` (FP8, tp=1, 126 GB resident,
+`max_model_len` 128000). Fixture `fixtures/x12sdk`, 261-test oracle,
+3 attempts per agent on ONE checkout, 1 agent per arm, barrier-synced.
+
+### The result
+
+| | attempt 1 | attempt 2 | attempt 3 | best |
+|---|---|---|---|---|
+| **warm** (hybrid) | 0 | **56** | **60** | **60 / 261** |
+| **cold** | 0 | 0 | 0 | 0 / 261 |
+| warm, mcp-only | 0 | 0 | 0 | 0 / 261 |
+| cold (2nd run) | 0 | 0 | 0 | 0 / 261 |
+
+Both runs: `GATE ok`, 6 attempts graded by 6 real Daytona sandboxes,
+`counts_toward_clearly_working: YES`, arms differing only in
+`['config_names', 'tools']` -- the treatment.
+
+v1 surfaces tell the same story more quietly: warm 383 -> 339 -> 295,
+cold 383 -> 305 -> 300. Nearly equal *surfaces*, and a 60-test gap --
+warm got the package importable, cold did not.
+
+### What the numbers say about the mix
+
+RUN 1 `--memory-mode hybrid`: warm was handed the procedure (1,684 ->
+4,371 -> 5,420 chars, rewritten by Cognee after each graded attempt) and
+885 characters of retrieved context across attempts 2 and 3. It scored
+60. It ALSO called `cognee_recall` itself, once, unprompted.
+
+RUN 2 `--memory-mode mcp`, same everything else, graph reset to empty:
+warm got the tools and nothing in its prompt. It called `cognee_recall`
+on two of three attempts -- and scored 0, the same as cold.
+
+**The deterministic half is what produced the result.** The voluntary
+half fired (the model does reach for the tool, which is more than the
+old server ever got) and produced nothing on its own. That is the
+measured answer to "would it have gone and looked anyway": it looks, and
+looking is not enough.
+
+Token cost of the mix, from the counting proxies: warm 14,221,992 in /
+41,157 out against cold's 10,942,073 / 37,599 -- warm read 30% more
+input for the procedure, the retrieved block and its own tool results.
+In the mcp-only run warm read LESS than cold (7.0M vs 8.6M) and achieved
+the same nothing.
+
+### Both halves of the loop ran on the pod, end to end
+
+`cognee.agent_memory` wrapped every warm attempt; `cognee.improve`
+bridged 3 trace steps per run into Aura with `persist_agent_traces`,
+`extract_agent_context` and `distill_sessions` all completing; the
+grader's score drove `remember(SkillRunEntry)` -> proposal ->
+`improve_skill(apply=True)` three times per run, all accepted.
+
+The MCP server ran on the HARNESS and reached the pod through `ssh -R`
+(see the topology note above). The cross-visibility gate passed on both
+runs: a marker written by the harness came back through the agents' own
+server. No Neo4j credential was ever on the pod.
+
+### Two bugs the pod found that nothing else could
+
+1. **`distill_home` was a method, not a property**, and every use is
+   inside an f-string -- so the harness tried to `mkdir -p "<bound
+   method AgentWorkspace.distill_home of ...>"`. The first run died
+   there, after the pod, the model download and the whole preflight had
+   been paid for. The rehearsal cannot catch it: LocalHost.put writes
+   through the local filesystem and had been quietly creating a
+   directory with that repr as its name -- one had been sitting
+   untracked in the repo root for a fortnight. Fixed; pinned by
+   `test_no_path_the_harness_writes_contains_a_python_repr`.
+2. **The memory-tool gate matched 1 of 11 cognee tools.** It filtered on
+   "memor|step|trace|graph", which of cognee's names matches only
+   `cognee_visualize_graph_ui`. It would have passed a server that had
+   lost every tool an agent can retrieve with. Now filtered on the
+   server alias.
+
+`scripts/archive_experiment.py` also still imported the deleted AIP
+registry; it now archives the procedure Cognee holds instead of a
+version lineage that no longer exists.
+
+### What this does NOT show
+
+n=1 per arm per mode, one fixture, three attempts, neither arm
+converged. 60/261 is the "the package imports again" plateau, not a
+finished migration. The two runs were sequential on one pod, so they
+share hardware but not load conditions. And warm's advantage here is the
+SKILL plus the retrieved context together -- this run does not separate
+them; `--memory-mode deterministic` against a `--no-distill` control is
+the experiment that would.
+
+### RETRACTION, same day: the headline was the wrong measure
+
+"warm 60 / cold 0" is the step function, not a result. `tests_passed` on
+these fixtures has two effective values -- the package imports or it does
+not -- so one correct edit moves it by tens or hundreds while the
+migration is barely begun. This is written down in
+`measures-that-mislead-on-oapi` and in the operator's words, twice: *"an
+agent with shit code but a good import goes from 0-300+. This is not a
+test."* I led with it anyway.
+
+**On the fuzzy measure** (`closeness`: 0.0 untouched, 1.0 the human's
+merged PR; x12sdk baseline 383 v1 surfaces, floor 2):
+
+| run | arm | a1 | a2 | a3 | best | v1 left |
+|---|---|---|---|---|---|---|
+| hybrid | warm | 0.0185 | **0.0401** | 0.0161 | 0.0401 | 295 |
+| hybrid | cold | 0.0310 | **0.0495** | -1.9748 (syntax) | **0.0495** | 300 |
+| mcp-only | warm | 0.0000 | 0.0507 | **0.0507** | **0.0507** | 304 |
+| mcp-only | cold | 0.0124 | 0.0297 | **0.0385** | 0.0385 | 321 |
+
+In the run where warm "won" on tests, **cold was closer to the reference**
+until its last attempt broke its own tree. Warm's 60-test attempt was its
+LEAST reference-like of three. Warm cleared 88 of 381 clearable surfaces,
+cold 83. Everything is 2-5% of the way to the reference.
+
+**So: no detectable memory effect in either run.** Two runs, one agent per
+arm, indistinguishable on the measure that tracks the job.
+
+### The same mistake was wired into the learning loop
+
+`SkillRunEntry.success_score` was `tests_passed/tests_total`, so the skill
+was taught by the step function too:
+
+| run | what the skill was told | what the fuzzy measure says |
+|---|---|---|
+| hybrid | 0.000 -> 0.215 -> **0.230** (improving) | 0.0185 -> **0.0401** -> 0.0161 (attempt 3 was the WORST) |
+| mcp-only | 0.000 -> 0.000 -> 0.000 (no signal) | 0.0000 -> **0.0507** -> 0.0507 (real progress, invisible) |
+
+Both wrong, in opposite directions: hybrid's attempt-3 procedure -- the
+one archived as final -- was authored under the belief that attempt 3 was
+the high-water mark, and the whole mcp-only run gave `improve_skill` a
+flat zero to learn from.
+
+**Fixed.** `score_from_verdict` now scores on closeness, with the
+normalisation stated where it is made: signed values clamp to 0.0 (worse
+than not trying has no reading below no-credit), a green suite is 1.0
+regardless (closeness ranks resemblance to one implementation, never
+correctness -- two arms both passing all 445 oapi tests scored 0.86 and
+0.91), and a fixture with no answer key falls back to the suite ratio with
+the caveat attached. The number reaches the distiller from the same
+variable the event log records, which is why it did not before: closeness
+was computed inline in the `emit()` call and reached nothing else.
+
+### Was it deterministic? No -- measured, and now fixed
+
+Three calls, one unchanged graph, the query an attempt would make:
+
+| read path | call 1 | call 2 | call 3 |
+|---|---|---|---|
+| `GRAPH_SUMMARY_COMPLETION`, `only_context=True` (what shipped) | 291 ch | 329 ch | 239 ch, three different sha256 |
+| the `session_learnings` documents `improve()` writes | 697 ch | 697 ch | 697 ch, one sha256 |
+
+And the content was wrong, not merely unstable. What warm was injected
+with read *"The `None` node has three duplicate **skill** relationships to
+**pydantic-v2-migration**"* -- a description of the graph's SHAPE. The
+distilled lessons were in the graph the whole time, unread:
+
+    # Session learning (session swarm-1789946200:warm-0)
+    A codebase migration attempt that returns status 0 or reports "Task
+    completed" is not sufficient evidence of completion; completion
+    behavior must be verified by checking repository state and tests...
+
+So the deterministic half was injecting stochastic prose about graph
+topology. That is the likeliest reason it bought nothing on the fuzzy
+measure, and it means the null result was measured against a treatment
+that was not the intended one.
+
+**Two more determinism holes found with it**, both from the docs:
+
+* `remember()` defaults to `self_improvement=True`, which launches an
+  improve in the BACKGROUND -- cognee's own `wait_for_background_tasks`
+  docstring says as much ("a background remember that fires an improve").
+  Every write we made raced our explicit bridge.
+* `wait_for_background_tasks()` exists and was never called, so a read
+  could land before or after that background work depending on timing.
+
+**Fixed:**
+
+* the decorator keeps `save_session_traces=True` and now has
+  `with_memory=False` -- it writes, it does not read;
+* reads go through `cognee_layer.lessons()`, a direct query for the
+  stored `session_learnings` documents: exact text, stable order, guarded
+  so an unreachable graph costs the memory and not the attempt (the unit
+  test caught that it was unguarded and inside the attempt body);
+* both `remember()` call sites pass `self_improvement=False`, and
+  `improve_from_sessions` drains with `wait_for_background_tasks(120s)`,
+  so the bridge happens where the loop says it does;
+* session ids now carry the dataset (`msf-x12sdk:swarm-…:warm-0`) and
+  `lessons()` filters on it. Cognee's graph search ignores the dataset it
+  is given, so the session marker embedded in each lesson is the only
+  thing that keeps one fixture's lessons out of another's prompt -- this
+  closes the leakage for the one read that reaches the model.
+
+**Truth-subspace reranking stays OFF**, deliberately: it is experimental
+and opt-in, it reranks the HYBRID chunk lane rather than the path we
+read on, and it needs `session_learnings` to exist first. Those now
+exist, so it is a real option for a later run rather than a gap.
+
+**Still open and not oversold:** the lessons distilled so far are about
+verification discipline ("status 0 is not evidence of completion"), not
+about Pydantic. Whether `distill_sessions` produces migration knowledge
+depends on what the trace carries, and the trace carries a one-line
+summary by design (the 1,000-character `method_return_value` cap). That
+is the next thing to measure, not to assume.

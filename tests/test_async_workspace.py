@@ -191,75 +191,45 @@ async def test_a_timeout_keeps_the_stream_that_already_arrived() -> None:
     assert parsed[0]["text"] == "Read the models first."
 
 
-# ---- progressive disclosure: the model does not follow pointers ----------
+# ---- the skill is not a file any more ----------------------------------
+#
+# Six tests lived here for `inline_references`, which appended the
+# `references/` tier to SKILL.md at install time because the model never
+# followed AIP's relative pointers -- measured, zero reference reads
+# across all six attempts of swarm-1789903474.
+#
+# All of it went with `install_skill`. Cognee keeps the procedure in the
+# graph and warm reaches it through the MCP server, so the harness
+# installs no skill package on the pod at all: no rendering, no
+# references tier, no authored-vs-rendered hash pair. See
+# archive/aip-skill-layer-2026-09-20/.
 
 
-def _pkg() -> dict[str, bytes]:
-    """A relocated AIP package, in the shape v1 actually took."""
-    return {
-        "SKILL.md": (b"---\nname: s\n---\n\n```yaml\nsteps:\n"
-                     b"  - name: migrate-field-validators\n"
-                     b"    description: >\n"
-                     b"      Before changing field validators, read the "
-                     b"matching step in references/validator-migration.md "
-                     b"and follow it.\n```\n"),
-        "references/validator-migration.md":
-            b"# Validators\nRemove allow_reuse. pre=True becomes "
-            b'mode="before".\n',
-        "references/anti-patterns.md":
-            b"# Anti-patterns\nNever import pydantic.v1.\n",
-        "source/procedure.schema.json": b"{}",
-    }
+def test_no_path_the_harness_writes_contains_a_python_repr() -> None:
+    """Every remote path an f-string builds must be a path.
 
+    `distill_home` was a METHOD while `distill_dir` beside it was a
+    property, so `f"{self.distill_home}/config.toml"` interpolated a bound
+    method and the harness tried to `mkdir -p "<bound method
+    AgentWorkspace.distill_home of AgentWorkspace(host=SwarmHost(...))>"`.
+    The first pod run died exactly there -- after the pod, the 113 GB
+    model download and the whole preflight had been paid for.
 
-def test_references_are_inlined_into_the_body() -> None:
-    """Measured: zero reference reads across all six attempts of
-    swarm-1789903474, despite Vibe handing the agent the absolute base
-    directory and the file list. The content has to come to the model."""
-    out = agent_workspace.inline_references(_pkg())
-    body = out["SKILL.md"].decode()
-    assert "Remove allow_reuse" in body
-    assert "Never import pydantic.v1" in body
-    assert 'mode="before"' in body
+    The rehearsal could not catch it: LocalHost.put writes through the
+    local filesystem, so it created a directory with that repr as its
+    name and carried on. One had been sitting untracked in the repo root
+    for a fortnight.
 
+    So this asserts the property that was violated, not the one symbol:
+    no path this class hands to the host may contain a repr.
+    """
+    from swarm.agent_workspace import AgentWorkspace, SwarmHost
 
-def test_the_authored_body_survives_inlining() -> None:
-    """Appended, never replaced -- the author's procedure is the skill."""
-    out = agent_workspace.inline_references(_pkg())
-    body = out["SKILL.md"].decode()
-    assert "migrate-field-validators" in body
-    assert body.index("migrate-field-validators") < body.index("Remove allow_reuse")
-
-
-def test_the_reference_files_are_still_written() -> None:
-    """The package stays AIP-shaped. This changes the RENDERING handed to
-    one model, not the artifact that gets validated and archived."""
-    out = agent_workspace.inline_references(_pkg())
-    assert out["references/validator-migration.md"] == \
-        _pkg()["references/validator-migration.md"]
-    assert set(out) == set(_pkg())
-
-
-def test_inlining_is_idempotent() -> None:
-    """install_skill runs every attempt; twice must not double the tail."""
-    once = agent_workspace.inline_references(_pkg())
-    twice = agent_workspace.inline_references(once)
-    assert once["SKILL.md"] == twice["SKILL.md"]
-
-
-def test_a_package_with_no_references_is_untouched() -> None:
-    """v2 and v3 kept their content inline. Nothing to do, and no marker
-    appended to a body that does not need one."""
-    pkg = {"SKILL.md": b"---\nname: s\n---\nbody\n"}
-    assert agent_workspace.inline_references(pkg) == pkg
-
-
-def test_the_version_hash_stays_the_authored_one() -> None:
-    """Otherwise every install reports a version mismatch against what
-    `propose` accepted, on every attempt, forever."""
-    import inspect
-    src = inspect.getsource(agent_workspace.AgentWorkspace.install_skill)
-    assert "canonical_body" in src
-    assert '"body": _body_sha(canonical_body)' in src
-    # and what the model really read is still reported, from the read-back
-    assert "body_rendered" in src
+    ws = AgentWorkspace(host=SwarmHost(host="h", port=1, identity=Path("/dev/null")),
+                        label="warm-0", model="m")
+    paths = [ws.home, ws.repo_path, ws.venv, ws.distill_home, ws.distill_dir,
+             ws.distill_skill_path()]
+    for p in paths:
+        assert isinstance(p, str), f"{p!r} is not a string"
+        assert "<bound method" not in p and "object at 0x" not in p, p
+        assert p.startswith("/"), f"{p!r} is not an absolute path"

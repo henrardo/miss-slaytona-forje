@@ -1,0 +1,560 @@
+cognee-mcp: http://127.0.0.1:8814/mcp (this machine, sharing the orchestrator's stores)
+reverse tunnel: pod 127.0.0.1:8811 -> harness 127.0.0.1:8814
+
+[2m2026-09-20T22:58:40.706121[0m [[32m[1minfo     [0m] [1mDeleted old log file: /Users/t6w652j6ft/.cognee/logs/2026-09-20_22-39-13.log[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:58:40.706378[0m [[32m[1minfo     [0m] [1mLog file created at: /Users/t6w652j6ft/.cognee/logs/2026-09-20_22-58-40.log[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m [36mlog_file[0m=[35m/Users/t6w652j6ft/.cognee/logs/2026-09-20_22-58-40.log[0m
+
+[2m2026-09-20T22:58:40.706478[0m [[33m[1mwarning  [0m] [1mCognee 1.0 changes: New API — remember/recall/forget/improve (V1 add/cognify/search still work). Session memory enabled by default (CACHING=false to disable). Multi-user access control on by default (ENABLE_BACKEND_ACCESS_CONTROL=false to disable). Agents (@cognee.agent) auto-verified on registration. See https://docs.cognee.ai/[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:58:40.706575[0m [[32m[1minfo     [0m] [1mLogging initialized           [0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m [36mcognee_version[0m=[35m1.6.0[0m [36mdatabase_path[0m=[35m/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.cognee_system/databases[0m [36mos_info[0m=[35m'Darwin 25.6.0 (Darwin Kernel Version 25.6.0: Fri Jul 31 19:18:48 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T6020)'[0m [36mpython_version[0m=[35m3.11.14[0m [36mstructlog_version[0m=[35m25.5.0[0m
+
+[2m2026-09-20T22:58:40.706672[0m [[32m[1minfo     [0m] [1mDatabase storage: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.cognee_system/databases[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:58:42.894852[0m [[32m[1minfo     [0m] [1mauth posture: authentication=disabled, multi_tenant=disabled (inherited from ENABLE_BACKEND_ACCESS_CONTROL)[0m [[0m[1m[34mget_authenticated_user[0m][0m
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:670> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 2.912 seconds[0m
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:670> wait_for=<Future pending cb=[_chain_future.<locals>._call_check_cancel() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/futures.py:387, Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 0.342 seconds[0m
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:670> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 0.983 seconds[0m
+
+[2m2026-09-20T22:58:47.947533[0m [[32m[1minfo     [0m] [1mRetrieved 468 nodes and 1126 edges in 1.31 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:58:48.002701[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_4ba9ee26a00f61b33dc12576d430aeb3.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:58:49.612223[0m [[32m[1minfo     [0m] [1mRetrieved 467 nodes and 1125 edges in 1.23 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:58:49.648730[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_2f9eb0e224104254bb73cc2b4dc1edcf.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:58:51.134995[0m [[32m[1minfo     [0m] [1mRetrieved 466 nodes and 1124 edges in 1.21 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:58:51.169856[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_cc423cc9214da71967b252077d69da47.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:58:53.276396[0m [[32m[1minfo     [0m] [1mRetrieved 465 nodes and 1123 edges in 1.83 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:58:54.804050[0m [[32m[1minfo     [0m] [1mRetrieved 464 nodes and 1122 edges in 1.22 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:58:56.650895[0m [[32m[1minfo     [0m] [1mRetrieved 463 nodes and 1121 edges in 1.18 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:58:56.688273[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_610f096253ddbc25e0ad714a13208c3c.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:58:59.734514[0m [[32m[1minfo     [0m] [1mRetrieved 439 nodes and 1051 edges in 1.20 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:58:59.756661[0m [[32m[1minfo     [0m] [1mDeleted 51 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:00.047301[0m [[32m[1minfo     [0m] [1mSession invalidation: deleted 1/1 session(s) for dataset 58469ae5-1fcd-5684-87c6-12f1bddbe131[0m [[0m[1m[34minvalidate_sessions[0m][0m
+
+[2m2026-09-20T22:59:00.077435[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_18d551d3071bf102ccc7217a4bee4a6f.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:00.099087[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_32ea81d3a606895c73ac13baf76f97f0.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:00.120127[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_716e0fc6a818b270c120c187be05064e.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:00.140544[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_bc4224a42ded38a1e5aa9f34e1fe8116.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:00.161887[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_f63c7a47cb08acb560106f18c1979199.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:02.710825[0m [[32m[1minfo     [0m] [1mRetrieved 414 nodes and 987 edges in 1.05 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:02.734180[0m [[32m[1minfo     [0m] [1mDeleted 50 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:02.950442[0m [[32m[1minfo     [0m] [1mSession invalidation: deleted 1/1 session(s) for dataset e9838649-60fd-5085-bd26-b7c1d47043f9[0m [[0m[1m[34minvalidate_sessions[0m][0m
+
+[2m2026-09-20T22:59:02.981371[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_45ecae120993c4e5368ac3fe91453bf7.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:03.004172[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_7ef4efc1bc98249cbaf7ff07f0a3b786.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:03.026054[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_7fcadf8a81bff0bc04597ad661444a37.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:03.048434[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_c56eba466459d5eb3c89518c0336983e.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:03.069237[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_e82aa84089b3b4d0619a770efe8044b1.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:03.090592[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_e96e070a6d3d7435f3d3f8a0398a9768.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:05.701464[0m [[32m[1minfo     [0m] [1mRetrieved 388 nodes and 918 edges in 0.97 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:05.725235[0m [[32m[1minfo     [0m] [1mDeleted 49 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:05.924666[0m [[32m[1minfo     [0m] [1mSession invalidation: deleted 1/1 session(s) for dataset 8e4cfc07-86c9-5221-a1b7-68fb9ed5dab4[0m [[0m[1m[34minvalidate_sessions[0m][0m
+
+[2m2026-09-20T22:59:05.955132[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_002b052ac1404f15e0d8e65176f89c7a.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:05.976045[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_25022d3c302167977be26f2d1bf75f0f.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:05.996417[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_7185aae3bb3024610bc1a62f8fb3f11c.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:06.017847[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_7572ac551afde8bb81dd02551166d186.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:06.038600[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_f1d32c1c4066656f95c811c7c40fa9bc.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:06.059665[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_f78cc89959e918287d2e343070f4a4ac.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:08.349157[0m [[32m[1minfo     [0m] [1mRetrieved 362 nodes and 849 edges in 0.89 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:08.372196[0m [[32m[1minfo     [0m] [1mDeleted 53 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:08.573148[0m [[32m[1minfo     [0m] [1mSession invalidation: deleted 1/1 session(s) for dataset 50920fd7-81db-5066-a40b-750f1eccd492[0m [[0m[1m[34minvalidate_sessions[0m][0m
+
+[2m2026-09-20T22:59:08.602172[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_39c3fb6af8051bd7355b6ddb2c11a664.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:08.623388[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_7bfd03a4951447e2a0e0f27e692d9f03.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:08.644233[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_8f2aaeb5cb7c9257ff7dd152425a65ed.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:08.668633[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_c0bebcb96309d9819293b77a264d096a.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:08.692844[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_d5e0e3214fa9c6e24e9a27c3dc3e5e44.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:08.717621[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_d6df5687ed2c57dd8bf6cc4984424724.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:10.739943[0m [[32m[1minfo     [0m] [1mRetrieved 338 nodes and 789 edges in 0.81 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:10.766257[0m [[32m[1minfo     [0m] [1mDeleted 45 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:10.947904[0m [[32m[1minfo     [0m] [1mSession invalidation: deleted 1/1 session(s) for dataset 04912940-ddaf-5d78-b67f-e7b695641e42[0m [[0m[1m[34minvalidate_sessions[0m][0m
+
+[2m2026-09-20T22:59:10.975264[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_0fc8529dca88e87a1970d7c33151b9fb.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:10.994639[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_27ba4a60b31588c66e66094278a69516.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:11.015356[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_5324b89590b4715853d7958a3f26eca1.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:11.035724[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_8530076cf9b5dc2202f3c7eece9a0eaf.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:11.056956[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_b08b0a1f563c6b5eccf11d21004a3491.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:13.329647[0m [[32m[1minfo     [0m] [1mRetrieved 307 nodes and 711 edges in 1.09 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:13.353456[0m [[32m[1minfo     [0m] [1mDeleted 64 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:13.524443[0m [[32m[1minfo     [0m] [1mSession invalidation: deleted 1/1 session(s) for dataset 6adb273b-787f-53e5-b6b8-685df4670953[0m [[0m[1m[34minvalidate_sessions[0m][0m
+
+[2m2026-09-20T22:59:13.552815[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_19f7c4c4cb4925adbc6a2d9fc22fbdbd.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:13.574662[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_2fd18e91f36dcf9cbb3e7f90e14f5ec3.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:13.595262[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_5a0bd7492954c095f4460b3e3866a184.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:13.638046[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_bdaeea4445f24e6dd67f3807e5bc60b5.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:13.659927[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_d9bb31c1843a6a3637bbf71698a1ff03.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:13.680559[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_dab59feef322b53992a726946f9705e1.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:15.411269[0m [[32m[1minfo     [0m] [1mRetrieved 275 nodes and 633 edges in 0.91 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:15.460939[0m [[32m[1minfo     [0m] [1mDeleted 66 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:15.620295[0m [[32m[1minfo     [0m] [1mSession invalidation: deleted 1/1 session(s) for dataset 12f446de-9d31-5332-92f6-bcf3a9d27da4[0m [[0m[1m[34minvalidate_sessions[0m][0m
+
+[2m2026-09-20T22:59:15.650505[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_013986e4ac016874dd0e41e3354f4293.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:15.679100[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_53309dac9317bd30c59192061aefa965.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:15.704828[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_8996cf8fa6feb82c6a76de7952ec5ac2.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:15.732153[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_f4403dc6010db14bec07513e676cc4f9.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:15.754107[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_f634097d9a51f02a5bd78b9c99b17d55.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:16.905056[0m [[32m[1minfo     [0m] [1mRetrieved 266 nodes and 613 edges in 0.67 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:16.925164[0m [[32m[1minfo     [0m] [1mDeleted 8 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:16.967636[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_bcfc2f7e9e6bc0dfff45fa0becdfb3c7.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:18.068260[0m [[32m[1minfo     [0m] [1mRetrieved 256 nodes and 589 edges in 0.64 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:18.102239[0m [[32m[1minfo     [0m] [1mDeleted 12 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:18.144032[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_9d4384ff14500ef7225dbd228a03400d.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:19.302890[0m [[32m[1minfo     [0m] [1mRetrieved 246 nodes and 565 edges in 0.61 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:19.318457[0m [[32m[1minfo     [0m] [1mDeleted 12 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:19.357731[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_3b582b6fdd0f15a71d91641a3d48baa4.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:20.634772[0m [[32m[1minfo     [0m] [1mRetrieved 245 nodes and 564 edges in 0.88 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:20.666255[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_00077b93fa9721e65f62d5bdb9732c4d.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:22.032447[0m [[32m[1minfo     [0m] [1mRetrieved 234 nodes and 540 edges in 0.58 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:22.054362[0m [[32m[1minfo     [0m] [1mDeleted 12 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:22.097464[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_fef333dab616868ee093c6bbdaf420cd.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:23.385977[0m [[32m[1minfo     [0m] [1mRetrieved 225 nodes and 520 edges in 0.83 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:23.406581[0m [[32m[1minfo     [0m] [1mDeleted 8 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:23.447380[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_ad83df8c2f80865bef7f0721690a2412.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:670> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 0.150 seconds[0m
+
+[2m2026-09-20T22:59:24.883651[0m [[32m[1minfo     [0m] [1mRetrieved 219 nodes and 507 edges in 0.98 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:24.899406[0m [[32m[1minfo     [0m] [1mDeleted 12 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:24.939603[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_6c6783b83d3a9bd07f85c186b26c7f7e.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:26.215444[0m [[32m[1minfo     [0m] [1mRetrieved 213 nodes and 494 edges in 0.82 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:26.231707[0m [[32m[1minfo     [0m] [1mDeleted 12 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:26.271346[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_91525a30b5956a155f0a8e0210f1e065.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:27.855699[0m [[32m[1minfo     [0m] [1mRetrieved 189 nodes and 412 edges in 0.49 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:27.881453[0m [[32m[1minfo     [0m] [1mDeleted 61 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:27.925089[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_0e8b1a7582a5f29fc29260bc00d16c86.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:27.946735[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_370f9ba980ff94a38141bf9705f9cd90.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:27.966802[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_6caccd3f204568a95bb6454f4351f312.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:29.434958[0m [[32m[1minfo     [0m] [1mRetrieved 157 nodes and 306 edges in 0.39 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:29.457481[0m [[32m[1minfo     [0m] [1mDeleted 91 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:29.496993[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_b13dc052c0e9f0b7ab177d2d7a961f8a.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:29.516861[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_c22834735aed67bd3bd6733d65d1461c.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:29.536688[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_e55271c5f143706a9aeb54d3a064132a.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:31.688036[0m [[32m[1minfo     [0m] [1mRetrieved 125 nodes and 213 edges in 0.56 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:31.706137[0m [[32m[1minfo     [0m] [1mDeleted 80 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:31.905977[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_02b389e8ed6c0fc737e46877d27b53ce.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:31.926731[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_25cd4f767c6556491fbe8fc46b0d7297.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:31.947824[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_c6569ba510aa59071035b6f8dc571e28.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:31.969056[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_fc118d4ff16e098f26acf0837b81ad82.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:32.120294[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_42422384801ffd3d131bd9f6d52695a2.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:32.288071[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_2ae7ae4ccbedcd633262670ca02f0e83.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:33.201189[0m [[32m[1minfo     [0m] [1mRetrieved 121 nodes and 209 edges in 0.54 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:33.218598[0m [[32m[1minfo     [0m] [1mDeleted 4 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:33.257090[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_db99a8994cf4fc00150514f5501f4fe2.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:33.790695[0m [[32m[1minfo     [0m] [1mRetrieved 118 nodes and 207 edges in 0.29 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:33.808917[0m [[32m[1minfo     [0m] [1mDeleted 2 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:33.848964[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_139fa038939ac1a5902951265c69a7d1.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:34.928689[0m [[32m[1minfo     [0m] [1mRetrieved 98 nodes and 147 edges in 0.22 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:34.952155[0m [[32m[1minfo     [0m] [1mDeleted 46 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:34.990515[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_03a6f2eaa6438653071d745c2e99882d.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:35.011340[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_789a3018e5c54aaafebc8860c547b9af.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:35.031595[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_8c9dbace613212f075b33657830a8b39.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:35.678584[0m [[32m[1minfo     [0m] [1mRetrieved 65 nodes and 78 edges in 0.22 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:35.702856[0m [[32m[1minfo     [0m] [1mDeleted 63 orphaned EdgeType node(s)[0m [[0m[1m[34mprovenance_delete_planner[0m][0m
+
+[2m2026-09-20T22:59:35.828814[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_0f4471a2fbaa62f1d14a8e2e70a7a681.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:35.849825[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_9324af8562ebc4453944fa2d462ef362.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:35.869961[0m [[33m[1mwarning  [0m] [1mStored file to clean up was already gone: file:///Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.data_storage/text_ac2abe7f69c23ccc88caab672eed027b.txt[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:36.032378[0m [[32m[1minfo     [0m] [1mforget: deleted all data for user=e3926369-b2a0-43ee-9c8c-06c4e98480eb (32 datasets)[0m [[0m[1m[34mforget[0m][0m
+--reset-memory: forgot EVERY dataset in the graph
+host script: /opt/swarm/id_fix_proxy.py sha256 217ed12ff314
+host script: /opt/swarm/web/server.py sha256 9530cf75edd9
+host script: /opt/swarm/web/requirements.txt sha256 9434fbe28613
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:699> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 6.694 seconds[0m
+cognee: graph reachable from the harness, 162 APOC procedure(s), 8,246 node(s)
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:748> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 1.210 seconds[0m
+
+[1mReceived session ID: 47aa306ba37c421dab062d321b40724e[0m
+
+[1mNegotiated protocol version: 2025-11-25[0m
+  MCP web: 1 tool(s)
+  MCP web: lookup answered 2037 chars -- working
+
+[1mReceived session ID: 3179f39df39145a5a9de337dab4b4c95[0m
+
+[1mNegotiated protocol version: 2025-11-25[0m
+  MCP cognee: 11 tool(s)
+  MCP cognee: recall answered 99 chars -- working
+
+[1msetup plugin alembic.autogenerate.schemas[0m
+
+[1msetup plugin alembic.autogenerate.tables[0m
+
+[1msetup plugin alembic.autogenerate.types[0m
+
+[1msetup plugin alembic.autogenerate.constraints[0m
+
+[1msetup plugin alembic.autogenerate.defaults[0m
+
+[1msetup plugin alembic.autogenerate.comments[0m
+
+[1msetup plugin alembic.ext.checkconstraint_byname[0m
+
+[1mUsing database: sqlite+aiosqlite:////Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.cognee_system/databases/cognee_db[0m
+
+[1mContext impl SQLiteImpl.      [0m
+
+[1mWill assume non-transactional DDL.[0m
+
+[1mRelational migrations applied (target head).[0m
+
+[1mExecuting <Task pending name='Task-65633' coro=<aembedding() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/litellm/utils.py:1681> wait_for=<Future pending cb=[_chain_future.<locals>._call_check_cancel() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/futures.py:387, Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_release_waiter(<Future pendi...events.py:428>)() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:431] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.201 seconds[0m
+
+[2m2026-09-20T22:59:52.714091[0m [[32m[1minfo     [0m] [1mremember: added entry to session 'probe-1789945191'[0m [[0m[1m[34mremember[0m][0m
+
+[1mReceived session ID: fc56891338b04ae084f36d510f2cdd37[0m
+
+[1mNegotiated protocol version: 2025-11-25[0m
+  cognee: the agent's server returns what the harness remembers -- one memory, not two
+gpu: 1x NVIDIA H200, 143771 MiB | harness: a9ffe83
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixtures/x12sdk
+tarball: 274,890 bytes
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:789> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 1.012 seconds[0m
+
+[2m2026-09-20T22:59:53.892167[0m [[32m[1minfo     [0m] [1mSkipping LLM connection test: this pipeline has no LLM task.[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:53.892316[0m [[32m[1minfo     [0m] [1mTesting connection to Embedding endpoint...[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:54.350554[0m [[32m[1minfo     [0m] [1mRetrieved 65 nodes and 78 edges in 0.47 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:54.627530[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T22:59:54.639348[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T22:59:54.651264[0m [[32m[1minfo     [0m] [1mExtracting feedback QAs from session cache[0m [[0m[1m[34mextract_feedback_qas[0m][0m
+
+[2m2026-09-20T22:59:54.656628[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T22:59:54.666912[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T22:59:54.711649[0m [[32m[1minfo     [0m] [1mFeedback weight memify pipeline completed[0m [[0m[1m[34mapply_feedback_weights_pipeline[0m][0m [36mextra[0m=[35m{'dataset_id': '662a3447-8361-5fa8-862d-1541b8cdf771', 'session_count': 1, 'alpha': 0.1, 'batch_size': 100}[0m
+
+[2m2026-09-20T22:59:54.711774[0m [[32m[1minfo     [0m] [1mimprove: feedback weights applied from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T22:59:54.774438[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T22:59:54.784662[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_user_sessions`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T22:59:54.794838[0m [[32m[1minfo     [0m] [1mFetching session metadata for current user[0m [[0m[1m[34mextract_user_sessions[0m][0m
+
+[2m2026-09-20T22:59:54.800666[0m [[32m[1minfo     [0m] [1mExtracted session probe-1789945191 via SessionManager: 1 new of 1 total Q&A pairs[0m [[0m[1m[34mextract_user_sessions[0m][0m
+
+[2m2026-09-20T22:59:54.800758[0m [[32m[1minfo     [0m] [1mCoroutine task started: `cognify_session`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T22:59:54.810791[0m [[32m[1minfo     [0m] [1mProcessing session probe-1789945191 window (1 entries persisted after this) for cognification[0m [[0m[1m[34mcognify_session[0m][0m
+
+[2m2026-09-20T22:59:54.881402[0m [[32m[1minfo     [0m] [1mPipeline run started: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T22:59:54.891785[0m [[32m[1minfo     [0m] [1mCoroutine task started: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T22:59:54.902299[0m [[32m[1minfo     [0m] [1mCoroutine task started: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T22:59:54.912898[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset starting[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.912983[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] starting: save files and compute content hashes (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.913095[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] finished in 0.000 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.913145[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] starting: resolve data IDs (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.922943[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] finished in 0.010 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.923020[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] starting: process files and build data records (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.923125[0m [[32m[1minfo     [0m] [1mRegistered loader: pypdf_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923194[0m [[32m[1minfo     [0m] [1mRegistered loader: text_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923281[0m [[32m[1minfo     [0m] [1mRegistered loader: code_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923332[0m [[32m[1minfo     [0m] [1mRegistered loader: image_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923381[0m [[32m[1minfo     [0m] [1mRegistered loader: audio_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923426[0m [[32m[1minfo     [0m] [1mRegistered loader: video_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923470[0m [[32m[1minfo     [0m] [1mRegistered loader: csv_loader [0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923532[0m [[32m[1minfo     [0m] [1mRegistered loader: unstructured_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923577[0m [[32m[1minfo     [0m] [1mRegistered loader: advanced_pdf_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923636[0m [[32m[1minfo     [0m] [1mRegistered loader: beautiful_soup_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.923763[0m [[32m[1minfo     [0m] [1mRegistered loader: docling_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T22:59:54.924349[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] finished in 0.001 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.924408[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] starting: DB commit (1 new, 0 updated)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.932599[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] finished in 0.008 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.932686[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset finished in 0.020 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T22:59:54.932815[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T22:59:54.943414[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T22:59:54.953572[0m [[32m[1minfo     [0m] [1mPipeline run completed: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T22:59:55.019830[0m [[32m[1minfo     [0m] [1mTesting connection to LLM endpoint...[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T22:59:55.222103[0m [[32m[1minfo     [0m] [1mIngested 1 skill(s) into dataset msf-x12sdk[0m [[0m[1m[34mcognee.tools.ingest_skills[0m][0m
+
+[2m2026-09-20T22:59:55.437436[0m [[32m[1minfo     [0m] [1mRetrieved 66 nodes and 79 edges in 0.18 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T22:59:55.646953[0m [[32m[1minfo     [0m] [1mRetrieved 66 nodes and 79 edges in 0.17 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+skill: 1,684 chars in Cognee, dataset msf-x12sdk
+memory mode: hybrid  (mcp tools: True, injected context: True)
+distiller: cognee  (its own authoring model)
+  warm-0 memory tools: 1 loaded
+
+[1mExecuting <Task finished name='Task-1' coro=<main_async() done, defined at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:652> exception=RuntimeError("put <bound method AgentWorkspace.distill_home of AgentWorkspace(host=SwarmHost(host='103.196.86.20', port=26707, identity=PosixPath('/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.ssh_runpod/miss_slaytona_forje_pod_key'), user='root'), label='warm-0', model='mistralai/Mistral-Small-4-119B-2603', auto_compact_threshold=128000, repo_name='repo', model_base_url='http://127.0.0.1:8821')>/config.toml failed: bash: line 1: <bound method AgentWorkspace.distill_home of AgentWorkspace(host=SwarmHost(host='103.196.86.20', port=26707, identity=PosixPath('/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.ssh_runpod/miss_slaytona_forje_pod_key'), user='root'), label='warm-0', model='mistralai/Mistral-Small-4-119B-2603', auto_compact_threshold=128000, repo_name='repo', model_base_url='http://127.0.0.1:88") created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 24.465 seconds[0m
+
+[2m2026-09-20T23:00:20.366673[0m [[31m[1merror    [0m] [1mException                     [0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m [36mexception_message[0m=[35m"put <bound method AgentWorkspace.distill_home of AgentWorkspace(host=SwarmHost(host='103.196.86.20', port=26707, identity=PosixPath('/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.ssh_runpod/miss_slaytona_forje_pod_key'), user='root'), label='warm-0', model='mistralai/Mistral-Small-4-119B-2603', auto_compact_threshold=128000, repo_name='repo', model_base_url='http://127.0.0.1:8821')>/config.toml failed: bash: line 1: <bound method AgentWorkspace.distill_home of AgentWorkspace(host=SwarmHost(host='103.196.86.20', port=26707, identity=PosixPath('/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.ssh_runpod/miss_slaytona_forje_pod_key'), user='root'), label='warm-0', model='mistralai/Mistral-Small-4-119B-2603', auto_compact_threshold=128000, repo_name='repo', model_base_url='http://127.0.0.1:88"[0m [36mexception_type[0m=[35mRuntimeError[0m [36mtraceback[0m=[35mTrue[0m
+[31m╭─[0m[31m────────────────────[0m[31m [0m[1;31mTraceback [0m[1;2;31m(most recent call last)[0m[31m [0m[31m─────────────────────[0m[31m─╮[0m
+[31m│[0m [2m/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/[0m[1mrun.py[0m:1462 in  [31m│[0m
+[31m│[0m <module>                                                                     [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m   [2m1459 [0m                                                                      [31m│[0m
+[31m│[0m   [2m1460 [0m                                                                      [31m│[0m
+[31m│[0m   [2m1461 [0m[94mif[0m [91m__name__[0m == [33m"[0m[33m__main__[0m[33m"[0m:                                            [31m│[0m
+[31m│[0m [31m❱ [0m1462 [2m│   [0m[94mraise[0m [96mSystemExit[0m([1;4mmain()[0m)                                          [31m│[0m
+[31m│[0m   [2m1463 [0m                                                                      [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m [2m/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/[0m[1mrun.py[0m:1457 in  [31m│[0m
+[31m│[0m main                                                                         [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m   [2m1454 [0m[2m│   │   │   │   [0m_port_of(args.mcp_url), args.cognee_local_port))      [31m│[0m
+[31m│[0m   [2m1455 [0m[2m│   │   │   [0m[96mprint[0m([33mf[0m[33m"[0m[33mreverse tunnel: pod 127.0.0.1:[0m[33m{[0m_port_of(args.mcp_ [31m│[0m
+[31m│[0m   [2m1456 [0m[2m│   │   │   │     [0m[33mf[0m[33m"[0m[33m-> harness 127.0.0.1:[0m[33m{[0margs.cognee_local_port[33m}[0m[33m"[0m)   [31m│[0m
+[31m│[0m [31m❱ [0m1457 [2m│   │   [0mrc = [1;4masyncio.run(main_async(args, watch), debug=[0m[1;4;95mnot[0m[1;4m args.no_l[0m [31m│[0m
+[31m│[0m   [2m1458 [0m[2m│   [0m[94mreturn[0m rc                                                         [31m│[0m
+[31m│[0m   [2m1459 [0m                                                                      [31m│[0m
+[31m│[0m   [2m1460 [0m                                                                      [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m [2m/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versi[0m [31m│[0m
+[31m│[0m [2mons/3.11/lib/python3.11/asyncio/[0m[1mrunners.py[0m:190 in run                        [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m   [2m187 [0m[2m│   │   │   [0m[33m"[0m[33masyncio.run() cannot be called from a running event loop[0m[33m"[0m [31m│[0m
+[31m│[0m   [2m188 [0m[2m│   [0m                                                                   [31m│[0m
+[31m│[0m   [2m189 [0m[2m│   [0m[94mwith[0m Runner(debug=debug) [94mas[0m runner:                                [31m│[0m
+[31m│[0m [31m❱ [0m190 [2m│   │   [0m[94mreturn[0m [1;4mrunner.run(main)[0m                                        [31m│[0m
+[31m│[0m   [2m191 [0m                                                                       [31m│[0m
+[31m│[0m   [2m192 [0m                                                                       [31m│[0m
+[31m│[0m   [2m193 [0m[94mdef[0m[90m [0m[92m_cancel_all_tasks[0m(loop):                                           [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m [2m/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versi[0m [31m│[0m
+[31m│[0m [2mons/3.11/lib/python3.11/asyncio/[0m[1mrunners.py[0m:118 in run                        [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m   [2m115 [0m[2m│   │   [0m                                                               [31m│[0m
+[31m│[0m   [2m116 [0m[2m│   │   [0m[96mself[0m._interrupt_count = [94m0[0m                                      [31m│[0m
+[31m│[0m   [2m117 [0m[2m│   │   [0m[94mtry[0m:                                                           [31m│[0m
+[31m│[0m [31m❱ [0m118 [2m│   │   │   [0m[94mreturn[0m [96mself[0m._loop.run_until_complete(task)                 [31m│[0m
+[31m│[0m   [2m119 [0m[2m│   │   [0m[94mexcept[0m exceptions.CancelledError:                              [31m│[0m
+[31m│[0m   [2m120 [0m[2m│   │   │   [0m[94mif[0m [96mself[0m._interrupt_count > [94m0[0m:                              [31m│[0m
+[31m│[0m   [2m121 [0m[2m│   │   │   │   [0muncancel = [96mgetattr[0m(task, [33m"[0m[33muncancel[0m[33m"[0m, [94mNone[0m)             [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m [2m/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versi[0m [31m│[0m
+[31m│[0m [2mons/3.11/lib/python3.11/asyncio/[0m[1mbase_events.py[0m:654 in run_until_complete     [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m   [2m 651 [0m[2m│   │   [0m[94mif[0m [95mnot[0m future.done():                                         [31m│[0m
+[31m│[0m   [2m 652 [0m[2m│   │   │   [0m[94mraise[0m [96mRuntimeError[0m([33m'[0m[33mEvent loop stopped before Future comp[0m [31m│[0m
+[31m│[0m   [2m 653 [0m[2m│   │   [0m                                                              [31m│[0m
+[31m│[0m [31m❱ [0m 654 [2m│   │   [0m[94mreturn[0m [1;4mfuture.result()[0m                                        [31m│[0m
+[31m│[0m   [2m 655 [0m[2m│   [0m                                                                  [31m│[0m
+[31m│[0m   [2m 656 [0m[2m│   [0m[94mdef[0m[90m [0m[92mstop[0m([96mself[0m):                                                   [31m│[0m
+[31m│[0m   [2m 657 [0m[2;90m│   │   [0m[33m"""Stop running the event loop.[0m                               [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m [2m/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/[0m[1mrun.py[0m:848 in   [31m│[0m
+[31m│[0m main_async                                                                   [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m   [2m 845 [0m[2m│   │   │   [0m[2m# working directory (so it cannot edit the checkout betwe[0m [31m│[0m
+[31m│[0m   [2m 846 [0m[2m│   │   │   [0m[2m# attempts) and separate endpoint (so its tokens are coun[0m [31m│[0m
+[31m│[0m   [2m 847 [0m[2m│   │   │   [0m[2m# apart).[0m                                                 [31m│[0m
+[31m│[0m [31m❱ [0m 848 [2m│   │   │   [0m[1;4mws.enable_distillation(mcp_url=args.mcp_url,[0m              [31m│[0m
+[31m│[0m   [2m 849 [0m[2m│   │   │   │   │   │   │   │      [0m[1;4mmodel_base_url=args.distill_proxy)[0m [31m│[0m
+[31m│[0m   [2m 850 [0m[2m│   │   │   [0mws.invoke_vibe([33m"[0m[33mReply with the single word: ready[0m[33m"[0m, timeo [31m│[0m
+[31m│[0m   [2m 851 [0m[2m│   │   [0m[94melse[0m:                                                         [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m [2m/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/[0m[1magent_workspace[0m [31m│[0m
+[31m│[0m [1m.py[0m:675 in enable_distillation                                               [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m   [2m 672 [0m[2m│   │   [0m) + _MCP_SERVER_TEMPLATE.format(name=[33m"[0m[33mneo4j-agent-memory[0m[33m"[0m, ur [31m│[0m
+[31m│[0m   [2m 673 [0m[2m│   │   [0m[96mself[0m.host.run_as([96mself[0m.user, [33mf[0m[33m"[0m[33mmkdir -p [0m[33m{[0m[96mself[0m.distill_home[33m}[0m[33m [0m[33m{[0m[96ms[0m [31m│[0m
+[31m│[0m   [2m 674 [0m[2m│   │   │   │   │   │    [0mcheck=[94mFalse[0m)                                 [31m│[0m
+[31m│[0m [31m❱ [0m 675 [2m│   │   [0m[1;4;96mself[0m[1;4m.host.put(config.encode(), [0m[1;4;33mf[0m[1;4;33m"[0m[1;4;33m{[0m[1;4;96mself[0m[1;4m.distill_home[0m[1;4;33m}[0m[1;4;33m/config.t[0m [31m│[0m
+[31m│[0m   [2m 676 [0m[2m│   │   │   │   │     [0m[1;4mmode=[0m[1;4;33m"[0m[1;4;33m600[0m[1;4;33m"[0m[1;4m, owner=[0m[1;4;33mf[0m[1;4;33m"[0m[1;4;33m{[0m[1;4;96mself[0m[1;4m.user[0m[1;4;33m}[0m[1;4;33m:[0m[1;4;33m{[0m[1;4;96mself[0m[1;4m.user[0m[1;4;33m}[0m[1;4;33m"[0m[1;4m)[0m   [31m│[0m
+[31m│[0m   [2m 677 [0m[2m│   │   [0m[2m# No hooks.toml in either location. Nothing writes to the gra[0m [31m│[0m
+[31m│[0m   [2m 678 [0m[2m│   │   [0m[2m# from a tool call any more, here least of all.[0m               [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m [2m/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/[0m[1magent_workspace[0m [31m│[0m
+[31m│[0m [1m.py[0m:369 in put                                                               [31m│[0m
+[31m│[0m                                                                              [31m│[0m
+[31m│[0m   [2m 366 [0m[2m│   │   │   [0m[96minput[0m=data, capture_output=[94mTrue[0m, timeout=[94m600.0[0m,           [31m│[0m
+[31m│[0m   [2m 367 [0m[2m│   │   [0m)                                                             [31m│[0m
+[31m│[0m   [2m 368 [0m[2m│   │   [0m[94mif[0m proc.returncode != [94m0[0m:                                      [31m│[0m
+[31m│[0m [31m❱ [0m 369 [2m│   │   │   [0m[1;4;94mraise[0m[1;4m [0m[1;4;96mRuntimeError[0m[1;4m([0m[1;4;33mf[0m[1;4;33m"[0m[1;4;33mput [0m[1;4;33m{[0m[1;4mdst[0m[1;4;33m}[0m[1;4;33m failed: [0m[1;4;33m{[0m[1;4mproc.stderr.decod[0m [31m│[0m
+[31m│[0m   [2m 370 [0m                                                                      [31m│[0m
+[31m│[0m   [2m 371 [0m                                                                      [31m│[0m
+[31m│[0m   [2m 372 [0m_FRONTMATTER_BOUNDARY = re.compile([33mr[0m[33m"[0m[33m^-[0m[33m{[0m[33m3,}[0m[33m\[0m[33ms*$[0m[33m"[0m, re.MULTILINE)       [31m│[0m
+[31m╰──────────────────────────────────────────────────────────────────────────────╯[0m
+[1;91mRuntimeError: [0mput [1m<[0m[1;95mbound[0m[39m method AgentWorkspace.distill_home of [0m
+[1;35mAgentWorkspace[0m[1;39m([0m[33mhost[0m[39m=[0m[1;35mSwarmHost[0m[1;39m([0m[33mhost[0m[39m=[0m[32m'103.196.86.20'[0m[39m, [0m[33mport[0m[39m=[0m[1;36m26707[0m[39m, [0m
+[33midentity[0m[39m=[0m[1;35mPosixPath[0m[1;39m([0m[32m'/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.ssh_[0m
+[32mrunpod/miss_slaytona_forje_pod_key'[0m[1;39m)[0m[39m, [0m[33muser[0m[39m=[0m[32m'root'[0m[1;39m)[0m[39m, [0m[33mlabel[0m[39m=[0m[32m'warm-0'[0m[39m, [0m
+[33mmodel[0m[39m=[0m[32m'mistralai/Mistral-Small-4-119B-2603'[0m[39m, [0m[33mauto_compact_threshold[0m[39m=[0m[1;36m128000[0m[39m, [0m
+[33mrepo_name[0m[39m=[0m[32m'repo'[0m[39m, [0m[33mmodel_base_url[0m[39m=[0m[32m'http://127.0.0.1:8821'[0m[1;39m)[0m[1m>[0m[35m/[0m[95mconfig.toml[0m failed: 
+bash: line [1;36m1[0m: <bound method AgentWorkspace.distill_home of 
+[1;35mAgentWorkspace[0m[1m([0m[33mhost[0m=[1;35mSwarmHost[0m[1m([0m[33mhost[0m=[32m'103.196.86.20'[0m, [33mport[0m=[1;36m26707[0m, 
+[33midentity[0m=[1;35mPosixPath[0m[1m([0m[32m'/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.ssh_[0m
+[32mrunpod/miss_slaytona_forje_pod_key'[0m[1m)[0m, [33muser[0m=[32m'root'[0m[1m)[0m, [33mlabel[0m=[32m'warm-0'[0m, 
+[33mmodel[0m=[32m'mistralai/Mistral-Small-4-119B-2603'[0m, [33mauto_compact_threshold[0m=[1;36m128000[0m, 
+[33mrepo_name[0m=[32m'repo'[0m, [33mmodel_base_url[0m='[4;94mhttp://127.0.0.1:88[0m
+
+Traceback (most recent call last):
+  File "/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py", line 1462, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py", line 1457, in main
+    rc = asyncio.run(main_async(args, watch), debug=not args.no_loop_debug)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py", line 848, in main_async
+    ws.enable_distillation(mcp_url=args.mcp_url,
+  File "/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/agent_workspace.py", line 675, in enable_distillation
+    self.host.put(config.encode(), f"{self.distill_home}/config.toml",
+  File "/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/agent_workspace.py", line 369, in put
+    raise RuntimeError(f"put {dst} failed: {proc.stderr.decode()[:400]}")
+RuntimeError: put <bound method AgentWorkspace.distill_home of AgentWorkspace(host=SwarmHost(host='103.196.86.20', port=26707, identity=PosixPath('/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.ssh_runpod/miss_slaytona_forje_pod_key'), user='root'), label='warm-0', model='mistralai/Mistral-Small-4-119B-2603', auto_compact_threshold=128000, repo_name='repo', model_base_url='http://127.0.0.1:8821')>/config.toml failed: bash: line 1: <bound method AgentWorkspace.distill_home of AgentWorkspace(host=SwarmHost(host='103.196.86.20', port=26707, identity=PosixPath('/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.ssh_runpod/miss_slaytona_forje_pod_key'), user='root'), label='warm-0', model='mistralai/Mistral-Small-4-119B-2603', auto_compact_threshold=128000, repo_name='repo', model_base_url='http://127.0.0.1:88

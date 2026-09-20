@@ -293,13 +293,17 @@ def test_the_prompt_is_the_users_request_and_not_our_coaching() -> None:
 
 
 def test_warm_gets_the_memory_steps_and_the_packages_own_instructions() -> None:
-    """Warm = the same task, the operator's longer list, and
-    neo4j-agent-memory's own MCP server instructions, verbatim.
+    """Warm = the same task, the operator's longer list, and a statement
+    of what memory tools exist.
 
-    The verbatim property is the load-bearing one. Vibe drops the
-    `instructions` field from MCP initialize, so relaying it is the only way
-    the agent ever learns what its own memory tools are for; the moment it gets
-    paraphrased or trimmed we are writing the guidance ourselves again.
+    HISTORY WORTH KEEPING. This used to assert that neo4j-agent-memory's
+    own 1,935-character MCP instructions were relayed VERBATIM, because
+    Vibe drops the `instructions` field from MCP initialize and relaying
+    it was the only way the agent learned what its memory tools were for
+    -- 40 consecutive runs had ended with zero agent-initiated memory
+    calls before that was found. Cognee sends no instructions at all, so
+    there is nothing to relay; the assertion below guards the replacement
+    against drifting from description into coaching.
 
     NOTE what is no longer true: cold's prompt used to be a byte-exact PREFIX
     of warm's, so SGLang's RadixAttention could share the whole task text
@@ -307,12 +311,21 @@ def test_warm_gets_the_memory_steps_and_the_packages_own_instructions() -> None:
     list, so the shared prefix ends at the first sentence. That is a real cost
     of per-arm instructions and it is the operator's call, not a regression to
     fix here."""
-    from neo4j_agent_memory.mcp._instructions import get_instructions
+    from orchestrator.cognee_layer import MEMORY_TOOLS_GUIDE
     from orchestrator.vibe_agent import _task_prompt
 
     warm = _task_prompt(None, memory_enabled=True)
     cold = _task_prompt(None, memory_enabled=False)
-    assert warm.endswith(get_instructions("extended"))
+    assert warm.endswith(MEMORY_TOOLS_GUIDE)
+    # Cognee's server ships NO instructions -- `initialize()` returns
+    # `instructions=None` -- so there is nothing to relay and this text is
+    # ours. It therefore has to be held to the standard the relayed
+    # payload got for free: state what exists, do not coach. If a future
+    # edit starts telling the agent WHEN to call memory, the experiment
+    # is measuring the prompt.
+    for coaching in ("ALWAYS", "You should", "Make sure to", "first call"):
+        assert coaching not in MEMORY_TOOLS_GUIDE, (
+            f"{coaching!r} is instruction, not description")
     assert "\n14. Continue iteratively until the migration is complete." in warm
     assert "15." not in warm
     # The three memory steps, and the closing note that they are optional.
@@ -645,7 +658,13 @@ def test_neo4j_settings_have_no_silent_default() -> None:
     MCP server used the hosted one, so the two halves of a run read different
     graphs -- and the local one still held a trace containing a complete,
     correct migration at 33/33. Which database a measurement runs against must
-    not be decided by an unset variable."""
+    not be decided by an unset variable.
+
+    Carried across to Cognee unchanged in spirit: `cognee_layer.configure`
+    raises on a missing NEO4J_URI rather than letting cognee fall back to
+    its default embedded Kuzu store, which would put the graph somewhere
+    nobody is looking while every log line still said "ok".
+    """
     import subprocess
     import sys
 
@@ -653,11 +672,11 @@ def test_neo4j_settings_have_no_silent_default() -> None:
 
     # A fresh interpreter with the vars removed: import must fail loudly.
     result = subprocess.run(
-        [sys.executable, "-c", "import orchestrator.memory"],
+        [sys.executable, "-c", "import orchestrator.cognee_layer as c; c.configure()"],
         cwd=REPO_ROOT, capture_output=True, text=True,
         env={"PATH": "/usr/bin:/bin", "HOME": "/tmp"},
     )
-    assert result.returncode != 0, "orchestrator.memory imported with no NEO4J_URI set"
+    assert result.returncode != 0, "cognee_layer.configure() ran with no NEO4J_URI set"
     assert "NEO4J_URI is not set" in result.stderr, result.stderr[-500:]
 
 

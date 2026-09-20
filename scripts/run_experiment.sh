@@ -34,6 +34,7 @@ HOST="${1:?ssh host}"
 PORT="${2:?ssh port}"
 ATTEMPTS="${3:-3}"
 ARMS="${4:-both}"
+shift 4 2>/dev/null || shift $#      # anything further is passed to run.py
 KEY="${MSF_SSH_KEY:-$HOME/.ssh/msf-pod}"
 FIXTURE="${MSF_FIXTURE_DIR:-fixtures/x12sdk}"
 LOG="runs/experiment-$(date -u +%Y%m%dT%H%M%SZ).log"
@@ -52,6 +53,7 @@ from orchestrator.manifest import load_manifest; print(load_manifest()['test_com
     --model mistralai/Mistral-Small-4-119B-2603 --auto-compact 128000 \
     --gpu-usd-per-hour 4.59 \
     --ssh-host "$HOST" --ssh-port "$PORT" --ssh-key "$KEY" \
+    "$@" \
     2>&1 | tee "$LOG"
 
 # Step 7. Derived from the event log, which is the only record that

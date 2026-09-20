@@ -31,35 +31,20 @@ from typing import Any
 from pathlib import Path
 
 TOOLCHAIN = "/opt/agent-toolchain"
-# The post_tool hook client. Executable by agents, readable by agents, and
-# carrying no secret -- it knows a port and its own label. Everything that
-# needs a credential lives behind /opt/swarm, which is 0711: an agent can
-# traverse to a path it is told about and cannot enumerate the directory.
-# Overridable so the write path can be exercised off-pod. Vibe executes
-# this string itself, so the harness's own path mapping does not apply to
-# it -- pointing it at the pod's absolute path from a laptop gives a hook
-# that can never run, and a hook that cannot run fails SILENTLY: the run
-# exits 0 and the graph is empty, which looks exactly like an agent that
-# made no tool calls.
-HOOK_PATH = os.environ.get("MSF_HOOK_PATH", "/opt/swarm/hook.py")
-# Named explicitly, the way render_config does it (`f"{sys.executable}
-# {STEP_HOOK_SCRIPT} ..."`). harness/memory_step_hook.py has NO shebang -- it
-# opens with its docstring -- so a bare `/opt/swarm/hook.py` is handed to sh,
-# which reports `line 4: post_tool: command not found` on stderr and writes
-# nothing usable to stdout.
+# THE HOOK AND THE RELAY ARE GONE, and nothing replaces them on the pod.
 #
-# The hook fails open by design, so this is silent: run 12 wrote 0 steps with
-# 0 errors while the agent made 85 tool calls, and the summary's own guard had
-# to be the thing that noticed. `test -x hook.py` passes throughout -- the
-# file IS executable, it just is not a shell script.
+# They were a `post_tool` hook client and a stream tee that turned every
+# tool call into a ReasoningStep in the old memory layer. Both are
+# retired with it (archive/neo4j-agent-memory-2026-09-20/). Under Cognee
+# the agent writes what it chooses through its MCP server and the harness
+# writes the rest from its own process, so NO harness code runs on the
+# pod at all -- which also retires the whole class of bug where the pod
+# ran a version nobody could identify.
+#
+# `HOOK_PYTHON` survives because it is not about the hook: it is the
+# pod's own interpreter, used to run small stdlib-only probes over SSH,
+# and it is named explicitly because a bare script path is handed to sh.
 HOOK_PYTHON = "/usr/bin/python3"
-# Tees Vibe's streamed entries so the agent's REASONING reaches the sidecar
-# while the agent is still running -- see harness/reasoning_relay.py. Without
-# it every ReasoningStep.thought is tool-argument JSON, and `search_steps`
-# embeds thought+action, so the graph is searchable by what was typed rather
-# than by why. Warm only: it is part of the memory path, and cold has none.
-RELAY_PATH = os.environ.get("MSF_RELAY_PATH",
-                            "/opt/swarm/reasoning_relay.py")
 
 # Where the two scripts above come from. THE REPO, and only the repo.
 #
@@ -83,16 +68,21 @@ HARNESS_DIR = REPO_DIR / "harness"
 def host_scripts() -> dict[str, tuple[str, str]]:
     """{local source: (remote path, mode)}.
 
-    A FUNCTION, not a module constant, because `HOOK_PATH` and
-    `RELAY_PATH` are rebound after import -- the rehearsal points them at
-    its own tree, since Vibe executes those two commands itself and no
-    path mapping can reach them. A dict built at import time would have
-    installed to `/opt/swarm/` on the operator's laptop while the agent
-    read from the temp root, and the rehearsal would have tested nothing.
+    A FUNCTION, not a module constant. It was one when `HOOK_PATH` and
+    `RELAY_PATH` still existed and were rebound after import by the
+    rehearsal -- a dict built at import time installed to `/opt/swarm/` on
+    the operator's laptop while the agent read from the temp root, so the
+    rehearsal tested nothing. Kept as a function because the same trap
+    returns the moment anything here becomes path-dependent again.
     """
     return {
-        "memory_step_hook.py": (HOOK_PATH, "755"),
-        "reasoning_relay.py": (RELAY_PATH, "755"),
+        # THE HOOK AND THE RELAY ARE GONE. They existed so that every tool
+        # call wrote a ReasoningStep into the old layer, and the relay
+        # existed on top of that because Vibe's `turnId` never changes
+        # within a conversation turn -- getting that wrong once made 988
+        # of 993 steps carry serialised tool JSON instead of reasoning.
+        # Cognee's agents call `remember` themselves through its MCP
+        # server, so there is no second writer to keep in step.
         "id_fix_proxy.py": ("/opt/swarm/id_fix_proxy.py", "755"),
         # The web-lookup MCP server, which BOTH arms get -- it is not part
         # of the treatment, and an arm missing it is an arm difference.
@@ -125,13 +115,13 @@ def host_modules() -> dict[str, tuple[str, str]]:
     established. Modes are 0700/0600 under a 0711 directory: the sidecar
     holds Neo4j credentials at runtime and no agent may read it.
     """
-    return {
-        "swarm/sidecar_main.py": ("/opt/swarm/swarm/sidecar_main.py", "700"),
-        "orchestrator/__init__.py": ("/opt/swarm/orchestrator/__init__.py", "600"),
-        "orchestrator/memory.py": ("/opt/swarm/orchestrator/memory.py", "600"),
-        "orchestrator/step_memory.py": ("/opt/swarm/orchestrator/step_memory.py",
-                                        "600"),
-    }
+    # EMPTY UNDER COGNEE, and that is the point. These four files were the
+    # sidecar and the memory layer it imported, and they had to travel
+    # because the pod ran our code. Cognee's MCP server is installed by
+    # provision_cognee.sh from PyPI into its own venv, so there is no
+    # harness module on the pod at all -- which also retires the whole
+    # class of bug where the pod ran a version nobody could identify.
+    return {}
 
 
 def install_host_scripts(host: "SwarmHost") -> dict[str, str]:
@@ -390,62 +380,11 @@ def _is_script(relative_path: str) -> bool:
     return relative_path.startswith(_SCRIPT_DIRS)
 
 
-def inline_references(files: dict[str, bytes]) -> dict[str, bytes]:
-    """Append `references/` verbatim to SKILL.md, keeping the files too.
-
-    WHY. AIP's progressive disclosure relocates detail out of the body and
-    into `references/`, to be read on demand. Measured in experiment
-    swarm-1789903474: the model NEVER reads them. Zero reference reads
-    across all six attempts of both arms -- and not for want of directions.
-    Vibe's own skill reply hands the agent the absolute base directory, the
-    line "Relative paths in this skill are relative to this base
-    directory", and a listing of all five files. It simply does not follow
-    pointers.
-
-    What that cost: v1's relocation "succeeded" (body 5159 -> 2224 tokens,
-    5 files) and turned the procedure into 918 words in which 21 of 24
-    steps said only "read the matching step in references/X.md and follow
-    it". Attempt 2 ran on that table of contents. v2 and v3 kept their
-    content inline only because their relocation passes FAILED, and attempt
-    3 -- running on v2 -- produced a correct seven-item plan inside 14
-    turns. The inline version demonstrably works and the relocated one
-    demonstrably does not.
-
-    WHAT THIS IS NOT. It is not a change to AIP, and not a cap on the
-    author. The package stays exactly as AIP specifies -- the `references/`
-    files are still written, still separate, still what gets validated,
-    versioned and archived. This changes only the RENDERING handed to this
-    model, at install time, and it is applied to warm in every attempt so
-    it cannot skew one attempt against another.
-
-    Idempotent, and a no-op when there is nothing to inline.
-    """
-    refs = sorted(r for r in files
-                  if r.startswith("references/") and r.endswith(".md"))
-    if not refs or "SKILL.md" not in files:
-        return dict(files)
-    body = files["SKILL.md"].decode("utf-8", "replace")
-    if _INLINED_MARKER in body:
-        return dict(files)
-    parts = [body.rstrip(), "", _INLINED_MARKER, ""]
-    for rel in refs:
-        parts.append(f"### {rel}")
-        parts.append("")
-        parts.append(files[rel].decode("utf-8", "replace").strip())
-        parts.append("")
-    out = dict(files)
-    out["SKILL.md"] = "\n".join(parts).encode("utf-8")
-    return out
 
 
 # Marks the appended block, so inlining twice is a no-op and so anyone
 # reading a pod's SKILL.md can see at a glance that the tail is not the
 # author's body.
-_INLINED_MARKER = (
-    "<!-- REFERENCE MATERIAL, INLINED AT INSTALL TIME. The files below are "
-    "also present separately under references/ -- this copy exists because "
-    "the model does not follow relative pointers. See "
-    "agent_workspace.inline_references. -->")
 
 
 def _dir_sha(file_digests: dict[str, str]) -> str:
@@ -523,8 +462,9 @@ class AgentWorkspace:
 
     # Filled by refresh(), which runs inside run_vibe -- see refresh().
     _cache: dict | None = field(default=None, init=False, repr=False, compare=False)
-    # Set by enable_memory() for warm agents; None means no relay in the
-    # pipeline, which is what cold gets.
+    # Kept for the rehearsal's LocalWorkspace, which overrides
+    # `_vibe_command` and still reads it. Nothing in production sets it:
+    # there is no relay to pipe a stream through any more.
     relay_port: int | None = field(default=None, init=False, repr=False, compare=False)
     # The distiller's own endpoint, so its tokens are counted apart from
     # the attempt's. Set by enable_distillation.
@@ -682,8 +622,17 @@ class AgentWorkspace:
         """
         self.invoke_vibe("Reply with the single word: ready", timeout=300.0)
         tools = self.loaded_tools()
-        memory_tools = {t for t in tools if "memor" in t.lower() or "step" in t.lower()
-                        or "trace" in t.lower() or "graph" in t.lower()}
+        # BY THE SERVER'S ALIAS, because the tool names changed with the
+        # server. cognee publishes `recall`/`remember`/`search`, which Vibe
+        # republishes as `cognee_*` -- none of them contain "memor",
+        # "step", "trace" or "graph". The old filter matched exactly ONE of
+        # them, `cognee_visualize_graph_ui`, so this gate would have passed
+        # on a server that had lost every tool an agent could retrieve
+        # with. Measured on the first pod run: "memory tools: 1 loaded".
+        memory_tools = {t for t in tools
+                        if t.startswith("cognee")
+                        or any(k in t.lower() for k in
+                               ("memor", "recall", "remember"))}
         if not memory_tools:
             raise RuntimeError(
                 f"{self.label}: Vibe loaded no memory tools. It loaded "
@@ -711,173 +660,24 @@ class AgentWorkspace:
     # gets that error fed back to it and fixes it, which is what a developer
     # does. `ATTEMPT_DONE.broke_syntax` records when that happened.
 
-    def install_skill(self, files: dict[str, bytes], *, name: str,
-                      version: int | None = None) -> dict[str, str]:
-        """Install a whole AIP skill package where Vibe discovers it. Warm only.
 
-        An AIP skill is a DIRECTORY, not a file: SKILL.md, `source/` with the
-        bundled schema the validator resolves `schemaId` against, and
-        optionally `scripts/`, `references/` and `assets/`. A procedure whose
-        steps carry `script:` entries is useless if the scripts did not
-        travel, and the failure is quiet -- the model reads a step it cannot
-        perform and improvises.
-
-        `$VIBE_HOME/skills/<name>/` is Vibe's own global skill path
-        (GLOBAL_SKILLS_DIR in vibe/core/config/harness_files/_paths.py), and
-        every agent already has its own VIBE_HOME -- so warm has a skill and
-        cold has no directory to read one from. Same shape as the memory
-        server: absent for cold, not gated.
-
-        The tree is recreated, not overwritten. Vibe lists every skill it
-        finds in the system prompt, so a stale version left beside the new
-        one is offered to the agent as an alternative procedure, and a
-        deleted file would otherwise live on forever.
-
-        Everything is verified BY THE AGENT'S OWN USER, because that is the
-        claim that matters: not "root wrote these bytes" but "the agent can
-        read this file and execute that script". Returns
-        {"dir": ..., "body": ...} -- hashes computed from the read-back, not
-        from what was sent.
-
-        `version` is recorded on the workspace so that every later report of
-        "which skill did this attempt use" reads what is INSTALLED HERE
-        rather than whichever version the local registry currently calls
-        newest. Those two diverged silently: distillation bumped the
-        registry between attempts while the pod kept the run's original
-        directory, and the event log then credited results to a procedure
-        the agent had never seen.
-        """
-        import posixpath
-        if not files or "SKILL.md" not in files:
-            # The tree is recreated below, so an empty package does not
-            # fail to install -- it UNINSTALLS the skill and reports the
-            # hash of nothing. Warm would then run the task with no
-            # procedure at all while the log still named a version.
-            raise ValueError(
-                f"{self.label}: refusing to install a skill package with "
-                f"{sorted(files)} in it. A skill is a directory containing "
-                f"at least SKILL.md.")
-        # The AUTHORED package is what identifies the version; the RENDERED
-        # one is what the model reads. They differ only by the inlined
-        # `references/` tail -- see inline_references() for why that tail
-        # has to exist at all.
-        canonical_body = files["SKILL.md"].decode("utf-8", "replace")
-        canonical_digests = {rel: hashlib.sha256(data).hexdigest()
-                             for rel, data in files.items()}
-        files = inline_references(files)
-        skills_root = f"{self.home}/.vibe/skills"
-        target = f"{skills_root}/{name}"
-        self.host.run_as(self.user, f"rm -rf {skills_root} && mkdir -p {target}",
-                         check=False)
-        for rel in sorted(files):
-            dst = f"{target}/{rel}"
-            parent = posixpath.dirname(dst)
-            if parent != target:
-                self.host.run_as(self.user, f"mkdir -p {shlex.quote(parent)}",
-                                 check=False)
-            # 0700/0600 rather than world-readable: the file is the agent's
-            # own, and no other agent on this host has any business reading
-            # another's procedure.
-            self.host.put(files[rel], dst,
-                          mode="700" if _is_script(rel) else "600",
-                          owner=f"{self.user}:{self.user}")
-        landed = self._skill_files_on_pod(target)
-
-        missing = sorted(set(files) - set(landed))
-        extra = sorted(set(landed) - set(files))
-        differing = sorted(r for r in set(files) & set(landed)
-                           if landed[r] != hashlib.sha256(files[r]).hexdigest())
-        if missing or extra or differing:
-            raise RuntimeError(
-                f"{self.label}: the skill on the pod is not the skill that was "
-                f"sent. missing={missing} unexpected={extra} "
-                f"differing={differing}. The agent would run against an "
-                f"unknown version."
-            )
-        for rel in sorted(files):
-            if not _is_script(rel):
-                continue
-            ok = self.host.run_as(
-                self.user,
-                f"test -x {shlex.quote(target + '/' + rel)} && echo yes || echo no",
-                check=False).stdout.strip()
-            if not ok.endswith("yes"):
-                raise RuntimeError(
-                    f"{self.label}: skill script {rel!r} is not executable by "
-                    f"the agent. An AIP step that runs it would fail, and the "
-                    f"model would improvise around a step it cannot perform."
-                )
-        body = self.host.run_as(self.user, f"cat {target}/SKILL.md",
-                                check=False).stdout
-        # `body` identifies the VERSION, so it is hashed from the authored
-        # text rather than the rendered one -- otherwise every install
-        # would look like a mismatch against the version `propose`
-        # accepted, and the run would print a version-mismatch warning on
-        # every attempt. `body_rendered` is what the model actually read,
-        # hashed from the read-back so it is evidence and not intent.
-        # BOTH identity hashes are of the AUTHORED package, because both
-        # answer "which version did this agent run against?" and the
-        # rendering is not a version. That the rendering actually landed
-        # byte-for-byte is already proved above, by the
-        # missing/extra/differing check against the read-back -- so
-        # reporting canonical here loses no integrity claim. The `*_rendered`
-        # pair records what the model really read, hashed from the read-back
-        # rather than from intent.
-        shas = {"dir": _dir_sha(canonical_digests),
-                "body": _body_sha(canonical_body),
-                "dir_rendered": _dir_sha(landed),
-                "body_rendered": _body_sha(body)}
-        # Set only after every verification above has passed, so a failed
-        # install leaves the previous version recorded rather than claiming
-        # one that is not there.
-        self.installed_skill_version = version
-        self.installed_skill_sha = shas["body"]
-        return shas
-
-    def _skill_files_on_pod(self, target: str) -> dict[str, str]:
-        """relative path -> sha256, as the AGENT sees them.
-
-        Run as the agent user on purpose. Root can always read the files;
-        whether the agent can is the actual question, and a directory the
-        agent cannot traverse fails here rather than at the model's first
-        attempt to use its own skill.
-        """
-        out = self.host.run_as(
-            self.user,
-            f"cd {shlex.quote(target)} && find . -type f -exec sha256sum {{}} + "
-            f"2>/dev/null || true",
-            check=False).stdout
-        landed: dict[str, str] = {}
-        for line in out.splitlines():
-            parts = line.strip().split(None, 1)
-            if len(parts) != 2:
-                continue
-            digest, path = parts
-            landed[path.removeprefix("./")] = digest
-        return landed
-
-    # ---- the distillation turn --------------------------------------------
-    #
-    # A SECOND, SEPARATE Vibe environment for the same agent: its own
-    # VIBE_HOME, its own working directory, its own model endpoint.
-    #
-    # Separate VIBE_HOME because the neo4j-agent-memory MCP server lives
-    # here and must not exist during an attempt -- that separation is the
-    # whole reason KNOWN_ARM_DIFFERENCES is empty. It also has no skills
-    # directory: a distiller that could invoke its own skill would be
-    # reading its own output back as an instruction.
-    #
-    # Separate working directory because this Vibe has `write_file` and
-    # `bash`. Pointed at the agent's checkout it would edit the code
-    # between attempts, and the next grading run would score changes no
-    # attempt made.
-    #
-    # Separate endpoint because distillation tokens are reported apart from
-    # attempt tokens, and Vibe surfaces no per-call usage -- a third
-    # counting proxy is the only place that number exists.
 
     @property
     def distill_home(self) -> str:
+        """The distiller's own VIBE_HOME.
+
+        A PROPERTY, like `distill_dir` beside it, and it must stay one:
+        every use is inside an f-string. As a plain method it interpolated
+        its own bound-method repr, so `enable_distillation` tried to
+        `mkdir -p "<bound method AgentWorkspace.distill_home of ...>"` and
+        the first pod run died there, after provisioning, the model
+        download and the whole preflight had been paid for.
+
+        The rehearsal could not catch it: LocalHost.put writes through the
+        local filesystem and happily created a directory with that repr as
+        its name -- one turned up untracked in the repo root, which is the
+        only trace the bug left for a fortnight.
+        """
         return f"{self.home}/.vibe-distill"
 
     @property
@@ -1003,6 +803,32 @@ class AgentWorkspace:
                 return content
         return None
 
+    def memory_tool_calls(self) -> int:
+        """How many times this agent called a Cognee memory tool.
+
+        REPLACES `loaded_skill_text`, which asked whether a skill FILE had
+        reached the model. There is no file: the procedure lives in
+        Cognee and warm reaches it with `recall`, so the equivalent
+        question is whether the agent used the tools at all.
+
+        Zero is a RESULT, not an error. The old layer's defining failure
+        was 40 consecutive runs with zero agent-initiated memory calls
+        while every check reported green -- so this is counted and
+        printed rather than asserted, and a run where warm never
+        consulted its memory is a finding about the model, not a broken
+        harness.
+        """
+        calls = 0
+        for msg in self._transcript_messages():
+            name = msg.get("name") or ""
+            if name.startswith("cognee") or name in ("remember", "recall"):
+                calls += 1
+            for tc in (msg.get("tool_calls") or []):
+                fn = ((tc.get("function") or {}).get("name") or "")
+                if fn.startswith("cognee") or fn in ("remember", "recall"):
+                    calls += 1
+        return calls
+
     def install_dependencies(self, install_command: str, *, timeout: float = 1800.0
                              ) -> subprocess.CompletedProcess:
         """Run the user's OWN install command in the agent's own venv.
@@ -1056,154 +882,6 @@ class AgentWorkspace:
         self.host.put(config.encode(), f"{vibe_home}/config.toml",
                       mode="600", owner=f"{self.user}:{self.user}")
 
-    def enable_memory(self, *, mcp_url: str, sidecar_port: int) -> None:
-        """Give this agent the memory server and the per-step hook. Warm only.
-
-        The MCP server is registered over HTTP, not stdio, and it already
-        exists -- one process, run as root, shared by every warm agent. That is
-        what keeps the Neo4j credential away from the agent entirely: Vibe
-        echoes a stdio server's whole launch command into every tool result, so
-        a stdio registration would put `--password=` in the model's context on
-        every memory call, and a `#!` shim cannot hide it either because a
-        script must be readable to be executed.
-
-        `hooks.toml` is Vibe's own mechanism, not an injection point of ours:
-        a `post_tool` hook may return `hook_specific_output.additional_context`
-        and Vibe appends it to the tool output the model sees.
-        """
-        self.relay_port = sidecar_port
-        vibe_home = f"{self.home}/.vibe"
-        blocks = _MCP_SERVER_TEMPLATE.format(name="neo4j-agent-memory", url=mcp_url)
-        self.host.put(blocks.encode(), f"{vibe_home}/mcp.part", mode="600",
-                      owner=f"{self.user}:{self.user}")
-        self.host.run(
-            f"cat {vibe_home}/mcp.part >> {vibe_home}/config.toml && "
-            f"rm -f {vibe_home}/mcp.part"
-        )
-        # Vibe's schema, not one of mine: the file is a `hooks` ARRAY and
-        # `type` names the EVENT (vibe/core/hooks/config.py, _HooksTomlRoot +
-        # HookConfig{name,type,command,match,timeout,strict,description}).
-        #
-        # This was first written as `[[post_tool]]` with `type = "command"`,
-        # which parses as valid TOML, contributes no hooks, and reports
-        # nothing: the run exits 0 and the graph stays empty -- indistinguish-
-        # able from an agent that made no tool calls. The old harness had the
-        # shape right and I invented a different one instead of copying it.
-        command = f"{HOOK_PYTHON} {HOOK_PATH} {sidecar_port} {self.label}"
-        hooks = "".join(
-            "[[hooks]]\n"
-            f'name = "memory-{event}"\n'
-            f'type = "{event}"\n'
-            f'command = "{command}"\n'
-            + ('match = "*"\n' if event == "post_tool" else "")
-            + "timeout = 20.0\n\n"
-            for event in ("post_tool", "post_agent")
-        )
-        # BOTH locations. Vibe reads `<project_root>/.vibe/hooks.toml` for
-        # every project root, and `$VIBE_HOME/hooks.toml` only when "user" is
-        # among its configured sources (_harness_manager.py:136-142). Writing
-        # only to VIBE_HOME produced a clean run with the hook never firing --
-        # no error, no warning, just zero steps -- which is the same silent
-        # shape as a broken MCP server.
-        for target in (f"{vibe_home}/hooks.toml", f"{self.repo_path}/.vibe/hooks.toml"):
-            self.host.run_as(self.user, f"mkdir -p {os.path.dirname(target)}", check=False)
-            self.host.put(hooks.encode(), target, mode="600",
-                          owner=f"{self.user}:{self.user}")
-        self.assert_hook_runs(command)
-        self.assert_relay_delivers(sidecar_port)
-
-    def assert_relay_delivers(self, sidecar_port: int) -> None:
-        """Push one reasoning entry through the REAL relay and read it back.
-
-        `assert_hook_runs` proves the hook can write a step. It does not
-        prove the step will carry the model's reasoning, and those are
-        different failures with identical symptoms: the relay never errors,
-        it simply forwards nothing, `handle()` falls back to serialising the
-        tool input, and `steps_written` climbs exactly as it should.
-
-        That is what happened. Six pod runs on 2026-09-18/19 wrote 993 steps
-        of which 988 held tool-argument JSON as their `thought`, so
-        `search_steps` -- which embeds thought+action -- was searching a
-        corpus of serialised arguments, and every skill from v25 to v45 was
-        distilled from it. Nothing in the harness said a word.
-
-        So: feed the relay one line of Vibe's own streaming format, as this
-        agent's user, and require the sidecar's push counter to move. It
-        exercises the relay binary that is actually on the host, over the
-        loopback the hook uses, from the account Vibe runs as.
-        """
-        before = _sidecar_counter(self.host, sidecar_port, "reasoning_pushes")
-        entry = json.dumps({
-            "type": "reasoning",
-            "turnId": "__probe__",
-            "text": "probe: does the relay reach the sidecar",
-        })
-        self.host.run_as(
-            self.user,
-            f"printf %s\\\\n {shlex.quote(entry)} | "
-            f"{HOOK_PYTHON} -u {RELAY_PATH} {sidecar_port} {self.label} "
-            f">/dev/null",
-            check=False, timeout=60)
-        after = _sidecar_counter(self.host, sidecar_port, "reasoning_pushes")
-        if after <= before:
-            raise RuntimeError(
-                f"{self.label}: the reasoning relay does not reach the "
-                f"sidecar on :{sidecar_port} (pushes {before} -> {after}). "
-                f"Every step would store its tool input as the agent's "
-                f"thought, the graph would be searchable by what was typed "
-                f"rather than by why, and nothing at run time would say so. "
-                f"Check {RELAY_PATH} exists and is executable by "
-                f"{self.user}.")
-        # Leave no probe reasoning attached to the next real tool call.
-        _sidecar_control(self.host, sidecar_port,
-                         {"control": "note_turn", "agent": self.label,
-                          "turn_id": "__probe_done__"})
-
-
-    def assert_hook_runs(self, command: str) -> None:
-        """Run the hook exactly as Vibe will and read what it writes.
-
-        The hook fails open on purpose -- any exception becomes `{}` and exit
-        0 -- so a hook that cannot run at all is indistinguishable from an
-        agent that made no tool calls. That is not hypothetical: run 12
-        recorded 0 steps and 0 errors while warm-0 made 85 tool calls and
-        converged, and only the summary's own "the step hook wrote nothing"
-        guard caught it.
-
-        `test -x /opt/swarm/hook.py` cannot catch it. The file is executable;
-        it simply has no shebang, so sh runs it and prints `command not
-        found` to stderr. Checking that stdout parses as JSON and stderr is
-        clean is what distinguishes the two.
-        """
-        probe = json.dumps({"hook_event_name": "post_tool", "tool_name": "__probe__",
-                            "tool_input": {}, "tool_output_text": "", "tool_status": "ok"})
-        r = self.host.run_as(
-            self.user, f"printf %s {shlex.quote(probe)} | {command}", check=False)
-        err = (r.stderr or "").strip()
-        out = (r.stdout or "").strip()
-        try:
-            json.loads(out or "{}")
-        except json.JSONDecodeError:
-            raise RuntimeError(
-                f"{self.label}: the step hook does not emit JSON. stdout={out[:200]!r} "
-                f"stderr={err[:200]!r}. Every tool call would be dropped silently."
-            ) from None
-        if "command not found" in err or "Traceback" in err:
-            raise RuntimeError(
-                f"{self.label}: the step hook errored: {err[:300]!r}. It fails open, "
-                f"so the run would record 0 steps and 0 errors."
-            )
-
-    # ---- orchestrator.vibe_agent.Workspace --------------------------------
-    #
-    # The attempt loop, the grading, the trace keying, observed_fix and every
-    # event stay in migrate_codebase, unchanged. This class only answers the
-    # six questions that have a different answer when the agent is on another
-    # machine. An earlier version of swarm/run.py reimplemented the loop and
-    # had already drifted -- its own cruder tests_passed and error_signature,
-    # no observed_fix outcome text, no add_message -- which is a different
-    # graph built a different way.
-
     async def run_vibe(self, task: str, *, timeout_s: float, resume: bool,
                           on_entry: Any | None) -> tuple[int, str]:
         # INVALIDATE FIRST. The cache is how the sync accessors avoid
@@ -1235,6 +913,51 @@ class AgentWorkspace:
                 except Exception:
                     pass
         return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+    def enable_memory(self, *, mcp_url: str) -> None:
+        """Give this agent the cognee MCP server. Warm only.
+
+        HALF OF WARM'S TREATMENT. The other half -- the procedure and the
+        retrieved context in its prompt, and the session trace written
+        after each attempt -- runs in the orchestrator's own process
+        through `cognee.agent_memory`, and reaches this agent as prompt
+        text rather than as anything installed here.
+
+        The MCP server is registered over HTTP, not stdio, and it already
+        exists -- one process, run as root, shared by every warm agent. That is
+        what keeps the Neo4j credential away from the agent entirely: Vibe
+        echoes a stdio server's whole launch command into every tool result, so
+        a stdio registration would put `--password=` in the model's context on
+        every memory call, and a `#!` shim cannot hide it either because a
+        script must be readable to be executed.
+
+        Registered as `transport = "streamable-http"` by
+        `_MCP_SERVER_TEMPLATE`, and that is the one detail not to
+        simplify: Vibe's `http` transport selects its LEGACY SSE client,
+        which issues a bare GET, and a streamable-HTTP server answers
+        that with 406 Not Acceptable. The agent then registers ZERO
+        memory tools while the config, the server and every log line look
+        healthy. It cost a whole run once.
+        """
+        vibe_home = f"{self.home}/.vibe"
+        blocks = _MCP_SERVER_TEMPLATE.format(name="cognee", url=mcp_url)
+        self.host.put(blocks.encode(), f"{vibe_home}/mcp.part", mode="600",
+                      owner=f"{self.user}:{self.user}")
+        self.host.run(
+            f"cat {vibe_home}/mcp.part >> {vibe_home}/config.toml && "
+            f"rm -f {vibe_home}/mcp.part"
+        )
+        # NO HOOKS. This wrote a `hooks.toml` registering `post_tool`
+        # and `post_agent` commands so that every tool call became a
+        # ReasoningStep, then asserted both that the hook ran and that the
+        # relay delivered reasoning rather than tool JSON. All three are
+        # retired with the old memory layer: the agent calls `remember` on
+        # its MCP server if it chooses to, and the writes the harness owns
+        # happen in the orchestrator's process, so there is no hook to
+        # register, no relay to verify, and no second writer to keep in
+        # step with the first.
+
+
 
     def snapshot(self) -> dict[str, str]:
         """path -> sha256, for the "did anything change" check."""
@@ -1291,18 +1014,11 @@ class AgentWorkspace:
                 f"--prompt {shlex.quote(prompt)}{resume_arg} "
                 f"--auto-approve --trust --output streaming < /dev/null")
         workdir = cwd or self.repo_path
-        # The relay belongs to the attempt path only. A distillation turn
-        # writes nothing to the graph through a hook, so piping its stream
-        # through the relay would forward reasoning to a sidecar that has
-        # no trace to attach it to.
-        if self.relay_port is None or cwd is not None:
-            return f"cd {workdir} && {vibe}"
-        # `pipefail` so the pipeline reports VIBE's exit code, not the
-        # relay's -- `_ended_cleanly` keys on it, and a relay that always
-        # exits 0 would make every attempt look like a clean stop.
-        # `-u` so the relay does not buffer the stream behind Vibe.
-        return (f"cd {workdir} && set -o pipefail && {vibe} "
-                f"| {HOOK_PYTHON} -u {RELAY_PATH} {self.relay_port} {self.label}")
+        # NOTHING IS PIPED. Vibe's stream used to be teed through the
+        # reasoning relay so that the sidecar saw the model's reasoning
+        # rather than serialised tool input; both are gone, and the
+        # stream is read in-process by `stream_entries`.
+        return f"cd {workdir} && {vibe}"
 
     def _kill_remote_vibe(self) -> None:
         self.host.run(f"pkill -u {self.user} -f 'bin/vibe' || true",
@@ -1624,36 +1340,3 @@ class AgentWorkspace:
         )
         out = self.host.run_as(self.user, probe, check=False).stdout
         return [l.split(" ", 1)[1] for l in out.splitlines() if l.startswith("READABLE ")]
-
-
-def _sidecar_control(host: "SwarmHost", port: int, request: dict) -> dict:
-    """One control request to the sidecar, over the pod's own loopback.
-
-    Runs `python3 -` on the host rather than forwarding a port: this is
-    called during provisioning, before any tunnel exists, and the sidecar
-    binds 127.0.0.1 on purpose.
-    """
-    script = (
-        "import json,socket,sys\n"
-        f"req={request!r}\n"
-        "try:\n"
-        f"    s=socket.create_connection(('127.0.0.1',{port}),timeout=10)\n"
-        "    s.sendall((json.dumps(req)+'\\n').encode())\n"
-        "    print(s.makefile().readline().strip())\n"
-        "except Exception as e:\n"
-        "    print(json.dumps({}))\n"
-    )
-    out = host.run(f"{HOOK_PYTHON} - <<'PYEOF'\n{script}\nPYEOF",
-                   check=False, timeout=60).stdout or ""
-    try:
-        return json.loads(out.strip().splitlines()[-1])
-    except (ValueError, IndexError):
-        return {}
-
-
-def _sidecar_counter(host: "SwarmHost", port: int, field: str) -> int:
-    try:
-        return int(_sidecar_control(
-            host, port, {"control": "summary"}).get(field) or 0)
-    except (TypeError, ValueError):
-        return 0

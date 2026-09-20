@@ -23,7 +23,8 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator import skills, vibe_agent
+from orchestrator import cognee_layer as skills  # same role, new owner
+from orchestrator import vibe_agent
 from swarm.agent_workspace import AgentWorkspace, SwarmHost, _body_sha
 
 
@@ -116,8 +117,31 @@ def ws() -> AgentWorkspace:
     return _WS(host=FakeHost(), label="warm-0", model="m")
 
 
-LIVE = skills.current()
-PACKAGE = skills.package()
+def _live_package():
+    """The v0 scaffold, read off disk exactly as `cognee_layer.live_skill`
+    seeds Cognee from it.
+
+    Built here rather than fetched from a registry: Cognee keeps no
+    version registry -- it rewrites `procedure` in place -- so there is
+    no `skills.current()` to ask. install_skill is still ours and is
+    still what these tests are about.
+    """
+    from swarm.agent_workspace import _dir_sha
+
+    text = skills.SEED_SKILL_PATH.read_text()
+    files = {"SKILL.md": text.encode("utf-8")}
+    schema = (skills.SEED_SKILL_PATH.parent / "source" / "procedure.schema.json")
+    if schema.exists():
+        files["source/procedure.schema.json"] = schema.read_bytes()
+    # Over path -> sha PAIRS, exactly as install_skill does it, or the
+    # comparison tests a different hash from the one under test.
+    digests = {k: hashlib.sha256(v).hexdigest() for k, v in files.items()}
+    return skills.SkillVersion(version=0, text=text, files=files,
+                               body_sha=_body_sha(text),
+                               dir_sha=_dir_sha(digests)), files
+
+
+LIVE, PACKAGE = _live_package()
 
 
 def test_the_whole_package_lands_where_vibe_looks(ws) -> None:
@@ -205,22 +229,6 @@ def test_install_returns_both_hashes(ws) -> None:
     assert (got["body_rendered"] != got["body"]) is has_refs
     assert (got["dir_rendered"] != got["dir"]) is has_refs
 
-
-def test_the_two_body_splits_agree() -> None:
-    """swarm/ deliberately does not import from orchestrator/ -- that package
-    is not on the swarm host -- so the frontmatter split exists twice. This
-    is what stops the copies drifting into two different answers to the same
-    question."""
-    cases = [
-        LIVE.text,
-        "---\nname: x\ndescription: y\n---\n\nbody\n",
-        "---\na: 1\n---\nbody with --- inside\nand more\n",
-        "no frontmatter at all",
-        "﻿---\nname: x\n---\nbody\n",
-    ]
-    for text in cases:
-        assert _body_sha(text) == skills._sha(skills.body_of(text)), (
-            f"the two body splits disagree on {text[:40]!r}")
 
 
 def test_cold_has_no_skills_directory(ws) -> None:
@@ -429,36 +437,6 @@ def test_an_accepted_version_is_installed_before_the_next_attempt() -> None:
     assert "version=outcome.accepted.version" in src
 
 
-def test_a_proposed_version_carries_a_complete_installable_package() -> None:
-    """An accepted SkillVersion has to be shippable. `propose` returned one
-    with `files` empty, so the caller held a version it could not install
-    and `dir_sha` fell back to SKILL.md alone."""
-    import inspect
-
-    src = inspect.getsource(skills._propose_locked)
-    assert "files=package(skill_name)" in src
-    # And the same object shape as every other producer in the module.
-    for producer in (skills.current(), skills.archived(0)):
-        assert "SKILL.md" in producer.files
-        assert producer.dir_sha == skills.dir_sha(producer.files)
-
-
-def test_a_loaded_skill_can_be_identified_by_version() -> None:
-    """The checklist has to name what the agent read, not what the run
-    started on. Once distillation worked those diverged by design: run 10
-    started on v5 and its attempts loaded v5, v6, v7."""
-    # Whatever versions this lineage actually HAS. Using the live
-    # version's number assumed it was archived here, which stopped being
-    # true the moment a second fixture advanced the shared live file --
-    # the default lineage stops at v13 and live is now v21.
-    available = sorted(int(p.name[1:4])
-                       for p in skills.versions_dir().glob("v*.md"))
-    assert available, "no archived versions to identify against"
-    for version in (available[0], available[-1]):
-        body = skills.body_of(skills.archived(version).text)
-        assert skills.identify(body) == version
-    assert skills.identify("no skill here at all") is None
-    assert skills.identify("") is None
 
 
 def test_the_checklist_compares_against_the_attempts_own_version() -> None:
@@ -471,7 +449,7 @@ def test_the_checklist_compares_against_the_attempts_own_version() -> None:
     import swarm.run as runner
 
     src = inspect.getsource(runner.main_async)
-    assert "skills.identify(loaded)" in src
+    assert "C.body_sha(loaded)" in src
     assert "last_version" in src
     assert "expected_body = skills.body_of(live_skill.text)" not in src, (
         "the run's starting version is the wrong baseline once the skill "
@@ -584,7 +562,14 @@ def test_the_pod_scripts_come_from_the_repo_and_are_hash_checked() -> None:
     from swarm import agent_workspace
 
     sources = set(agent_workspace.host_scripts())
-    assert {"memory_step_hook.py", "reasoning_relay.py"} <= sources
+    # The hook and the relay were the two that prompted this check --
+    # until 2026-09-19 nothing in the codebase put them on the pod at all,
+    # and the version running during a whole series could not afterwards
+    # be established. Both are retired with the old memory layer; the
+    # check itself is not, because the same silence would hide the next
+    # missing file. What remains must still come from the repo and still
+    # be hash-verified on arrival.
+    assert {"id_fix_proxy.py", "web-tools/server.py"} <= sources
     for name in sources:
         assert (agent_workspace.HARNESS_DIR / name).is_file(), (
             f"{name} is uploaded from harness/ and is not there")
@@ -597,37 +582,38 @@ def test_the_pod_scripts_come_from_the_repo_and_are_hash_checked() -> None:
         Path("swarm/run.py").read_text())
 
 
-def test_the_relay_is_proven_to_reach_the_sidecar_before_a_run() -> None:
-    """A hook that writes is not a hook that writes REASONING.
+def test_enabling_memory_registers_the_server_and_no_hook() -> None:
+    """Warm gets an MCP server and nothing else.
 
-    Those are different failures with identical symptoms: the relay never
-    errors, it just forwards nothing, `handle()` falls back to serialising
-    the tool input, and `steps_written` climbs exactly as it should. Six
-    runs shipped that way. So warm setup pushes one reasoning entry
-    through the real relay and requires the sidecar's counter to move.
+    This used to assert that `enable_memory` proved the REASONING RELAY
+    reached the sidecar before a run started -- a real check, bought with
+    a real failure: the relay never errors, so without it every step
+    stored its tool input as the agent's thought and the graph became
+    searchable by what was typed rather than by why.
+
+    There is no relay, no hook and no sidecar now; Cognee's agents call
+    `remember` on its MCP server themselves. What must still be true is
+    that enabling memory registers a server and does NOT quietly bring
+    back a second writer.
     """
     import inspect
 
     from swarm.agent_workspace import AgentWorkspace
 
-    assert "assert_relay_delivers" in inspect.getsource(
-        AgentWorkspace.enable_memory), (
-        "warm is configured without ever proving the relay works")
-    src = inspect.getsource(AgentWorkspace.assert_relay_delivers)
-    assert "reasoning_pushes" in src and "raise RuntimeError" in src
+    from swarm.agent_workspace import _MCP_SERVER_TEMPLATE
 
-
-def test_a_thought_that_falls_back_to_tool_input_is_counted() -> None:
-    """`with_reasoning` is None on the live path, so this is the only
-    number that exists there -- and its absence is what hid the bug."""
-    from orchestrator.step_memory import StepMemoryService
-
-    service = StepMemoryService()
-    report = service.reasoning_report()
-    assert set(report) == {"thoughts_from_reasoning", "thought_fallbacks",
-                           "reasoning_pushes"}
-    assert "STEP_WRITES" in Path("orchestrator/events.py").read_text()
-
+    src = inspect.getsource(AgentWorkspace.enable_memory)
+    assert "_MCP_SERVER_TEMPLATE" in src
+    assert "streamable-http" in _MCP_SERVER_TEMPLATE, (
+        "Vibe's `http` transport is its legacy SSE client and a "
+        "streamable-HTTP server answers it with 406, registering zero "
+        "tools while everything else looks healthy")
+    # Matched on CODE, not prose: the docstring names the retired
+    # mechanism on purpose, and a test that forbids mentioning it would
+    # force the explanation out of the one file that should carry it.
+    for gone in ("assert_relay_delivers(", "assert_hook_runs(",
+                 'type = "{event}"', "hooks.toml\","):
+        assert gone not in src, f"{gone} is back; the second writer returned"
 
 def test_uncounted_reasoning_is_not_reported_as_zero() -> None:
     """`0 w/ reasoning` appeared on six runs where the number was never

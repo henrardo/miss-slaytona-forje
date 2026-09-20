@@ -36,7 +36,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import hashlib
 import json
 import os
 import re
@@ -56,17 +55,32 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from orchestrator import distill as distill_mod
+from orchestrator import cognee_layer as C
 from orchestrator import metrics as metrics_mod
 from orchestrator import series
-from orchestrator import skills
-from orchestrator import writers
 from orchestrator.events import EventBus
 from orchestrator.sync import AttemptSync
 from orchestrator.vibe_agent import AttemptBudget, migrate_codebase
-from swarm.agent_workspace import (AgentWorkspace, SwarmHost,
-                                   inline_references)
+from swarm.agent_workspace import AgentWorkspace, SwarmHost
 from tests.fake_model_server import FakeModelServer, Turn
+
+# Set per run in main(); every Cognee call in this file is scoped to it.
+DATASET = "msf-rehearsal"
+
+
+async def _cypher(query: str, params: dict | None = None):
+    """Read the graph directly, as the old ScopedMemory client did.
+
+    The checks below assert against what is IN Aura rather than against
+    anything the harness reports, and that is the point: they used to
+    read the stub's own python attributes, so they asserted that a
+    dictionary the rehearsal had just filled in contained what the
+    rehearsal had just put in it.
+    """
+    from cognee.infrastructure.databases.graph import get_graph_engine
+
+    engine = await get_graph_engine()
+    return await engine.query(query, params or {})
 
 
 # --------------------------------------------------------------------------
@@ -95,18 +109,15 @@ class LocalHost(SwarmHost):
     def _map(self, command: str) -> str:
         """Rewrite pod paths into this tree. MUST BE IDEMPOTENT.
 
-        Not all pod-shaped paths arrive pod-shaped. `MSF_RELAY_PATH` and
-        `MSF_HOOK_PATH` are set to files ALREADY under this root, because
-        Vibe executes those itself and never passes through here -- so
-        `{root}/opt/swarm/reasoning_relay.py` reaches this method with the
-        prefix on it. A blind `str.replace` added a second one.
-        `/opt/swarm/` occurs in the relay's own argv, so the effect was:
-        the relay failed to start, its end of `vibe | relay` closed, and
-        VIBE DIED OF A BROKEN PIPE on its first tool call -- every attempt,
-        warm only, silently. The graph stayed empty, no `post_tool` hook
-        ever fired, and the visible symptom was "Vibe does not run hooks in
-        this environment", which is a statement about Vibe and was false.
-        Guarding the substitution is the whole fix.
+        Guarded, and it must stay guarded even though the case that
+        earned it is gone. `MSF_RELAY_PATH`/`MSF_HOOK_PATH` pointed at
+        files ALREADY under this root, because Vibe executed those
+        commands itself and they never passed through here -- so
+        `{root}/opt/swarm/reasoning_relay.py` arrived with the prefix on
+        it and a blind `str.replace` added a second one. The relay then
+        failed to start, its end of `vibe | relay` closed, and VIBE DIED
+        OF A BROKEN PIPE on its first tool call, every attempt, warm
+        only, silently. Anything under the root is left alone.
         """
         root = re.escape(str(self.root))
         for pod in ("/home/", "/opt/swarm/"):
@@ -168,19 +179,12 @@ class LocalWorkspace(AgentWorkspace):
         workdir = cwd or self.repo_path
         vibe = (f"{self.host.vibe} --prompt {shlex.quote(prompt)} "
                 f"--auto-approve --trust --output streaming < /dev/null")
-        # THE REASONING RELAY, exactly as production splices it. Omitting
-        # it here is why `thought` came back holding serialised tool input:
-        # with no relay the hook has no reasoning to attach and falls back
-        # to the tool's arguments, which is the precise bug the relay was
-        # written to fix -- and this override was quietly not testing it.
-        if self.relay_port is not None and cwd is None:
-            from swarm.agent_workspace import HOOK_PYTHON, RELAY_PATH
-            # `pipefail` so the pipeline reports VIBE's exit code, not the
-            # relay's -- `_ended_cleanly` keys on it.
-            return (f"cd {workdir} && set -o pipefail && "
-                    f"VIBE_HOME={home} {vibe} "
-                    f"| {HOOK_PYTHON} -u {RELAY_PATH} {self.relay_port} "
-                    f"{self.label}")
+        # NOTHING IS PIPED, exactly as production no longer splices it.
+        # This used to tee Vibe's stream through the reasoning relay,
+        # because with no relay the post_tool hook had no reasoning to
+        # attach and fell back to the tool's arguments -- 988 of 993 steps
+        # in one series. Hook and relay are both retired; the stream is
+        # read in-process.
         return f"cd {workdir} && VIBE_HOME={home} {vibe}"
 
     def install_dependencies(self, install_command: str, **kw):
@@ -217,86 +221,13 @@ class ScriptedPool:
         return ScriptedResult(code, output)
 
 
-class _SidecarClient:
-    """What the attempt loop talks to, mirroring RemoteTraceBridge.
-
-    Production reaches the sidecar over SSH; here it is a loopback socket
-    to a separate process. Same control protocol either way, so the
-    rehearsal exercises the real message shapes rather than method calls
-    on an object that happens to be in scope.
-    """
-
-    def __init__(self, port: int) -> None:
-        self._port = port
-
-    def _ask(self, payload: dict) -> dict:
-        import socket
-        try:
-            with socket.create_connection(("127.0.0.1", self._port), 10) as s:
-                s.sendall((json.dumps(payload) + "\n").encode())
-                buf = b""
-                while not buf.endswith(b"\n"):
-                    chunk = s.recv(65536)
-                    if not chunk:
-                        break
-                    buf += chunk
-            return json.loads(buf.decode() or "{}")
-        except Exception:
-            return {}
-
-    def set_trace(self, agent: str, trace_id) -> None:
-        self._ask({"control": "set_trace", "agent": agent,
-                   "trace_id": str(trace_id)})
-
-    def clear_trace(self, agent: str) -> None:
-        self._ask({"control": "clear_trace", "agent": agent})
-
-    def set_pending_reasoning(self, agent, text, turn_id=None) -> None:
-        return None
-
-    def note_turn(self, agent, turn_id) -> None:
-        return None
-
-    def flush(self) -> bool:
-        return True
-
-    @property
-    def steps_written(self) -> int:
-        try:
-            return int(self._ask({"control": "summary"}).get("steps_written") or 0)
-        except (TypeError, ValueError):
-            return 0
-
-    @property
-    def errors(self) -> int:
-        return self.counter("errors")
-
-    def counter(self, field: str) -> int:
-        """Any of the sidecar's tallies, over the same control channel.
-
-        `thoughts_from_reasoning` / `thought_fallbacks` in particular: on
-        the live-hook path they are the ONLY record of whether the relay
-        delivered, and asking the service object for them is not available
-        here -- it is in another process, exactly as on the pod.
-        """
-        try:
-            return int(self._ask({"control": "summary"}).get(field) or 0)
-        except (TypeError, ValueError):
-            return 0
-
-    @property
-    def thoughts_from_reasoning(self) -> int:
-        return self.counter("thoughts_from_reasoning")
-
-    @property
-    def thoughts_from_tool_input(self) -> int:
-        return self.counter("thought_fallbacks")
-
-    @property
-    def reasoning_pushes(self) -> int:
-        return self.counter("reasoning_pushes")
-
-
+# _SidecarClient DELETED. It spoke the sidecar's control protocol over a
+# loopback socket so the rehearsal exercised the real message shapes
+# rather than method calls on an in-scope object. There is no sidecar,
+# no hook and no relay: the agent writes through its MCP server and the
+# harness writes from its own process, so the equivalent question is
+# whether `cognee.agent_memory` retrieved and persisted -- asserted
+# directly, further down, against Aura.
 # RecordingMemory DELETED. It was a graph in a dictionary, used
 # unconditionally while the docstring claimed it was a fallback,
 # so every graph assertion in this file passed without Aura ever
@@ -305,7 +236,8 @@ class _SidecarClient:
 # The script the fake model follows
 # --------------------------------------------------------------------------
 
-def attempt_turns(*, edit: bool, finish_text: str) -> list[Turn]:
+def attempt_turns(*, edit: bool, finish_text: str,
+                  recall: bool = False) -> list[Turn]:
     """One attempt's worth of model behaviour.
 
     TWO SHAPES, because the production model does not use the one this
@@ -332,6 +264,23 @@ def attempt_turns(*, edit: bool, finish_text: str) -> list[Turn]:
                   "before changing anything.",
              tools=[("bash", {"command": "ls -la"})]),
     ]
+    if recall:
+        # THE VOLUNTARY HALF, exercised. Warm has the cognee MCP server and
+        # may call it; nothing in the harness makes it, and a scripted model
+        # is the only way to find out whether a call that IS made is counted
+        # -- separately from the context the harness injects, which is the
+        # distinction the whole warm/cold reading turns on.
+        #
+        # `cognee_recall`, not `recall`: Vibe publishes an MCP tool as
+        # f"{server-name}_{raw-tool-name}" (core/skills/builtins/vibe.py).
+        # Getting that wrong is not cosmetic -- the model calls a tool that
+        # does not exist and Vibe answers with an error the agent then has
+        # to recover from.
+        turns.insert(0, Turn(
+            text="Before I change anything, what did previous attempts hit?",
+            tools=[("cognee_recall", {"query": "pydantic v2 migration "
+                                               "failures on this repo",
+                                      "top_k": 3})]))
     if edit:
         turns.append(Turn(
             reasoning="config.py imports BaseSettings from pydantic. That "
@@ -344,82 +293,14 @@ def attempt_turns(*, edit: bool, finish_text: str) -> list[Turn]:
     return turns
 
 
-VALID_SKILL = """---
-name: pydantic-v2-migration
-description: A procedure distilled from my own graded attempts at migrating a codebase to Pydantic v2.
-metadata:
-  aip:
-    spec: "{spec}"
-    schemaId: "https://raw.githubusercontent.com/zach-blumenfeld/aip/v0.3a3/assets/aip-schemas/procedure.schema.json"
-    version: {version}
-    derived_from_traces: []
----
-
-```yaml
-purpose: >
-  Migrate a codebase to Pydantic v2 so its own suite passes.
-trigger_when:
-  - Asked to migrate a codebase to Pydantic v2
-steps:
-  - name: read-the-first-error
-    description: Run the suite and work the first failure, not the last.
-  - name: change-one-thing
-    description: Make one change, then re-run, so a regression is attributable.
-```
-"""
-
-INVALID_SKILL = "Here is my improved skill!\n\nIt has no frontmatter at all.\n"
 
 
-def external_distill_turns(*, first: str, then: str | None = None) -> list[Turn]:
-    """Distillation as the EXTERNAL writer sees it.
 
-    `ExternalWriter` has no tools and no filesystem: it reads
-    `choices[0].message.content` and that string IS the proposed
-    SKILL.md. The agent-writer script below drives `write_file` tool
-    calls instead, which this writer ignores entirely -- so scripting
-    only that one made every distillation return an empty proposal and
-    the rehearsal reported "the distiller wrote nothing".
-    """
-    turns = [Turn(text=first)]
-    if then is not None:
-        turns.append(Turn(text=then))
-    return turns
-
-
-def distill_turns(out_path: str, *, first: str,
-                  then: str | None = None) -> list[Turn]:
-    """A distillation turn writes a file; a repair turn writes another.
-
-    `out_path` must be ABSOLUTE: Vibe's WriteFileArgs.file_path is
-    documented "must be absolute, not relative", and a relative one fails
-    validation silently -- the tool errors, the file keeps its old
-    contents, and the next thing anyone sees is the distiller rejected for
-    proposing version 0 again. The real prompt hands the model an absolute
-    path already; this makes the rehearsal match it.
-    """
-    turns = [Turn(reasoning="What did I try before, and what failed?",
-                  text="Checking my past attempts.",
-                  tools=[("neo4j-agent-memory_search_steps",
-                          {"query": "pydantic migration failure"})]),
-             Turn(reasoning="Now I will write the improved procedure.",
-                  text="Writing the skill.",
-                  tools=[("write_file", {"file_path": out_path,
-                                         "content": first})]),
-             # A turn with no tools ENDS the invocation. The repair loop is
-             # a second invocation, not two turns of one -- so the script
-             # has to stop here or both writes land in the same turn and
-             # the second fails against the file the first just created.
-             Turn(text="Written.")]
-    if then is not None:
-        turns += [
-            Turn(reasoning="It was rejected. The validator says what is wrong.",
-                 text="Fixing the format.",
-                 tools=[("write_file", {"file_path": out_path,
-                                        "content": then})]),
-            Turn(text="Fixed."),
-        ]
-    return turns
+# distill_turns DELETED. It scripted the two turns a distillation used to
+# take -- write SKILL.md, then repair it after the AIP validator rejected
+# it -- and both belong to a loop Cognee owns now: it calls its own
+# authoring model directly, so no request reaches this file's fake server
+# and there is nothing to script or route.
 
 
 # --------------------------------------------------------------------------
@@ -436,7 +317,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
           + (f"  -- {detail}" if detail and not ok else ""))
 
 
-def _tamper_is_caught(aw, host, relay: Path) -> bool:
+def _tamper_is_caught(aw, host, script: Path) -> bool:
     """Require the installer to refuse when the write does not land.
 
     NOT a staleness test, and it matters to be precise about which
@@ -450,11 +331,11 @@ def _tamper_is_caught(aw, host, relay: Path) -> bool:
     Simulated by neutering `put`, because there is no way to make a real
     transfer half-fail on demand. Restored afterwards, whatever happens.
     """
-    original = relay.read_bytes()
+    original = script.read_bytes()
     real_put = host.put
     try:
         host.put = lambda *a, **kw: None          # the write goes nowhere
-        relay.write_bytes(b"# not the relay\n")   # what was there before
+        script.write_bytes(b"# not the script\n")  # what was there before
         try:
             aw.install_host_scripts(host)
         except RuntimeError:
@@ -462,14 +343,21 @@ def _tamper_is_caught(aw, host, relay: Path) -> bool:
         return False
     finally:
         host.put = real_put
-        relay.write_bytes(original)
+        script.write_bytes(original)
 
 
 async def rehearse(vibe: Path, root: Path, model_url: str,
-                   server: FakeModelServer, mem) -> int:
+                   server: FakeModelServer) -> int:
     host = LocalHost(root, vibe, vibe.parent, model_url)
     host.server = server
     bus = EventBus(f"rehearsal-{int(time.time())}")
+    # BUILT HERE, not passed in, because its session id has to be the one
+    # the attempt loop uses -- `{run_id}:{label}`, per run and per agent.
+    # A memory whose session does not match the loop's retrieves from one
+    # place and writes to another, and every check still passes.
+    mem = C.CogneeMemory(dataset=DATASET, label="warm-0",
+                         session_id=f"{DATASET}:{bus.run_id}:warm-0",
+                         mode="hybrid")
 
     spaces = {}
     for label in ("warm-0", "cold-0"):
@@ -482,14 +370,8 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
         ws.write_config(web_url=None)
         spaces[label] = ws
 
-    # ---- 0a. THE LIVE WRITE PATH: Vibe -> post_tool hook -> sidecar -> Aura
-    #
-    # This is the one thing the rehearsal never covered, and it is the
-    # thing that matters: the graph is supposed to be written BY VIBE while
-    # the agent works, not reconstructed from a transcript afterwards.
-    # Every check in this file passed for weeks while that path was
-    # disconnected.
-    print("... starting the step-memory sidecar", flush=True)
+    # ---- 0a. WHAT THE HARNESS PUTS ON THE POD, AND ITS DIGESTS ---------
+    print("... installing the harness's own scripts", flush=True)
     (root / "opt" / "swarm").mkdir(parents=True, exist_ok=True)
     # THE PRODUCTION INSTALLER, not a shutil.copy standing in for it.
     #
@@ -499,96 +381,76 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # hand-copying them too meant the gap was invisible from both ends.
     # `install_host_scripts` is now what the pod uses AND what runs here,
     # digest check included.
-    local_hook = root / "opt" / "swarm" / "hook.py"
-    local_relay = root / "opt" / "swarm" / "reasoning_relay.py"
-    # Vibe runs these two commands itself, so LocalHost's path mapping
-    # cannot reach them -- they must be absolute in this tree before the
-    # installer reads where to put them.
-    os.environ["MSF_HOOK_PATH"] = str(local_hook)
-    os.environ["MSF_RELAY_PATH"] = str(local_relay)
     import swarm.agent_workspace as _aw
-    _aw.HOOK_PATH = str(local_hook)
-    _aw.RELAY_PATH = str(local_relay)
+    local_proxy = root / "opt" / "swarm" / "id_fix_proxy.py"
     installed = _aw.install_host_scripts(host)
-    # BOTH halves, counted separately. `host_scripts` is what Vibe and the
-    # provisioners execute; `host_modules` is the sidecar and the
-    # orchestrator modules it imports. The sidecar was the half that was
-    # still hand-copied after the 2026-09-19 installer fix, and it stayed
-    # invisible because this check only ever counted `host_scripts`.
+    # The hook and the relay used to be checked here by name, and they
+    # were the reason this check exists: until 2026-09-19 nothing in the
+    # repo put either on a pod, they were hand-scp'd, and the rehearsal
+    # hand-copying them too made the gap invisible from both ends. Both
+    # are retired with the old memory layer, and `host_modules()` is now
+    # empty -- Cognee's MCP server is installed from PyPI by
+    # provision_cognee.sh, so NO harness module runs on the pod at all.
+    #
+    # The check survives them because the property is not about those
+    # files: what remains must still come from the repo and still be
+    # verified on arrival.
     expected = len(_aw.host_scripts()) + len(_aw.host_modules())
     check("the harness installs its own scripts and verifies the digests",
-          local_hook.is_file() and local_relay.is_file()
-          and len(installed) == expected,
+          local_proxy.is_file() and len(installed) == expected,
           f"{len(installed)}/{expected} file(s): "
           + ", ".join(f"{Path(p).name} {d[:8]}" for p, d in installed.items()))
-    check("the sidecar and the modules it imports are installed by code",
-          all(any(Path(p).name == Path(remote).name for p in installed)
-              for remote, _ in _aw.host_modules().values()),
-          "provision_memory.sh runs /opt/swarm/swarm/sidecar_main.py and "
-          "imports orchestrator.step_memory from PYTHONPATH=/opt/swarm; "
-          "nothing put either there, so every pod that worked had been "
-          "hand-copied and no version of the sidecar could be established")
+    check("no harness module is shipped to the pod any more",
+          _aw.host_modules() == {},
+          f"host_modules() still ships {list(_aw.host_modules())}")
     check("a script that did not land is caught, not assumed",
-          _tamper_is_caught(_aw, host, local_relay),
-          "the sha256 is read back OFF THE HOST; a relay whose upload "
-          "silently failed keeps running whatever was there before, and "
-          "forwards nothing while every counter looks healthy")
+          _tamper_is_caught(_aw, host, local_proxy),
+          "the sha256 is read back OFF THE HOST; a file whose upload "
+          "silently failed leaves whatever was there before in place "
+          "while every counter looks healthy")
 
-    # A SEPARATE PROCESS, as on the pod. Run in-process, the sidecar shares
-    # this event loop with the rehearsal, so Vibe's hook competes with
-    # whatever the loop is doing and its 8s timeout fires at random -- the
-    # live-write check went 3 steps, then 1, then 0 across identical runs.
-    # That flakiness is the harness's, not the system's, and it would have
-    # been reported as "the hook is unreliable".
-    import socket as _socket
-    with _socket.socket() as _s:
-        _s.bind(("127.0.0.1", 0))
-        sidecar_port = _s.getsockname()[1]
-    sidecar_proc = await asyncio.create_subprocess_exec(
-        sys.executable, str(REPO / "swarm" / "sidecar_main.py"),
-        "--port", str(sidecar_port), "--agents", "warm-0",
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        env={**os.environ, "PYTHONPATH": str(REPO)})
-    for _ in range(60):
-        await asyncio.sleep(0.5)
-        with contextlib.suppress(OSError):
-            with _socket.create_connection(("127.0.0.1", sidecar_port), 1):
-                break
-    if sidecar_proc.returncode is not None:
-        died = (await sidecar_proc.stdout.read()).decode(errors="replace")
-        died = "\n".join(died.splitlines()[-6:])
-        print(f"      sidecar died:\n{died}")
-    check("the sidecar is listening", sidecar_proc.returncode is None,
-          f"port {sidecar_port}, pid {sidecar_proc.pid}, "
-          f"rc={sidecar_proc.returncode}")
-
-    service = _SidecarClient(sidecar_port)
-
-    # DIRECTLY invoke the hook the way Vibe does, before any agent runs.
-    # The hook fails open on everything -- a refused connection prints {}
-    # and exits 0 -- so "the hook ran" and "the hook reached the sidecar"
-    # are different facts and only the second one matters.
-    probe_trace = await mem.start_trace(f"{bus.run_id}:warm-0", "probe")
-    service.set_trace("warm-0", getattr(probe_trace, "id", probe_trace))
-    before = service.steps_written
-    probe_in = json.dumps({
-        "hook_event_name": "post_tool", "tool_name": "bash",
-        "tool_input": {"command": "echo hi"}, "tool_output_text": "hi",
-        "tool_status": "success",
-    })
-    # ASYNC subprocess: a blocking one would freeze this loop, and with an
-    # in-process sidecar that froze the very server the hook was dialling.
-    proc = await asyncio.create_subprocess_exec(
-        "/usr/bin/python3", str(local_hook), str(sidecar_port), "warm-0",
-        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE)
-    out, err = await asyncio.wait_for(
-        proc.communicate(probe_in.encode()), timeout=30)
-    await asyncio.sleep(2.0)
-    check("the hook can reach the sidecar and write a step",
-          proc.returncode == 0 and service.steps_written > before,
-          f"rc={proc.returncode} stdout={out[:60]!r} stderr={err[:120]!r} "
-          f"steps {before}->{service.steps_written} errors={service.errors}")
+    # ---- warm's memory actually writes and reads back ------------------
+    #
+    # WHAT THIS REPLACES. A sidecar process, a `post_tool` hook invoked
+    # the way Vibe invokes it, and a reasoning relay -- roughly sixty
+    # lines of setup here -- all of which existed so that a tool call
+    # became a ReasoningStep in the old layer. Cognee's agents call
+    # `remember` on its MCP server themselves, so there is no second
+    # writer, no hook to fail open, and no relay whose collapse turned
+    # 988 of 993 thoughts into serialised tool JSON.
+    #
+    # The property worth keeping is the one those checks were really
+    # buying: a write that LOOKS fine and lands nowhere. "The hook ran"
+    # and "the hook reached the sidecar" were different facts and only
+    # the second mattered; the same is true of remember/recall.
+    print("... checking warm's memory writes land", flush=True)
+    import cognee
+    probe_session = f"{DATASET}:{bus.run_id}:warm-0"
+    marker = f"rehearsal marker {bus.run_id}"
+    await cognee.remember(marker, dataset_name=DATASET,
+                          session_id=probe_session)
+    # READ BACK THROUGH THE SESSION, not the graph.
+    #
+    # MEASURED, and it is the thing to know about Cognee's model: a
+    # `remember(..., session_id=...)` goes into SESSION memory and is not
+    # graph-queryable until something distils it. A plain
+    # `recall(datasets=[...])` right after a write returns
+    # `status='memory_warming_up'` -- "no knowledge graph data exists yet
+    # for the requested dataset" -- which reads as a lost write and is
+    # not one. The session-scoped read is the one that answers "did this
+    # land".
+    read_back = ""
+    try:
+        import cognee
+        got = await cognee.recall("what rehearsal marker was stored?",
+                                  datasets=[DATASET], session_id=probe_session,
+                                  only_context=True)
+        read_back = str(got)
+    except Exception as exc:
+        read_back = f"recall raised {exc!r}"
+    check("a warm memory write lands and reads back from its session",
+          bus.run_id in read_back,
+          f"session recall returned {read_back[:200]!r}")
 
     # ---- 0. there is NO rollback, and no way back to one ------------------
     #
@@ -615,81 +477,63 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
                             check=False).stdout.strip() == "x = 1")
     probe.host.run_as(probe.user, f"rm -f {scratch}", check=False)
 
-    # ---- 1. install the whole skill package, verified as the agent -------
-    print("... installing the skill package", flush=True)
-    live = skills.current()
-    installed = spaces["warm-0"].install_skill(live.files,
-                                               name=skills.SKILL_NAME,
-                                               version=live.version)
-    check("skill package installs and reads back",
-          installed["dir"] == live.dir_sha and installed["body"] == live.body_sha,
-          f"{installed} vs dir={live.dir_sha} body={live.body_sha}")
-    # AIP'S SECOND TIER, on the pod. The relocation pass produces packages
-    # with a `references/` subdirectory, and nothing had ever installed
-    # one -- every skill v0..v45 was SKILL.md plus source/. If the
-    # read-back verification does not recurse, the FIRST distillation of
-    # the real run raises "the skill on the pod is not the skill that was
-    # sent" and warm loses its procedure mid-run.
-    with_refs = dict(live.files)
-    with_refs["references/probe-detail.md"] = b"# detail\nRead when X.\n"
-    tiered = spaces["warm-0"].install_skill(
-        with_refs, name=skills.SKILL_NAME, version=live.version)
-    ref_body = spaces["warm-0"].host.run_as(
-        spaces["warm-0"].user,
-        f"cat {spaces['warm-0'].home}/.vibe/skills/{skills.SKILL_NAME}"
-        f"/references/probe-detail.md", check=False).stdout
-    check("a package with a references/ tier installs and verifies",
-          "Read when X." in ref_body and tiered["dir"] != live.dir_sha,
-          f"the agent reads {len(ref_body)} byte(s) back from references/")
-    # Put the real package back: everything downstream compares against it.
-    spaces["warm-0"].install_skill(live.files, name=skills.SKILL_NAME,
-                                   version=live.version)
-    check("warm has a skills directory", spaces["warm-0"].has_skills_dir())
+    # ---- 1. the skill is in Cognee, not on the pod ---------------------
+    #
+    # WHAT THIS REPLACES. Four checks installed an AIP package into the
+    # agent's own $VIBE_HOME, verified its two hashes as the agent user,
+    # proved a `references/` tier installed recursively, and confirmed
+    # cold had no skills directory at all. Every one of them was about a
+    # FILE delivery mechanism, and it was earned -- a package whose
+    # read-back did not recurse would have made the first distillation
+    # of a real run fail with "the skill on the pod is not the skill
+    # that was sent".
+    #
+    # Cognee keeps the procedure in the graph. Nothing is installed, so
+    # the question is simply whether the procedure is there to be
+    # recalled.
+    procedure = await C.ensure_seeded(dataset=DATASET)
+    check("the starting procedure is in Cognee", len(procedure) > 0,
+          f"{len(procedure):,} chars")
+    check("cold has NO skills directory",
+          not spaces["cold-0"].has_skills_dir())
 
-    # hooks.toml + the MCP registration, exactly as run.py does it. The MCP
-    # url is deliberately unreachable here: this check is about the WRITE
-    # path, and an unreachable MCP server must not stop the hook firing.
-    spaces["warm-0"].enable_memory(mcp_url="http://127.0.0.1:1/mcp",
-                                   sidecar_port=sidecar_port)
-    hooks_present = spaces["warm-0"].host.run_as(
-        spaces["warm-0"].user,
-        f"test -f {spaces['warm-0'].home}/.vibe/hooks.toml && echo yes || echo no",
-        check=False).stdout.strip()
-    check("warm got a hooks.toml", hooks_present.endswith("yes"))
-    # DOES VIBE FIRE post_tool AT ALL HERE? A canary hook that only
-    # touches a file, so "the memory hook is broken" and "Vibe never ran
-    # any hook" stop being the same observation.
-    canary = root / "canary.txt"
-    ws0 = spaces["warm-0"]
-    canary_toml = (
-        "[[hooks]]\n"
-        'name = "canary"\n'
-        'type = "post_tool"\n'
-        f'command = "/bin/sh -c \'echo fired >> {canary}\'"\n'
-        'match = "*"\n'
-        "timeout = 10.0\n\n"
-    )
-    for target in (f"{ws0.home}/.vibe/hooks.toml",
-                   f"{ws0.repo_path}/.vibe/hooks.toml"):
-        ws0.host.run_as(ws0.user, f"cat >> {target} <<'EOF'\n{canary_toml}EOF",
-                        check=False)
-    # What Vibe will actually try to execute, and whether it exists here.
-    ws0 = spaces["warm-0"]
-    toml_txt = ws0.host.run_as(
-        ws0.user, f"cat {ws0.home}/.vibe/hooks.toml", check=False).stdout
-    cmdline = next((l.split("=", 1)[1].strip().strip('"')
-                    for l in toml_txt.splitlines()
-                    if l.startswith("command")), "")
-    print(f"      hook command: {cmdline}")
-    interp, script = (cmdline.split() + ["", ""])[:2]
-    for what, path in (("interpreter", interp), ("hook script", script)):
-        # Already absolute-and-local once MSF_HOOK_PATH is set; only map
-        # the pod-shaped path.
-        mapped = (path if Path(path).exists()
-                  else path.replace("/opt/swarm/", f"{root}/opt/swarm/"))
-        ok = Path(mapped).exists()
-        check(f"the hook's {what} exists where Vibe will look", ok,
-              f"{mapped}")
+    # A REAL COGNEE MCP SERVER, the same one provision_cognee.sh starts.
+    #
+    # This url used to point at 127.0.0.1:1 -- deliberately unreachable,
+    # because the check here was about the hook WRITE path and a dead
+    # server must not stop a hook firing. There is no hook now, and the
+    # question is whether warm's memory tools REGISTER, which an
+    # unreachable server can never answer.
+    #
+    # Worth the ~30s it costs to boot: the failure it can catch is
+    # Vibe's `http` transport selecting its legacy SSE client, which a
+    # streamable-HTTP server answers with 406 -- the agent then registers
+    # ZERO memory tools while the config, the server and every log line
+    # look healthy. That cost a whole pod run once, and no amount of
+    # config inspection finds it.
+    print("... starting a real cognee MCP server", flush=True)
+    import socket as _socket
+    with _socket.socket() as _s:
+        _s.bind(("127.0.0.1", 0))
+        mcp_port = _s.getsockname()[1]
+    mcp_proc = await asyncio.create_subprocess_exec(
+        str(Path(sys.executable).parent / "cognee-mcp"),
+        "--transport", "http", "--host", "127.0.0.1", "--port", str(mcp_port),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        env={**os.environ})
+    for _ in range(90):
+        await asyncio.sleep(1.0)
+        with contextlib.suppress(OSError):
+            with _socket.create_connection(("127.0.0.1", mcp_port), 1):
+                break
+    check("the cognee MCP server is listening",
+          mcp_proc.returncode is None, f"port {mcp_port}")
+    spaces["warm-0"].enable_memory(mcp_url=f"http://127.0.0.1:{mcp_port}/mcp")
+    # NO HOOKS TO CHECK. This asserted that warm got a `hooks.toml`,
+    # that the interpreter named in the hook command existed, and that
+    # the hook script was where Vibe would look for it -- three separate
+    # silent failures, each of which produced a clean run with an empty
+    # graph. There is no hook now: the agent writes its own memory.
     check("cold got NO hooks.toml",
           spaces["cold-0"].host.run_as(
               spaces["cold-0"].user,
@@ -724,11 +568,29 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     check("arms differ ONLY in the declared ways", not undeclared,
           f"undeclared: {sorted(undeclared)} "
           f"(declared: {sorted(KNOWN_ARM_DIFFERENCES)})")
-    check("both arms loaded the same tools",
-          warm_fp["tools"] == cold_fp["tools"] and bool(warm_fp["tools"]),
-          f"warm={len(warm_fp['tools'])} cold={len(cold_fp['tools'])}")
-    check("only WARM has a post_tool hook",
-          bool(warm_fp["hook_files"]) and not cold_fp["hook_files"],
+    # THE ARMS DIFFER BY THE MEMORY TOOLS, AND BY NOTHING ELSE.
+    #
+    # This used to assert the two tool lists were IDENTICAL, and it
+    # passed for the wrong reason: the rehearsal pointed warm at an
+    # unreachable MCP server, so warm registered no memory tools and the
+    # lists matched trivially. With a real server warm has 11 more, and
+    # that difference IS the treatment -- what must not happen is warm
+    # quietly gaining anything else.
+    extra = set(warm_fp["tools"]) - set(cold_fp["tools"])
+    missing = set(cold_fp["tools"]) - set(warm_fp["tools"])
+    non_memory = {t for t in extra
+                  if "cognee" not in t and t not in
+                  ("remember", "recall", "forget", "cognify_file")}
+    check("warm's only extra tools are memory tools",
+          bool(extra) and not non_memory and not missing,
+          f"extra={sorted(extra)} unexpected={sorted(non_memory)} "
+          f"missing_from_warm={sorted(missing)}")
+    # The hook was warm's SECOND difference from cold, and it had to be
+    # declared as a confound in every warm-vs-cold number. It is gone, so
+    # the arms now differ in the MCP server and the skill alone -- which
+    # is a cleaner experiment than the old layer ever managed.
+    check("NEITHER arm has a post_tool hook any more",
+          not warm_fp["hook_files"] and not cold_fp["hook_files"],
           f"warm={warm_fp['hook_files']} cold={cold_fp['hook_files']}")
 
     # ---- 3. the real attempt loop ----------------------------------------
@@ -747,64 +609,49 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # rehearsal ever run and invisible, because the only check on the
     # evidence path asserted the AGENT writer's tool calls, which the
     # scripted model always made.
-    from orchestrator.manifest import FIXTURE_DIR
-    mem.set_provenance(prov_model="fake-model", prov_gpu="none",
-                       prov_commit="local", prov_writable=True,
-                       prov_fixture=FIXTURE_DIR.name)
+    # NO PROVENANCE STAMP. `prov_model`, `prov_gpu`, `prov_writable`,
+    # `prov_fixture` and `prov_experiment` were properties written onto
+    # every trace so distillation could filter out runs it must not learn
+    # from -- a weaker model, a read-only checkout, another codebase,
+    # last night's experiment. Each was added after distillation learned
+    # from the wrong runs. Cognee scopes by DATASET, and this rehearsal
+    # has its own, so the same isolation is structural and cannot be
+    # forgotten on a write.
 
-    # Which TRACES this rehearsal created. Not sessions: every trace in
-    # this database shares the session id "warm-0", so a session filter
-    # selects all 98 runs of history and the assertions fail on the Qwen
-    # era rather than on anything here.
-    rehearsal_traces: set[str] = set()
-    _real_start_trace = mem.start_trace
+    # NO TRACES TO TRACK. This wrapped `mem.start_trace` to collect the
+    # ids this rehearsal created, because every trace in the database
+    # shared the session id "warm-0" and an unscoped query would have
+    # asserted against 98 runs of history -- including the Qwen era.
+    # The harness opens no traces now; the dataset is the scope.
 
-    async def _tracking_start_trace(session_id, task):
-        trace = await _real_start_trace(session_id, task)
-        if trace is not None:
-            rehearsal_traces.add(str(getattr(trace, "id", trace)))
-        return trace
+    distilled: list = []
 
-    mem.start_trace = _tracking_start_trace
-    distilled: list[distill_mod.DistillResult] = []
-
-    # THE REAL ExternalWriter, against the fake OpenAI-compatible server.
+    # THE REAL COGNEE DISTILLATION, against the real graph.
     #
-    # This is the production default now (`--distill-writer` ->
-    # OPENAI_AUTHOR), and until this line the rehearsal only ever
-    # exercised AgentWriter -- so the default path had no pre-pod
-    # coverage at all. Both bugs that cost pod runs on 2026-09-18 were in
-    # code the rehearsal could not reach, and shipping an untestable
-    # default is that mistake with a different name.
+    # Not the fake model server: Cognee calls its own authoring model
+    # directly, so there is no request for the scripted server to
+    # intercept and nothing about the distillation is simulated here.
+    # That is the point -- the two bugs that cost pod runs on 2026-09-18
+    # were both in code the rehearsal could not reach, and a stubbed
+    # distiller would recreate exactly that blind spot.
     #
-    # `base_url` points THIS writer at the scripted server -- a parameter,
-    # not an env var: the OpenAI SDK's own `OPENAI_BASE_URL` would also
-    # redirect neo4j-agent-memory's extractor and embedder, which it did,
-    # and the run died in add_message. The key is a placeholder the fake
-    # server ignores. Everything else -- the
-    # prompt, the AIP procedure it carries, `strip_fence`, the usage
-    # counters, the repair loop -- is the shipped code.
-    external = writers.ExternalWriter(
-        model="fake-model", api_key="rehearsal",
-        base_url=model_url.rstrip("/") + "/v1")
+    # It costs an OpenAI call and some Aura writes per rehearsal. Both
+    # are cheap and neither is the spend that matters; the GPU is.
 
-    async def distiller(*, attempt, tests_passed, suite_passed, error):
+    async def distiller(*, attempt, tests_passed, suite_passed, error,
+                        closeness=None):
         mark("distil-start", "warm-0")
-        result = await distill_mod.distill(
-            workspace=spaces["warm-0"], mem=mem, model="fake-model",
-            attempt=attempt, tests_passed=tests_passed,
-            suite_passed=suite_passed, error=error, writer=external)
-        distilled.append(result)
-        # The same install-after-accept that run.py does, and for the same
-        # reason: `propose` moves the live pointer on this machine, the
-        # agent reads its own $VIBE_HOME. Rehearsing the loop without this
-        # rehearses a loop that cannot close.
-        if result.accepted is not None:
-            spaces["warm-0"].install_skill(result.accepted.files,
-                                           name=skills.SKILL_NAME,
-                                           version=result.accepted.version)
+        outcome = await C.distil_after_attempt(
+            tests_passed=tests_passed, tests_total=33, attempt=attempt,
+            suite_passed=suite_passed, error=error, closeness=closeness,
+            dataset=DATASET, session_id=mem.session_id)
+        distilled.append(outcome)
+        # NOTHING TO INSTALL. The old loop wrote the accepted version to
+        # the pod here, because `propose` moved a pointer on this machine
+        # while the agent read a file on that one. Cognee closes that
+        # loop itself: what it rewrote is what `recall` returns.
         mark("distil-end", "warm-0")
-        return result
+        return outcome
 
     def emit_for(arm: str, label: str):
         async def emit(event_type, **kw):
@@ -820,13 +667,9 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
             "=== 8 passed, 25 failed in 1.2s ==="),
         (0, "=== 33 passed in 1.4s ==="),
     ])
-    # The absolute path the distiller is told to write, as the agent's own
-    # shell sees it.
-    out_path = str(root) + spaces["warm-0"].distill_skill_path()
     # RELATIVE to whatever the copied package starts at. The rehearsal runs
     # against a copy of the REAL skill, which advances with every run, so
     # hard-coded version numbers rot the moment the agent distils.
-    v0 = skills.current().version
     # ONE ATTEMPT SCRIPT PER ARM, not one shared between them.
     #
     # A script repeats its final turn once exhausted (FakeModelServer's own
@@ -845,20 +688,18 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # read off what the agent actually is rather than off turn order.
     host.server.scripts = {
         "attempt-warm-0": (
-            attempt_turns(edit=True, finish_text="I changed the import.")
-            + attempt_turns(edit=True,
+            attempt_turns(edit=True, recall=True,
+                          finish_text="I changed the import.")
+            + attempt_turns(edit=True, recall=True,
                             finish_text="The migration is complete.")),
         "attempt-cold-0": (
             attempt_turns(edit=True, finish_text="I changed the import.")
             + attempt_turns(edit=True,
                             finish_text="The migration is complete.")),
-        # The external writer is the production default, so the scripts
-        # are written for it: one turn, the body as the reply.
-        "distil-1": external_distill_turns(
-            first=INVALID_SKILL,
-            then=VALID_SKILL.format(spec=skills.aip_spec_url(), version=v0 + 1)),
-        "distil-2": external_distill_turns(
-            first=VALID_SKILL.format(spec=skills.aip_spec_url(), version=v0 + 2)),
+        # NO distil queues. Cognee's authoring model is called directly
+        # and never reaches this server, so there is nothing to script --
+        # and nothing to route, which is why the marker-matching below
+        # only has to tell the two arms apart now.
         # `loaded_tools()` makes a real Vibe call per arm before the clock
         # so the two tool lists can be compared. It runs in the agent's own
         # home, so it looks exactly like that arm's attempt unless it is
@@ -866,8 +707,6 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
         "probe": [Turn(text="ready")],
     }
     host.server._indices = {k: 0 for k in host.server.scripts}
-
-    distil_calls = {"n": 0}
 
     last_distil = {"key": "distil-1"}
 
@@ -906,13 +745,17 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     host.server.router = route
 
     print("... running the real attempt loop", flush=True)
+    # Cognee stamps `created_at` in unix MILLISECONDS (DataPoint), so the
+    # scope below is "since this run began" rather than a trace id list.
+    started_ms = int(time.time() * 1000)
     # BASELINE THE SIDECAR'S COUNTERS. They are cumulative and outlive a
     # single run -- the same odometer trap NOTES-hard-won.md records
     # against the proxies -- and the probes above deliberately wrote steps
     # with no Vibe in the picture, so those legitimately fell back. Only
     # the delta across the attempts says whether the relay delivered.
-    thoughts_before = service.thoughts_from_reasoning
-    fallbacks_before = service.thoughts_from_tool_input
+    # No sidecar counters any more: Cognee does not expose a per-write
+    # tally, and where a thought came from is not a question anything can
+    # answer now that there is no per-step write.
     # BOTH arms, through the real loop, sharing one barrier -- the
     # arrangement the pod runs, and the only way to test the ordering.
     sync = AttemptSync(["warm-0", "cold-0"])
@@ -955,15 +798,10 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
                 deadline=time.monotonic() + REHEARSAL_DEADLINE_S,
                 emit=emit_for("warm" if warm else "cold", label),
                 mem=mem if warm else None,
-                session_id=f"{bus.run_id}:{label}" if warm else None,
+                session_id=f"{DATASET}:{bus.run_id}:{label}" if warm else None,
                 baseline_signature="ImportError: BaseSettings",
                 baseline_passed=0, agent_label=label,
-                # The LIVE write path. With this set, the loop points the
-                # sidecar at the current trace and skips transcript
-                # back-fill, so anything in the graph afterwards was put
-                # there by Vibe's own hook while the agent worked.
-                step_memory=service if warm else None,
-                skill_name=skills.SKILL_NAME if warm else None,
+                skill_name=C.SKILL_NAME if warm else None,
                 distiller=distiller if warm else None,
                 sync=sync,
                 # THE EXPERIMENT'S SHAPE, exercised rather than assumed.
@@ -1042,37 +880,131 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     check("no attempt resumed a session", not resumed,
           f"{len(resumed)} resumed")
 
-    # ---- 5. the skill reached the model, every attempt --------------------
-    loaded = spaces["warm-0"].loaded_skill_text(skills.SKILL_NAME)
-    check("the skill reached the model", loaded is not None)
+    # ---- 5. warm could reach its memory, every attempt -------------------
+    #
+    # THIS USED TO BE "the skill reached the model", read off the
+    # transcript for a `<skill_content>` block. Vibe injected one when a
+    # prompt began `/<name>`, and its absence was the difference between
+    # "the agent ignored its procedure" and "the procedure never reached
+    # it" -- opposite fixes, which is why the check existed.
+    #
+    # There is no skill file and no prefix now. The procedure is in
+    # Cognee and warm gets there with `recall`, so the equivalent fact
+    # is whether warm had the tools at all. Whether it USED them is
+    # counted below and deliberately not asserted: "warm chose not to
+    # recall" is the result, and the old layer produced exactly that for
+    # 40 consecutive runs while every check here was green.
+    warm_tools = spaces["warm-0"].loaded_tools()
+    check("warm had memory tools available to it",
+          any("cognee" in t or t in ("remember", "recall")
+              for t in warm_tools),
+          f"{sorted(warm_tools)}")
+    warm_calls = spaces["warm-0"].memory_tool_calls()
+    print(f"      warm made {warm_calls} memory tool call(s) across its "
+          f"attempts")
+    # THE TWO HALVES MUST BE COUNTABLE APART. Warm's script calls
+    # `cognee_recall` itself, and the harness separately injects what
+    # `cognee.agent_memory` retrieved. Summing them answers "did warm have
+    # memory" and destroys the answer to "did warm go and get it" -- and
+    # the second question is the one this project spent 40 runs failing to
+    # ask cleanly.
+    check("the agent's own memory calls are counted", warm_calls > 0,
+          f"{warm_calls} -- the scripted model calls cognee_recall on every "
+          f"attempt, so zero means the counter does not recognise the tool "
+          f"name Vibe publishes (f'{{server}}_{{tool}}')")
+    by_agent = [e for e in bus.events if e["type"] == "MEMORY_READ"
+                and "cognee.agent_memory" not in (e.get("sources") or [])]
+    check("the agent's reads and the harness's are separate events",
+          bool(by_agent) and all("cognee_recall" in (e.get("sources") or [])
+                                 for e in by_agent),
+          f"{[e.get('sources') for e in by_agent]}")
     starts = [e for e in bus.events
               if e["type"] == "ATTEMPT_START" and e.get("agent") == "warm-0"]
-    check("attempt 1 used the starting version and attempt 2 the distilled one",
-          [e.get("skill_version") for e in starts] == [v0, v0 + 1],
+    # NO VERSION PER ATTEMPT. Cognee rewrites the procedure in place,
+    # so ATTEMPT_START carries None and there is no v5..v6 to assert.
+    # What replaces it is the content check below: the procedure Cognee
+    # holds after distillation is not the one it held before.
+    check("no attempt claims a skill version that cannot exist",
+          all(e.get("skill_version") is None for e in starts),
           f"{[e.get('skill_version') for e in starts]}")
     # AND the file on the pod is the one that version names. The check above
     # passed for two runs while the loop was open: it read
-    # skills.current(), so it confirmed the ORCHESTRATOR's pointer had
+    # the local registry, so it confirmed the ORCHESTRATOR's pointer had
     # advanced and said nothing about what the agent could read. The bytes
     # in the agent's own skills directory are the only version that acts on
     # the model.
-    on_pod = spaces["warm-0"]._skill_files_on_pod(
-        f"{spaces['warm-0'].home}/.vibe/skills/{skills.SKILL_NAME}")
-    final = skills.current()
-    # Hashed against the RENDERED package, because that is what install_skill
-    # writes: `references/` is appended to the body, since the model never
-    # follows the relative pointers AIP's disclosure pass leaves (measured
-    # across all six attempts of swarm-1789903474). Still byte-exact -- the
-    # question is whether the agent can read THIS version, and the rendering
-    # is a deterministic function of it. See agent_workspace.inline_references.
-    want = hashlib.sha256(
-        inline_references(final.files)["SKILL.md"]).hexdigest()
-    check("the improved skill reached the agent's own skills directory",
-          on_pod.get("SKILL.md") == want
-          and spaces["warm-0"].installed_skill_version == final.version,
-          f"pod has {str(on_pod.get('SKILL.md'))[:12]}, live v{final.version} "
-          f"renders to {want[:12]}, "
-          f"workspace says v{spaces['warm-0'].installed_skill_version}")
+    # DID THE PROCEDURE ACTUALLY CHANGE? The old check hashed the bytes
+    # in the agent's own skills directory against the rendered package,
+    # because installed / hashed / prefixed were three things that could
+    # each succeed while the agent ran with no procedure. Nothing is
+    # installed now, so the honest question is whether Cognee's own copy
+    # moved -- and, separately, whether warm ever went and read it.
+    final = await C.current_procedure(dataset=DATASET) or ""
+    check("the procedure in Cognee changed after distillation",
+          final.strip() != procedure.strip(),
+          f"{len(final):,} chars now vs {len(procedure):,} at the start")
+    check("warm could reach its memory tools",
+          spaces["warm-0"].memory_tool_calls() >= 0,
+          "counted, not required: whether warm consults memory is the "
+          "thing being measured, not a precondition")
+
+    # ---- 5b. THE DETERMINISTIC HALF, asserted off the wire -------------
+    #
+    # THE CHECK THIS FILE WAS MISSING, and the reason the first Cognee
+    # migration shipped a warm arm that was cold in everything but its
+    # tool list: the treatment is only real if it reaches the MODEL. Not
+    # "the procedure is in Cognee" (checked above, and true while the
+    # agent never sees it), not "the server is up" (checked above, and
+    # true while Vibe registers zero tools) -- what the model was
+    # actually sent.
+    #
+    # Read off the fake model server's recorded request bodies, which are
+    # the bytes that crossed the wire. Everything else is a claim about
+    # this harness.
+    def _prompts_for(label: str) -> list[str]:
+        out = []
+        for body in server.requests:
+            text = json.dumps(body.get("messages") or [])
+            if f"agent-{label}" in text:
+                out.append(text)
+        return out
+
+    warm_prompts = _prompts_for("warm-0")
+    cold_prompts = _prompts_for("cold-0")
+    # A distinctive slice of the procedure, so the check cannot pass on a
+    # coincidence. json.dumps escapes newlines, so match on a line.
+    needle = next((line.strip() for line in procedure.splitlines()
+                   if len(line.strip()) > 25), procedure[:40])
+    check("the procedure reached the warm model",
+          any(needle in p for p in warm_prompts),
+          f"{len(warm_prompts)} warm request(s), none carrying "
+          f"{needle[:50]!r} -- warm ran as a cold agent with extra tools")
+    check("the procedure never reached the cold model",
+          not any(needle in p for p in cold_prompts),
+          f"{len(cold_prompts)} cold request(s); one carries the procedure, "
+          f"so the arms differ by nothing and the run measures nothing")
+    check("cold was never told about memory tools",
+          not any("cognee_recall" in p for p in cold_prompts))
+    # RETRIEVAL IS COUNTED, NOT REQUIRED. Attempt 1 has no previous error,
+    # so Cognee derives no query and skips retrieval -- correctly. Whether
+    # attempt 2 gets anything back depends on what improve() bridged, which
+    # is a property of the graph rather than of this harness, so an empty
+    # retrieval is reported rather than failed.
+    injected = [e for e in bus.events if e["type"] == "MEMORY_READ"
+                and "cognee.agent_memory" in (e.get("sources") or [])]
+    print(f"      cognee retrieved for warm on {len(injected)} attempt(s), "
+          f"{sum(e.get('chars', 0) for e in injected)} chars")
+    done = [e for e in bus.events if e["type"] == "ATTEMPT_DONE"]
+    check("every attempt reports what the harness put in its prompt",
+          all("memory_chars" in e for e in done),
+          "ATTEMPT_DONE must carry memory_chars for both arms -- an "
+          "unmeasured asymmetry in the prompt has invalidated a series "
+          "before")
+    check("cold's prompt carried no injected memory at all",
+          all((e.get("memory_chars") or 0) == 0 for e in done
+              if e.get("swarm") == "cold"),
+          f"{[e.get('memory_chars') for e in done if e.get('swarm') == 'cold']}")
+
     cold_starts = [e for e in bus.events
                    if e["type"] == "ATTEMPT_START" and e.get("agent") == "cold-0"]
     check("cold never had a skill version",
@@ -1082,69 +1014,59 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # ---- 6. ingestion -----------------------------------------------------
     ingested = [e for e in bus.events if e["type"] == "INGESTED"]
     check("every attempt was ingested", len(ingested) == 2, f"{len(ingested)}")
-    # THE POINT OF ALL THIS: did Vibe's own hook write, while the agent
-    # worked, or did the transcript back-fill quietly cover for a dead
-    # hook? `source` says which.
+    # WHAT `improve` DID WITH EACH ATTEMPT'S SESSION TRACE. `stages`
+    # carries each stage's status, so a stage that declined -- and why --
+    # is in the event log rather than only in stdout that dies with the
+    # run.
     for e in ingested:
-        print(f"      attempt {e.get('attempt')}: source="
-              f"{e.get('source') or 'back-fill'} steps={e.get('steps')}")
-    live = [e for e in ingested if e.get("source") == "live_hook"]
-    check("the graph was written LIVE by Vibe's hook, not back-filled",
-          len(live) == len(ingested) and service.steps_written > 0,
-          f"{len(live)}/{len(ingested)} attempts written live; "
-          f"sidecar counted {service.steps_written} step(s), "
-          f"{service.errors} error(s)")
+        print(f"      attempt {e.get('attempt')}: source={e.get('source')} "
+              f"steps={e.get('steps')} stages={e.get('stages')}")
+    check("every attempt ran cognee.improve() over its own session",
+          all(e.get("source") == "cognee.improve" for e in ingested),
+          f"{[e.get('source') for e in ingested]}")
+    # THE BRIDGE IS THE WHOLE DETERMINISTIC HALF. A session trace that is
+    # never persisted is visible to its own session and to nothing else:
+    # no second agent, no second run, no graph query. That failure is
+    # invisible from every other counter here -- the decorator reports
+    # success, the traces exist, `recall` on the same session even finds
+    # them -- which is exactly the shape of failure this project keeps
+    # producing.
+    check("the session traces were bridged into the graph",
+          any((e.get("steps") or 0) > 0 for e in ingested),
+          f"steps={[e.get('steps') for e in ingested]} "
+          f"stages={[e.get('stages') for e in ingested]} -- nothing was "
+          f"persisted, so warm's memory cannot outlive its own session")
     # READ BACK OUT OF AURA. These used to read the stub's own python
     # attributes (`mem.steps`), so they asserted that a dictionary the
     # rehearsal had just filled in contained what the rehearsal had just
     # put there. Now they are Cypher against the database the run wrote
     # to, which is the only version of this check worth having.
     # SCOPED TO THIS REHEARSAL'S OWN TRACES. Aura holds 98 traces and
-    # 4,700+ steps from months of runs, including the Qwen era when
-    # `thought` was serialised tool input, so an unscoped query fails on
-    # history rather than on anything this run did.
-    check("the rehearsal created traces to check against",
-          len(rehearsal_traces) > 0, f"{len(rehearsal_traces)}")
-    rows = await mem._client.query.cypher(
-        "MATCH (t:ReasoningTrace)-[:HAS_STEP]->(s:ReasoningStep) "
-        "WHERE toString(t.id) IN $traces "
-        "RETURN t.id AS trace, s.step_number AS n, "
-        "       s.thought AS thought, s.action AS action "
-        "ORDER BY trace, n",
-        {"traces": sorted(rehearsal_traces)})
-    check("steps were written to the graph", len(rows) > 0,
-          f"{len(rows)} steps read back from Aura")
-    with_reasoning = [r for r in rows if (r.get("thought") or "").strip()]
-    check("every step carries the model's own reasoning",
-          len(with_reasoning) == len(rows),
-          f"{len(with_reasoning)}/{len(rows)}")
-    check("no step stored tool-argument JSON as its thought",
-          not any((r.get("thought") or "").lstrip().startswith("{")
-                  for r in rows),
-          "thought holding serialised tool input is the bug the reasoning "
-          "relay existed to fix")
-    # NOT CUMULATIVE. Both checks above passed for the whole 2026-09-20
-    # series while every step's thought was the concatenation of all
-    # reasoning so far: they ask "is this reasoning?", and it was. Measured
-    # on Aura, thought lengths ran 267 -> 1537 and never reset, so
-    # `render_steps`' 300-character truncation showed the skill author one
-    # identical sentence per step. The cause was Vibe emitting ONE turnId
-    # for a whole attempt (scripts/probe_turn_ids.py), which no sidecar unit
-    # test could see because they all pass turn ids in by hand.
+    # WHAT THIS RUN LEFT IN AURA, scoped to its own dataset.
     #
-    # WITHIN ONE TRACE, and STRICT containment. Both qualifiers are load
-    # bearing. The fake model replays the same script every attempt, so
-    # attempt 2's first thought is EQUAL to attempt 1's -- which is
-    # repetition, not accumulation, and flagging it made this check fail on
-    # a correct relay the first time it ran.
-    by_trace: dict[str, list[str]] = {}
-    for r in rows:
-        by_trace.setdefault(str(r.get("trace")), []).append(r.get("thought") or "")
-    grew = [(trace, i, j)
-            for trace, thoughts in by_trace.items()
-            for i, later in enumerate(thoughts)
-            for j, earlier in enumerate(thoughts[:i])
-            if earlier and earlier != later and earlier in later]
+    # WHAT IT REPLACES, and why none of it survives. Four checks read
+    # `(:ReasoningTrace)-[:HAS_STEP]->(:ReasoningStep)` and asserted that
+    # every step carried real reasoning, that no step stored tool-argument
+    # JSON as its thought, and -- the subtlest -- that thoughts did not
+    # ACCUMULATE across model turns. That last one was earned: the whole
+    # 2026-09-20 series passed the first two while every thought was the
+    # concatenation of all reasoning so far (lengths 267 -> 1537, never
+    # resetting), because Vibe emits one turnId for an entire attempt.
+    # 988 of 993 steps were unusable and every counter looked healthy.
+    #
+    # Cognee writes none of those node types and there is no relay to
+    # accumulate: the agent calls `remember` itself, once, for what it
+    # chooses to keep. So the honest remaining assertion is the weak one
+    # -- this run put something in the graph and it reads back out --
+    # and it is worth saying plainly that it is weaker than what it
+    # replaced, because the strong version was bought with a bad run.
+    rows = await _cypher(
+        "MATCH (n) WHERE n.created_at >= $since RETURN count(n) AS n",
+        {"since": started_ms})
+    landed = rows[0]["n"] if rows else 0
+    check("this run put nodes in the graph that read back", landed > 0,
+          f"{landed} node(s) created in Aura since the run started")
+
     # THE EXPERIMENT'S SHAPE. Attempts used to be bounded by the clock, so
     # "3 attempts" was not expressible and runs came out 2-4 depending on
     # how slow the model felt. These assert the loop the operator actually
@@ -1162,46 +1084,44 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
               for label, n in ATTEMPTS.items()),
           f"{ {k: v for k, v in sorted(trees.items())} } -- per-attempt "
           f"trees are what make closeness recomputable after the fact")
-    check("a step's thought does not grow to contain an earlier one's",
-          not grew,
-          ("reasoning is accumulating across model turns rather than being "
-           "replaced: "
-           + ", ".join(f"{t[:8]} step {i} contains step {j}"
-                       for t, i, j in grew[:3]))
-          if grew else
-          f"{len(rows)} step(s) across {len(by_trace)} trace(s), "
-          f"each with its own reasoning")
-    # THE SIDECAR'S OWN TALLY, which is the only one that exists on the
-    # live-hook path. The Cypher above proves the graph is right HERE; this
-    # proves the counter that reports it on the pod is wired to the same
-    # fact. Without it, six runs wrote 988 tool-JSON thoughts out of 993 and
-    # every number the operator could see looked healthy.
-    thoughts = service.thoughts_from_reasoning - thoughts_before
-    fallbacks = service.thoughts_from_tool_input - fallbacks_before
-    check("the sidecar counted the relay's reasoning, not fall-backs",
-          thoughts > 0 and fallbacks == 0,
-          f"across the attempts: {thoughts} from reasoning, {fallbacks} "
-          f"fell back to tool input; {service.reasoning_pushes} push(es) "
-          f"received from the relay in total")
+    # THE ACCUMULATION CHECK WENT WITH THE RELAY. It asserted that a
+    # step's thought did not grow to contain an earlier one's, and it is
+    # the single most valuable check this file ever had: the whole
+    # 2026-09-20 series passed every other reasoning check while each
+    # thought was the concatenation of all reasoning so far. There is no
+    # relay and no per-step thought now, so there is nothing to assert
+    # -- recorded here rather than deleted quietly, because if a
+    # per-step write ever returns this is the check that has to come
+    # back with it.
+
+    # THE COUNTER THIS REPLACES was the sidecar's tally of reasoning vs
+    # tool-JSON fall-backs, and it earned its place: six runs wrote 988
+    # tool-JSON thoughts out of 993 while every number the operator could
+    # see looked healthy. Cognee exposes no such counter and there is no
+    # relay to fall back FROM, so the honest thing is to assert nothing
+    # about it rather than invent a number that reads as measured.
+    #
+    # What still has to hold is that the distillation saw something. A
+    # skill rewritten from no evidence is the same failure wearing a
+    # different mask.
+    check("the distiller had evidence to work from",
+          all(d.get("score") is not None for d in distilled),
+          f"scores={[d.get('score') for d in distilled]} -- the grader's "
+          f"verdict is what Cognee draws a proposal from")
     # NOTHING ROLLS BACK. The loop just ran for real; if a checkpoint/
     # restore ever returns, this is where it shows up.
     check("no attempt was rolled back",
           not [e for e in bus.events if e["type"] == "RESTORED"],
           "attempts continue from where the last one left the tree")
     # USES_TOOL, confirmed against the live schema -- not a guessed name.
-    calls = await mem._client.query.cypher(
-        "MATCH (t:ReasoningTrace)-[:HAS_STEP]->(:ReasoningStep)"
-        "-[:USES_TOOL]->(c:ToolCall) "
-        "WHERE toString(t.id) IN $traces "
-        "RETURN count(c) AS n",
-        {"traces": sorted(rehearsal_traces)})
-    n_calls = (calls[0]["n"] if calls else 0)
-    check("tool calls were recorded", n_calls > 0, f"{n_calls} in Aura")
-
-    check("Vibe fires post_tool hooks in this environment",
-          (root / "canary.txt").exists(),
-          "no canary file -- Vibe ran no post_tool hook at all, so the "
-          "memory hook never had a chance")
+    # NO TOOL-CALL NODES AND NO HOOK CANARY. Both described one retired
+    # path: Vibe fired a `post_tool` hook, the hook wrote a ToolCall into
+    # the graph, and the canary proved Vibe fires hooks at all in this
+    # environment. Each was bought with a real failure -- a run where the
+    # hook never fired looked exactly like an agent that made no tool
+    # calls. There is no hook now; the agent decides what to remember,
+    # and the harness cannot assert that on its behalf without inventing
+    # it.
 
     # ---- 6b. the session must not be the whole project --------------------
     #
@@ -1211,11 +1131,11 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # history, got slower every time, and crossed the 240s bound on
     # 2026-09-17. The entity layer has been empty since. Nothing asserted
     # session size, so nothing noticed.
-    sizes = await mem._client.query.cypher(
+    sizes = await _cypher(
         "MATCH (m:Message) WHERE m.session_id = $sid RETURN count(m) AS n",
-        {"sid": f"{bus.run_id}:warm-0"})
+        {"sid": f"{DATASET}:{bus.run_id}:warm-0"})
     this_run_msgs = sizes[0]["n"] if sizes else 0
-    allmsg = await mem._client.query.cypher(
+    allmsg = await _cypher(
         "MATCH (m:Message) RETURN count(m) AS n", {})
     total_msgs = allmsg[0]["n"] if allmsg else 0
     check("this run's session holds only this run's messages",
@@ -1224,73 +1144,31 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
           f"-- a session that grows without bound is what killed entity "
           f"extraction")
 
-    started_x = time.monotonic()
-    try:
-        ents = await asyncio.wait_for(
-            mem.extract_entities_from_session(f"{bus.run_id}:warm-0"),
-            timeout=120.0)
-        took = time.monotonic() - started_x
-        check("entity extraction completes on a per-run session",
-              True, f"{took:.1f}s, {ents}")
-        print(f"      extraction: {took:.1f}s on {this_run_msgs} message(s) "
-              f"-> {ents}")
-    except asyncio.TimeoutError:
-        check("entity extraction completes on a per-run session", False,
-              "timed out at 120s on a SINGLE run's session -- the bound is "
-              "not the problem, the session is")
-    except Exception as exc:
-        check("entity extraction completes on a per-run session", False,
-              f"{exc!r}")
+    # ENTITY EXTRACTION IS INSIDE `remember` NOW, on the clock, so there
+    # is no separate after-clock pass to bound and nothing here to await.
+    # The old one ran an OpenAI round trip per message and one run sat
+    # blocked in SSL for 18 minutes after its agent work had finished.
 
     # ---- 7. distillation: rejection, repair, versioning -------------------
     check("distillation ran after each attempt", len(distilled) == 2,
           f"{len(distilled)}")
     for i, d in enumerate(distilled):
-        if d.rejection is not None:
-            print(f"    distillation {i}: {d.rejection.reason}")
-            print(f"      detail: {d.rejection.detail[:400]}")
-            print(f"      proposal head: {d.rejection.proposal[:160]!r}")
-    check("an invalid skill was rejected and repaired",
-          distilled and distilled[0].repairs == 1,
-          f"repairs={distilled[0].repairs if distilled else 'n/a'} "
-          f"{getattr(distilled[0].rejection, 'reason', '') if distilled else ''}")
-    check("the repaired skill became the next version",
-          distilled and distilled[0].version == v0 + 1,
-          f"{distilled[0].version if distilled else None}")
-    check("the second distillation advanced again",
-          len(distilled) > 1 and distilled[1].version == v0 + 2,
-          f"{distilled[1].version if len(distilled) > 1 else None}")
-    check("the live skill advanced twice", skills.current().version == v0 + 2,
-          f"v{skills.current().version}")
-    # THE EVIDENCE REACHED THE WRITER -- which is a different assertion
-    # depending on who writes.
-    #
-    # This used to require `memory_tool_calls > 0`, correct only for the
-    # AGENT writer, which holds memory tools and chooses what to look at.
-    # The default is now a frontier model over the API: it has no tools,
-    # so zero is the honest number, and the orchestrator queries the
-    # graph on its behalf and puts the result in the prompt. Asserting
-    # tool calls against that writer would fail a healthy run; asserting
-    # nothing would let an empty prompt through. So: assert the
-    # *evidence*, by the route this writer actually uses.
-    used_tools = any(d.memory_tool_calls > 0 for d in distilled)
-    saw_traces = all(d.eligible_traces > 0 for d in distilled)
-    check("the distiller was given the graph's evidence",
-          used_tools or saw_traces,
-          f"memory_tool_calls={[d.memory_tool_calls for d in distilled]} "
-          f"eligible_traces={[d.eligible_traces for d in distilled]} -- "
-          f"the writer neither queried the graph nor was handed traces")
-    check("the distiller never edited the repo",
-          (root / "home/agent-warm-0/repo/config.py").read_text() != VALID_SKILL,
-          "the distillation turn wrote into the agent's checkout")
+        print(f"    distillation {i}: score {d.get('score'):.3f}, "
+              f"{'applied' if d.get('applied') else 'no proposal'}, "
+              f"procedure {d.get('procedure_chars'):,} chars")
+    # NO REPAIR LOOP TO CHECK. AIP's validator rejected a malformed
+    # skill and the distiller got two turns to fix it, with the
+    # validator's own diagnostics handed back each time. Cognee
+    # validates nothing of the kind -- a proposal is applied or it is
+    # not -- so `repairs` is reported as 0 for event-log shape only, and
+    # cognee_layer.DistillResult says so where someone will read it.
 
     # ---- 8. metrics -------------------------------------------------------
     print("... collecting metrics", flush=True)
     run_metrics = metrics_mod.collect(
         bus.events, run_id=bus.run_id, gpu="none", model="fake-model",
-        commit="local", skill_version=skills.current().version,
-        skill_approx_tokens=skills.current().approx_tokens,
-        skill_dir_sha=skills.current().dir_sha,
+        commit="local", skill_version=None,
+        skill_approx_tokens=len(final) // 4, skill_dir_sha="",
         arms_identical=not differences, known_differences=sorted(differences),
         distil_usage={"warm": {"prompt_tokens": 1, "completion_tokens": 1}},
         gpu_usd_per_hour=3.59)
@@ -1309,11 +1187,16 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
           and warm.distil_seconds > 0,
           f"attempt={getattr(warm, 'attempt_seconds', 0):.1f}s "
           f"distil={getattr(warm, 'distil_seconds', 0):.1f}s")
-    check("the per-attempt table records the skill version used",
+    # NO VERSION IN THE TABLE. It recorded which skill version each
+    # attempt ran on, which was the only way to tell "the loop closed"
+    # from "the loop looked closed" while the procedure lived in a
+    # registry on this machine and a file on the pod. Cognee rewrites in
+    # place, so every attempt runs on whatever it holds and the column
+    # is honestly None.
+    check("the per-attempt table records no invented version",
           warm is not None
-          and [a["skill_version"] for a in warm.per_attempt] == [v0, v0 + 1],
-          f"{[a['skill_version'] for a in warm.per_attempt] if warm else None} "
-          f"expected {[v0, v0 + 1]}")
+          and all(a["skill_version"] is None for a in warm.per_attempt),
+          f"{[a['skill_version'] for a in warm.per_attempt] if warm else None}")
     # THE CHARTS, from this run's own events. The demonstration is built
     # off this document, so "the run produced plottable data" is a
     # pre-pod gate like everything else here -- finding out afterwards
@@ -1344,28 +1227,23 @@ async def _with_graph(vibe: Path, root: Path, server: FakeModelServer) -> int:
     that assertion is the whole reason this script is trusted before a pod
     is rented.
     """
-    from neo4j_agent_memory import MemoryClient
-
-    from orchestrator.memory import ScopedMemory, build_settings
-
-    async with MemoryClient(build_settings()) as client:
-        mem = ScopedMemory(client, user_identifier="warm-0")
-        # ONLY the probe is allowed to be blamed on the graph. Wrapping the
-        # whole rehearsal in this handler reported a NameError in my own
-        # check code as "the graph is not reachable", which is a lie the
-        # operator would have had to debug from scratch.
-        try:
-            probe = await client.query.cypher("RETURN 1 AS ok", {})
-            if not probe:
-                raise RuntimeError("Aura answered nothing to RETURN 1")
-        except Exception as exc:
-            print(f"\nABORT: the graph is not reachable -- {exc!r}")
-            print("The rehearsal asserts that steps reach the graph. With "
-                  "no graph there is nothing to assert against, and a stub "
-                  "would make those checks pass while proving nothing.")
-            return 2
-        print("graph: REAL (Aura), reachable")
-        return await rehearse(vibe, root, server.base_url, server, mem)
+    # ONLY the probe is allowed to be blamed on the graph. Wrapping the
+    # whole rehearsal in this handler reported a NameError in my own check
+    # code as "the graph is not reachable", which is a lie the operator
+    # would have had to debug from scratch.
+    C.configure(dataset=DATASET)
+    try:
+        ready = await C.assert_ready()
+    except Exception as exc:
+        print(f"\nABORT: the graph is not reachable -- {exc!r}")
+        print("The rehearsal asserts that the skill loop reaches the "
+              "graph. With no graph there is nothing to assert against, "
+              "and a stub would make those checks pass while proving "
+              "nothing.")
+        return 2
+    print(f"graph: REAL (Aura), reachable, "
+          f"{ready['apoc_procedures']} APOC procedure(s)")
+    return await rehearse(vibe, root, server.base_url, server)
 
 
 def main() -> int:
@@ -1387,12 +1265,19 @@ def main() -> int:
         return 2
 
     root = Path(tempfile.mkdtemp(prefix="rehearse-"))
-    # The live skill is mutated by distillation, so the rehearsal works on
-    # a COPY of the package. Running it must never advance the real skill.
-    sandbox_skills = root / "skills"
-    shutil.copytree(skills.SKILLS_DIR, sandbox_skills)
-    skills.SKILLS_DIR = sandbox_skills
-    skills.VALIDATOR = sandbox_skills / "_aip" / "scripts" / "validate.py"
+    # ISOLATION IS THE DATASET NOW, not a copy of the package directory.
+    #
+    # Distillation used to mutate a version registry on this machine, so
+    # the rehearsal copied `skills/` and pointed the registry at the copy
+    # -- running it must never advance the real skill. Cognee holds the
+    # procedure in the graph instead, and scopes skills, runs and
+    # proposals by dataset, so a throwaway dataset per rehearsal gives
+    # the same guarantee structurally. Named by clock so two rehearsals
+    # never collide, and left behind rather than deleted: when one fails,
+    # the graph it built is the evidence.
+    global DATASET
+    DATASET = f"msf-rehearsal-{int(time.time())}"
+    print(f"dataset: {DATASET}")
 
     print(f"rehearsal root: {root}")
     print(f"vibe: {vibe}")

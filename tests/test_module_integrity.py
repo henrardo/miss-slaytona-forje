@@ -23,7 +23,7 @@ import pytest
 MODULES = [
     "orchestrator.run",
     "orchestrator.vibe_agent",
-    "orchestrator.memory",
+    "orchestrator.cognee_layer",
     "orchestrator.sandbox",
     "orchestrator.events",
     "orchestrator.manifest",
@@ -42,13 +42,10 @@ def test_module_imports(name):
         ("orchestrator.vibe_agent", "migrate_codebase"),
         ("orchestrator.vibe_agent", "_run_vibe"),
         # _replay_session_messages is gone: the agents write their own steps
-        # through Vibe's post_tool hook now (orchestrator/step_memory.py), so
-        # there is no transcript replay to await.
-        ("orchestrator.step_memory", "StepMemoryService.handle"),
         ("orchestrator.run", "agent_worker"),
         ("orchestrator.run", "main_async"),
-        ("orchestrator.memory", "graph_counts"),
-        ("orchestrator.memory", "reset_graph"),
+        ("orchestrator.cognee_layer", "assert_ready"),
+        ("orchestrator.cognee_layer", "forget_everything"),
     ],
 )
 def test_awaited_functions_are_coroutines(module, func):

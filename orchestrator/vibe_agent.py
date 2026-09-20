@@ -32,12 +32,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
-from neo4j_agent_memory.mcp._instructions import get_instructions
-from neo4j_agent_memory.schema.models import TraceOutcome
+from orchestrator.cognee_layer import MEMORY_TOOLS_GUIDE, uses_mcp
 
-from orchestrator.ingest import ingest
 from orchestrator.manifest import REPO_ROOT
-from orchestrator.memory import EMBEDDING_MODEL, NEO4J_PASSWORD, NEO4J_URI, ScopedMemory
 from orchestrator import surfaces
 from orchestrator.sandbox import SandboxPool
 
@@ -116,12 +113,11 @@ _STRIPPED_ENV = ("DAYTONA_API_KEY", "OPENAI_API_KEY", "MISTRAL_API_KEY",
 
 # The web-search MCP server and the interpreter it runs under. Separate venv on
 # purpose -- see the note at its registration in render_config().
-# The `post_tool` hook client. Stdlib only and started once per tool call, so
-# it runs under THIS interpreter (sys.executable) rather than the agent's
-# fixture venv -- it needs no third-party package, and the fixture venv exists
-# to run pytest, not to host harness code.
-STEP_HOOK_SCRIPT = HARNESS_DIR / "memory_step_hook.py"
-
+#
+# `STEP_HOOK_SCRIPT` used to sit here, naming harness/memory_step_hook.py --
+# the post_tool client that wrote a ReasoningStep per tool call. The file is
+# archived and the constant is gone; a path to a script that does not exist
+# is how a hook fails silently.
 WEB_TOOLS_DIR = HARNESS_DIR / "web-tools"
 WEB_TOOLS_PYTHON = WEB_TOOLS_DIR / ".venv" / "bin" / "python"
 WEB_TOOLS_SERVER = WEB_TOOLS_DIR / "server.py"
@@ -429,7 +425,7 @@ def render_config(
     active_model_alias: str = "devstral-local",
     auto_compact_threshold: int | None = None,
     memory_enabled: bool = False,
-    step_hook_port: int | None = None,
+    cognee_mcp_url: str = "http://127.0.0.1:8811/mcp",
     agent_label: str | None = None,
 ) -> None:
     """Render a clean $vibe_home/config.toml: the self-hosted provider/model
@@ -443,9 +439,13 @@ def render_config(
     `auto_compact_threshold` -- Vibe's default (200,000) assumes a
     large-context model and never fires before a 32k model's own limit does.
 
-    `memory_enabled` is the ONLY difference between the arms. False (every
-    cold agent) means no neo4j-agent-memory MCP block is written at all, so
-    that agent has no path to Neo4j -- not a gated one, none.
+    `memory_enabled` registers the cognee MCP server -- HALF of warm's
+    treatment, the half the agent may or may not choose to use. False
+    (every cold agent) means no block is written at all, so that agent has
+    no path to the graph: not a gated one, none. The other half, the
+    procedure and the retrieved context in the attempt prompt, is not
+    configured here at all; it reaches the agent as prompt text from
+    migrate_codebase.
 
     `web` is registered for EVERY agent, warm and cold. It is not part of the
     comparison but a baseline capability the task requires: migrating
@@ -490,55 +490,20 @@ def render_config(
         'disabled_tools = ["web_search"]\n'
     )
 
-    # $VIBE_HOME/hooks.toml -- Vibe's own per-step extension point, loaded by
-    # core/config/harness_files/_harness_manager.py. WARM ONLY: a cold agent
-    # gets no hooks.toml at all, so there is no hook process, no latency and no
-    # path to the graph, matching how its MCP server is simply absent rather
-    # than gated.
+    # NO hooks.toml, FOR EITHER ARM, and any that survives on a reused
+    # machine is deleted here rather than tolerated.
     #
-    # This is what per-step memory runs on. See orchestrator/step_memory.py for
-    # the loop and for why the command is a stdlib-only client rather than the
-    # work itself.
-    #
-    # `match = "*"` on purpose: Vibe's matcher takes one glob per hook entry
-    # (name_matches(tool_name, [hook.match or "*"]) in core/hooks/_post_tool.py),
-    # so filtering to the evidence-producing tools here would mean one hooks.toml
-    # entry per tool name and a second place to keep that list. The client costs
-    # one loopback round-trip and the sidecar drops non-evidence tools in
-    # _EVIDENCE_TOOLS, so the decision lives in exactly one place.
-    #
-    # `timeout` is the agent's protection, not ours: it bounds how long a slow
-    # or wedged graph can sit in the agent's tool-call path. The client fails
-    # open well before this, so the ceiling is belt-and-braces.
+    # This wrote a `post_tool` hook so every tool call became a
+    # ReasoningStep in the old memory layer, and a `post_agent` hook to
+    # catch the turns that called no tool. Both are retired: the agent
+    # writes what it chooses through its MCP server, and what the harness
+    # writes it writes from its own process after the verdict. A leftover
+    # hook would cost warm ~1.3-1.5s per tool call that cold does not pay
+    # -- wall-clock the shared deadline charges to warm alone, which is a
+    # confound in every number the run produces.
     hooks_file = vibe_home / "hooks.toml"
     if hooks_file.exists():
         hooks_file.unlink()
-    if memory_enabled and step_hook_port is not None and agent_label:
-        command = f"{sys.executable} {STEP_HOOK_SCRIPT} {step_hook_port} {agent_label}"
-        hooks_file.write_text(
-            "[[hooks]]\n"
-            'name = "agent-memory-step"\n'
-            'type = "post_tool"\n'
-            'match = "*"\n'
-            "timeout = 10.0\n"
-            'description = "Record this step in the shared reasoning graph and '
-            'surface what other agents hit here."\n'
-            f'command = "{command}"\n'
-            "\n"
-            # post_tool cannot see a turn that called no tool -- and those are
-            # 15% of this model's reasoning, including every turn where it
-            # declares itself finished while the suite still fails. post_agent
-            # fires when Vibe's loop ends and carries transcript_path, which is
-            # enough to pick them up. No `match`: the field is only valid for
-            # tool hooks (HookConfig._apply_defaults_and_constraints).
-            "[[hooks]]\n"
-            'name = "agent-memory-final-turn"\n'
-            'type = "post_agent"\n'
-            "timeout = 10.0\n"
-            'description = "Record the turns this agent ended without calling '
-            'a tool."\n'
-            f'command = "{command}"\n'
-        )
 
     env = dict(os.environ)
     env["VIBE_HOME"] = str(vibe_home)
@@ -574,54 +539,32 @@ def render_config(
     )
 
     if memory_enabled:
-        # neo4j-agent-memory's MCP server, registered the way its README says
-        # to -- `uvx "neo4j-agent-memory[mcp]" mcp serve --password <pw>`.
-        # Nothing here is built, wrapped, vendored or renamed. Warm agents
-        # only; a cold agent never gets this block, so it has no path to Neo4j
-        # at all.
+        # Cognee's MCP server, over loopback HTTP, registered the way its
+        # own docs say to run it: `cognee-mcp --transport http --host
+        # 127.0.0.1 --port 8811`. Warm agents only; a cold agent never
+        # gets this block and so has no path to memory at all.
         #
-        # Four deviations from the bare one-liner, each because the one-liner
-        # does not work here. All four were silent failures -- the server came
-        # up, published every tool, and answered with an error string:
+        # STREAMABLE-HTTP, NOT "http". This is the one thing that must not
+        # be simplified. Vibe's `--transport http` selects MCPHttp, its
+        # LEGACY SSE client, which issues a bare GET; a streamable-HTTP
+        # server answers that with 406 Not Acceptable and the agent
+        # registers ZERO memory tools while everything else looks healthy.
+        # That cost a whole run once. Cognee serves streamable-HTTP at
+        # /mcp, exactly as the old server did, so the same rule applies.
         #
-        #   [mcp,openai]  the default embedder is OpenAI's and [mcp] does not
-        #                 pull the client in.
-        #   --with httpx  packaging bug: _connect_bolt() imports
-        #                 nams._unsupported -> nams/transport -> httpx, but
-        #                 httpx is declared only by the `nams` extra, and
-        #                 [openai] brings openai 3.x which uses httpx2.
-        #   --embedding   the server builds its OWN client, so its embedder
-        #                 must match this orchestrator's or it opens the six
-        #                 vector indexes at the wrong dimension.
-        #   --backend     pinned to bolt, or the server silently switches to
-        #                 the hosted NAMS service if MEMORY_API_KEY is around.
+        # Written into config.toml rather than via `vibe mcp add`, because
+        # `mcp add` IS the OAuth path and hardcodes auth={"type":"oauth"}
+        # for a loopback server that knows nothing about OAuth. See
+        # swarm/agent_workspace._MCP_SERVER_TEMPLATE for the full autopsy.
         #
-        # `--arg=--with`, not `--arg --with`: argparse reads a bare `--with` as
-        # a flag of its own. Same for the = form on the args below.
-        # NOTES-hard-won.md, "MCP servers need their own venvs".
-        subprocess.run(
-            [
-                str(VIBE_BIN), "mcp", "add", "neo4j-agent-memory",
-                "--transport", "stdio",
-                "--command", str(_shim("memory-server", [
-                    "uvx", "--with", "httpx",
-                    "neo4j-agent-memory[mcp,openai]", "mcp", "serve",
-                    f"--uri={NEO4J_URI}",
-                    f"--password={NEO4J_PASSWORD}",
-                    f"--embedding={EMBEDDING_MODEL}",
-                    "--backend=bolt",
-                ])),
-                # Every one of these args used to be echoed to the model on
-                # every memory call, `--password=` included. Behind a shim
-                # instead -- see MCP_SHIM_DIR. The uvx invocation itself is
-                # unchanged, argument for argument.
-                "--arg", "mcp", "--arg", "serve",
-                "--env", f"OPENAI_API_KEY={env['OPENAI_API_KEY']}",
-            ],
-            env=env,
-            check=True,
-            capture_output=True,
-        )
+        # No shim, no credentials: the URL is all the agent gets, and the
+        # Neo4j password lives only in the server's own environment. The
+        # old stdio registration had to hide four arguments -- including
+        # `--password=` -- behind a shim because Vibe echoes a stdio
+        # server's launch command into every tool result.
+        with config_generated.open("a") as f:
+            f.write(f'\n[[mcp_servers]]\nname = "cognee"\n'
+                    f'transport = "streamable-http"\nurl = "{cognee_mcp_url}"\n')
 
     template = CONFIG_TEMPLATE.read_text()
     rendered = (
@@ -635,44 +578,34 @@ def render_config(
         f.write("\n" + rendered)
 
 
-# NOT OURS. This is neo4j-agent-memory's own MCP server instructions, imported
-# and relayed verbatim -- "ALWAYS at conversation start: Call
-# memory_get_context", "FOR complex tasks: Call memory_start_trace ...
-# memory_record_step ... memory_complete_trace", and so on. Warm agents only,
-# since only warm has that server registered.
+# WHAT WARM IS TOLD IT HAS. Short, and deliberately not coaching.
 #
-# It has to be relayed by hand because VIBE DROPS IT. An MCP server returns
-# `instructions` in its initialize result precisely so the host can put them in
-# the model's system context -- the package's own docstring says "injected into
-# the LLM's system context by the host" -- and the server sends 1,935
-# characters of them (profile defaults to "extended", the 16-tool set we get).
-# Vibe never reads the field: all three of its `session.initialize()` call
-# sites discard the return value (core/tools/mcp/tools.py:156, :188, :418) and
-# its descriptor model keeps only name/description/inputSchema/outputSchema
-# (core/tools/mcp/descriptor_cache.py:41).
+# The previous layer relayed neo4j-agent-memory's OWN 1,935-character
+# instructions verbatim, because Vibe DROPS a server's `instructions`
+# field -- all three of its `session.initialize()` call sites discard the
+# return value -- and that turned out to be why 40 consecutive runs ended
+# with zero agent-initiated memory calls. The tools were registered, the
+# server was live, the model was willing; it was never told what the
+# tools were for.
 #
-# That is the whole reason 40 consecutive runs ended with zero agent-initiated
-# memory calls while the same agents used bash/grep/edit/read_file throughout.
-# The tools were registered, the server was live and smoke-tested, the model
-# was willing -- it was never told what the tools were for, because the one
-# mechanism the package authors provided for telling it does not survive the
-# host. It is not a model failure and it is not a wiring failure.
+# Cognee's MCP server sends NO instructions at all -- measured:
+# `initialize()` returns `instructions=None` -- so there is nothing to
+# relay and the tool descriptions are the whole of what the model gets.
+# Whether that is enough is now an open question this harness can answer,
+# and it is a fair one to ask: `remember`/`recall` are self-describing in
+# a way `memory_start_trace`/`memory_record_step` were not.
 #
-# So this is a passthrough, deliberately containing not one word of our own.
-# The previous version of this constant was hand-written guidance, i.e. an
-# unwitting reimplementation of a shipped payload -- and a worse one: it
-# pre-formatted a call as `memory_search(query, memory_types=[...])`, and the
-# model copied that into message CONTENT instead of making a tool call, ending
-# an attempt after 2 turns having touched nothing. Do not write guidance here.
-# If it needs to say something different, that belongs upstream in the package
-# or in Vibe, not in this file.
-_MEMORY_TOOLS_GUIDE = get_instructions("extended")
+# The text lives in cognee_layer so the constant has one home.
+_MEMORY_TOOLS_GUIDE = MEMORY_TOOLS_GUIDE
 
 
 def _task_prompt(
     last_error: str | None,
     memory_enabled: bool = False,
     skill_command: str | None = None,
+    *,
+    procedure: str | None = None,
+    memory: str | None = None,
 ) -> str:
     """The user's request, and nothing else of ours.
 
@@ -775,6 +708,35 @@ def _task_prompt(
     # migrate_codebase().
     if memory_enabled:
         base += "\n\n" + _MEMORY_TOOLS_GUIDE
+    # THE DETERMINISTIC HALF OF WARM'S TREATMENT, and the only two blocks
+    # in this prompt the harness puts there on the agent's behalf.
+    #
+    # `procedure` is the skill as Cognee holds it, and it reaches the
+    # model here because there is nowhere else for it to go: the AIP era
+    # installed a SKILL.md and opened the prompt with `/<name>` so Vibe
+    # loaded it deterministically, and Cognee keeps the procedure in the
+    # graph instead. Leaving it to `cognee_recall` means warm runs
+    # against its own distilled skill only on the attempts where it
+    # chooses to go and fetch it -- which is not a memory experiment, it
+    # is a tool-use experiment with the skill as the prize.
+    #
+    # `memory` is what Cognee retrieved for this attempt (see
+    # cognee_layer.with_agent_memory). Capped at MAX_CONTEXT_CHARS,
+    # because the last version of a retrieved-memory block in this prompt
+    # reached 15,170 characters and warm spent three attempts reporting
+    # on it instead of migrating anything.
+    #
+    # Both are reported per attempt (ATTEMPT_DONE.memory_chars) and both
+    # are switchable off (`--memory-mode mcp`), because they are prompt
+    # tokens warm reads and cold does not, and an unmeasured asymmetry in
+    # this prompt has invalidated a run series before.
+    if procedure:
+        base += ("\n\nYour procedure for this task, as you last revised it:"
+                 f"\n```\n{procedure.strip()}\n```")
+    if memory:
+        base += ("\n\nWhat you and other agents learned on earlier attempts:"
+                 f"\n```\n{memory.strip()}\n```\n"
+                 "You do not have to follow any of it.")
     # The one thing the agent genuinely cannot see for itself: the verdict from
     # a suite that ran somewhere else, in Daytona, after its turn ended. Stated
     # and not editorialised -- the advice that used to follow it ("keep going
@@ -827,33 +789,44 @@ def _stream_entries(stdout: str) -> list[dict]:
     return entries
 
 
-def attempt_prompt(last_error: str | None, skill_name: str | None) -> str:
-    """The prompt for one attempt. IDENTICAL BETWEEN THE ARMS except for the
-    skill prefix.
+def attempt_prompt(last_error: str | None, skill_name: str | None,
+                   *, procedure: str | None = None,
+                   memory: str | None = None,
+                   mcp_tools: bool = False) -> str:
+    """The prompt for one attempt. IDENTICAL BETWEEN THE ARMS except for
+    warm's memory: the tools it is told it has, the procedure it wrote,
+    and what Cognee retrieved for this attempt.
 
     This is a function, rather than a call to `_task_prompt` at the one site
     that builds it, so the property can be tested directly instead of being
     asserted about the source.
 
-    `memory_enabled=False` for BOTH arms, always. It used to be
-    `mem is not None`, which added three numbered steps and a closing note
-    about memory tools to warm's prompt only -- a longer prompt, more
-    instructions and more tokens before warm started work, on top of the
-    difference the experiment was trying to measure. In the current design
-    warm has no memory tools during an attempt at all: the graph is written
-    after the attempt, from the transcript, and the model's only contact
-    with what it learned before is the skill it distilled. So there is
-    nothing to instruct it about, and the guide moves to the distillation
-    turn, which is where memory tools now live.
+    `mcp_tools` adds the three numbered memory steps and the tools guide.
+    It is the agent being told what it has, and it only makes sense for an
+    agent that has it -- telling an agent with no memory server to consult
+    its memory is an instruction it cannot follow. That makes warm's
+    prompt longer than cold's, which is a real asymmetry and is why the
+    whole block is off under `--memory-mode deterministic`.
+
+    `procedure` and `memory` are the deterministic half: the skill Cognee
+    holds and what Cognee retrieved for this attempt. Both empty for
+    cold, so cold's prompt is byte-identical to what it has always been.
 
     The feedback from the previous attempt -- the grader's own pytest
     output, trimmed by `_trim_error_for_prompt` -- is passed through
     unchanged for both arms, in the same place and the same format. Neither
-    arm resumes a session, so this is the ONLY thing either of them carries
-    from its last attempt, and warm additionally carries the skill.
+    arm resumes a session, so this and warm's two blocks are the only
+    things either of them carries from its last attempt.
     """
-    return _task_prompt(last_error, memory_enabled=False,
-                        skill_command=skill_name)
+    # NO SKILL PREFIX. Warm's prompt used to open with
+    # `/pydantic-v2-migration`, Vibe's command for loading a skill FILE
+    # from $VIBE_HOME/skills. Cognee keeps the procedure in the graph, so
+    # there is no file to name -- the text itself is passed in instead.
+    # `skill_name` survives as the name of the skill whose procedure that
+    # is, for the caller's own bookkeeping.
+    _ = skill_name
+    return _task_prompt(last_error, memory_enabled=mcp_tools,
+                        procedure=procedure, memory=memory)
 
 
 def _entry_text(entry: dict) -> str:
@@ -876,64 +849,23 @@ def _entry_text(entry: dict) -> str:
     return ""
 
 
-def _entry_consumer(
-    mem: ScopedMemory,
-    session_id: str,
-    step_memory: Any | None,
-    agent_label: str | None,
-) -> Callable[[dict], Awaitable[None]]:
-    """Consume Vibe's streamed history entries into memory, as they happen.
-
-    This is the half of per-step memory the `post_tool` hook cannot supply,
-    and between them nothing the old transcript replay captured is lost:
-
-      * `type="message"`, role assistant -> short_term.add_message. The only
-        source of :Message nodes, and so the only input to entity extraction
-        (verified: add_step has no extraction path at all). Stored with
-        extract_entities=False and extracted in one batch at end of run --
-        see ScopedMemory.extract_entities_from_session.
-      * `type="reasoning"` -> handed to the step hook as the pending thought
-        for this turn. Reasoning entries complete BEFORE the tool calls they
-        justify, so the most recent one is the reasoning behind the next step
-        recorded. This replaces reading `messages.jsonl`, which could not
-        work: Vibe flushes the transcript once per turn, after the tool loop,
-        so at post_tool time the message that issued the call is not on disk.
-
-    `user` entries are deliberately not stored. They are the orchestrator's
-    own prompt, and storing them makes memory retrieve its own previous
-    output -- attempt N's prompt embedding attempt N-1's memory block.
-    Measured at 15,170 characters and growing before it was removed.
-    """
-    async def consume(entry: dict) -> None:
-        kind = entry.get("type")
-        # EVERY entry, of every type, reports the turn it belongs to, and the
-        # key is `turnId`, NOT `turn_id`: the streaming writer dumps with
-        # `model_dump(mode="json", by_alias=True)` (cli/programmatic.py:128),
-        # so every multi-word field arrives camelCase -- turnId, sessionId,
-        # generationStatus, relatedEntryId.
-        #
-        # This was written as `turn_id` first, which made the whole mechanism a
-        # no-op: `.get("turn_id")` is always None, note_turn() returns
-        # immediately on None, and nothing was ever invalidated. It passed its
-        # unit tests, which pass synthetic dicts, and shipped through two live
-        # runs. Read off the wire, not off the model definition -- the field is
-        # declared `turn_id` in app_server/models.py and serialised `turnId`.
-        turn_id = entry.get("turnId")
-        if step_memory is not None and agent_label:
-            step_memory.note_turn(agent_label, turn_id)
-        if kind == "reasoning":
-            text = _entry_text(entry)
-            if text and step_memory is not None and agent_label:
-                step_memory.set_pending_reasoning(agent_label, text, turn_id)
-            return
-        if kind == "message" and entry.get("role") == "assistant":
-            text = _entry_text(entry)
-            if text:
-                await mem.add_message(
-                    session_id, "assistant", _cap(text), extract_entities=False
-                )
-
-    return consume
+# _entry_consumer DELETED, and this is the note that goes with it.
+#
+# It consumed Vibe's streamed history entries as they arrived and fed two
+# things the old memory layer needed: assistant messages into
+# `short_term.add_message` (the only source of :Message nodes, and so the
+# only input to entity extraction) and `type="reasoning"` entries into the
+# step hook as the pending thought for the turn. Both are retired with
+# that layer, and it had already decayed into a no-op that still cost an
+# `on_entry` callback per entry.
+#
+# ONE FACT FROM IT IS WORTH KEEPING, because it cost two live runs: every
+# streamed entry reports its turn as `turnId`, NOT `turn_id`. The writer
+# dumps with `model_dump(mode="json", by_alias=True)` (cli/programmatic.py),
+# so every multi-word field arrives camelCase, while the model declares it
+# `turn_id`. Written the declared way, the whole mechanism silently did
+# nothing and its unit tests -- which passed synthetic dicts -- passed.
+# Read off the wire, not off the model definition.
 
 
 async def _run_vibe(
@@ -1120,18 +1052,27 @@ def _assistant_turns_total(vibe_home: Path) -> int:
     return total
 
 
-# Read-side memory tools, by their BARE package names. Matched as a suffix,
-# because Vibe publishes an MCP tool as f"{server_alias}_{tool}" -- the config
-# registers the server as "neo4j-agent-memory", so what actually lands in the
-# transcript is `neo4j-agent-memory_memory_get_context`.
+# Read-side memory tools, by their BARE server names. Matched as a suffix,
+# because Vibe publishes an MCP tool as f"{server_alias}_{tool}" -- the
+# config registers cognee's server as "cognee", so what lands in the
+# transcript is `cognee_recall`.
 #
-# This cost a finding. The first time an agent ever called memory for itself
-# (warm-0, attempt 1, right after the package's own instructions started
-# reaching the model) the counter read 0 and MEMORY_READ did not fire, because
-# the filter tested `startswith("memory")` against a name beginning "neo4j-".
-# The one event that exists to say "the agent retrieved something" reported
-# nothing on the only occasion it had ever been true.
+# This cost a finding once, under the previous server. The first time an
+# agent ever called memory for itself the counter read 0 and MEMORY_READ
+# did not fire, because the filter tested `startswith("memory")` against a
+# name beginning "neo4j-". The one event that exists to say "the agent
+# retrieved something" reported nothing on the only occasion it had ever
+# been true. Hence suffix matching, and hence the old names below: a
+# transcript from before 2026-09-20 is still read by scripts/inspect_run.py
+# and must still count.
 _MEMORY_READ_TOOLS = (
+    # cognee-mcp 0.5.5, `cognee-mcp --transport http`
+    "recall",
+    "search",
+    "get_document",
+    "get_chunk_neighbors",
+    "list_data",
+    # neo4j-agent-memory, retired 2026-09-20. Kept so old runs still parse.
     "memory_get_context",
     "memory_search",
     "memory_get_conversation",
@@ -1144,16 +1085,22 @@ _MEMORY_READ_TOOLS = (
 
 
 def _is_memory_read(tool_name: str) -> bool:
+    # `web_lookup` must never match. Both arms have it, so counting it as a
+    # memory read would report cold retrieving from a graph it cannot reach.
+    if not (tool_name.startswith("cognee") or "memory" in tool_name
+            or tool_name.endswith("graph_query")):
+        return False
     return any(tool_name.endswith(t) for t in _MEMORY_READ_TOOLS)
 
 
 def _is_memory_tool(tool_name: str) -> bool:
     """Any memory tool, read or write -- the `memory_calls` counter.
 
-    Suffix/substring match for the same aliasing reason as _is_memory_read.
+    Prefix/substring match for the same aliasing reason as _is_memory_read.
     `graph_query` is included: read-only Cypher against the same graph is the
     package's own escape hatch and counts as the agent using its memory."""
-    return "memory_" in tool_name or tool_name.endswith("graph_query")
+    return (tool_name.startswith("cognee") or "memory_" in tool_name
+            or tool_name.endswith("graph_query"))
 
 
 def _tool_calls_total(vibe_home: Path) -> Counter:
@@ -1394,9 +1341,6 @@ def v1_shim_files(file_contents: dict[str, bytes]) -> list[str]:
 # pre-migration fixture parses cleanly, so any of these in a graded result
 # is damage this attempt did.
 _SYNTAX_ERRORS = ("SyntaxError", "IndentationError", "TabError")
-
-class _LiveWritesPresent(Exception):
-    """The post_tool hook already wrote this attempt's steps."""
 
 
 _TERMINATORS = (ast.Return, ast.Raise, ast.Continue, ast.Break)
@@ -1875,11 +1819,10 @@ async def migrate_codebase(
     repo_dir: Path | None = None,
     vibe_home: Path = VIBE_HOME,
     vibe_cwd: Path = HARNESS_DIR,
-    mem: ScopedMemory | None = None,
+    mem: Any | None = None,
     session_id: str | None = None,
     baseline_signature: str | None = None,
     baseline_passed: int = 0,
-    step_memory: Any | None = None,
     agent_label: str | None = None,
     skill_name: str | None = None,
     distiller: Any | None = None,
@@ -1918,38 +1861,27 @@ async def migrate_codebase(
     `mem` is None for every cold agent -- every memory call below is skipped
     entirely for that swarm, not just gated.
 
-    When `mem` is set (warm only), this loop is the deterministic half of
-    workshop-agent-memory-scripts/memory_agent_mvp.py's main(), with one
-    attempt standing in for one turn. All five of that script's memory calls
-    are here, none of them optional and none of them the model's choice:
+    WHEN `mem` IS SET (warm only), four things happen per attempt that do
+    not happen for cold, and all four are Cognee's own surfaces:
 
-        add_message(user)   -> before the Vibe call
-        start_trace(...)    -> before the Vibe call
-        get_context(...)    -> NOT called here. The agent calls
-                               memory_get_context itself, over MCP, as its
-                               server's instructions tell it to.
-        add_step/record_tool_call -> replayed from Vibe's own messages.jsonl
-        add_message(assistant) + complete_trace(...) -> after the Daytona check
+        mem.procedure()     the skill as Cognee holds it, into the prompt
+        mem.wrap_attempt()  the attempt runs inside `cognee.agent_memory`,
+                            which retrieves before it and writes a session
+                            trace -- params, status, return, error -- after
+        mem.retrieved()     what that retrieval found, into the prompt
+        mem.improve()       bridges the session trace into the graph, after
+                            the verdict and off the agent's clock
 
-    Two deliberate differences from that script, both because this harness
-    knows things a chat agent doesn't:
+    None of them is the model's choice, which is the point: the MCP server
+    is the half that is, and a run can have either or both
+    (`--memory-mode`). What the agent chooses to `remember` on top is its
+    own, and is counted rather than assumed -- see ATTEMPT_DONE's
+    `memory_calls` against its `memory_chars`.
 
-    * The trace is keyed on the *error signature* the attempt is working
-      against, not on the task description. Every attempt here shares one task
-      ("migrate this codebase"), so keying on it makes every trace embed the
-      same string and get_similar_traces cannot tell them apart. The failure
-      is what differs between attempts, so the failure is what gets embedded.
-      Attempt 1 has no prior failure and uses the task description.
-
-    * `complete_trace` is driven by an independent pytest run in a fresh
-      Daytona sandbox, not by whether the agent raised. The workshop closes
-      its trace on the agent's own say-so; here the trace's success flag is
-      ground truth. Correspondingly, trace-level success means "this attempt
-      cleared the error it was handed", not "the whole migration finished" --
-      which is what makes get_similar_traces(success_only=True), the library
-      default, return anything at all on a suite that stays red for most of a
-      run. Suite-level completion is MigrationResult.success, reported
-      separately by run.py."""
+    THE VERDICT IS NEVER THE MODEL'S. An independent pytest run in a fresh
+    Daytona sandbox decides success, and that number is what reaches Cognee
+    as the skill run's score. Suite-level completion is
+    MigrationResult.success, reported separately by run.py."""
     # Either a Workspace is supplied (remote swarm host) or one is built
     # from the local paths, which is exactly what this function did before.
     # Same loop, same graph, same events either way -- only where the files
@@ -2024,66 +1956,48 @@ async def migrate_codebase(
         # installed; distil between attempts and an attempt was credited to
         # a procedure that had not reached the pod. Either way the label was
         # not the skill the model read.
-        skill_version = getattr(workspace, "installed_skill_version", None) \
-            if skill_name else None
+        # No version to report: Cognee rewrites the procedure in place
+        # and keeps no lineage. Emitted as None rather than as a number
+        # the harness invented, because "which skill produced this
+        # result" now has one honest answer -- whatever Cognee held at
+        # the time -- and a fabricated counter would read as more.
+        skill_version = None
         await emit("ATTEMPT_START", attempt=attempt,
                    skill_version=skill_version)
         attempt_started = time.monotonic()
         off_clock_at_start = off_clock
-        # CUMULATIVE across the run, so the back-fill decision has to be a
-        # DELTA. Read before the attempt: a hook that wrote 40 steps in
-        # attempt 1 and then died would otherwise look alive forever.
-        steps_before_attempt = (
-            getattr(step_memory, "steps_written", 0) or 0
-            if step_memory is not None else 0)
-
-        trace_id = None
-
         # What this attempt is actually up against. Attempt 1 has nothing to
         # go on yet; from attempt 2 it is the previous attempt's real failure,
         # as read by the orchestrator off its own independent pytest run.
         trace_task = last_signature or task_desc
 
+        # THE PROCEDURE THE AGENT IS ABOUT TO WORK FROM, read once per
+        # attempt because distillation rewrites it between attempts --
+        # reading it at the end would attribute the result to the wrong
+        # text. Off the agent's clock: it is a read the harness makes.
+        #
+        # NO TRACE IS OPENED HERE. The harness used to open one per
+        # attempt and close it with the verdict, and pass its id to a
+        # sidecar so a hook could hang steps off it. Cognee's decorator
+        # records the attempt itself (see `_attempt_turn`), and what the
+        # agent chooses to remember on top of that is its own `remember`
+        # call -- so there is no trace id to mint, thread or close.
+        procedure = ""
         if mem is not None:
             assert session_id is not None
-            # NO get_context() HERE ANY MORE, and that is the point.
-            #
-            # This used to call MemoryClient.get_context() itself and splice the
-            # result into the prompt as a "What you remember:" block, once per
-            # attempt. It retrieved real, cross-agent traces and it worked -- 17
-            # reads, 3-5 hits each, sourced from warm-0/1/2/3 -- but it was the
-            # orchestrator retrieving on the agent's behalf, and it is almost
-            # certainly WHY the agent never retrieved anything itself. The
-            # package's instructions say "ALWAYS at conversation start: Call
-            # memory_get_context". An agent that already has a page of
-            # remembered context at the top of its prompt has no reason to.
-            #
-            # It also made the claim wrong. "These agents retrieve each other's
-            # reasoning" was carried by this function, not by the agents: 0
-            # memory tool calls across 15 sessions while this splice ran on
-            # every attempt. The graph was real, the retrieval was real, the
-            # agency was ours.
-            #
-            # So the agent now does its own reading, with the tools it has and
-            # the instructions their authors wrote (see _MEMORY_TOOLS_GUIDE).
-            # MEMORY_READ is emitted from the agent's own calls instead, counted
-            # off the transcript -- see ATTEMPT_DONE's `memory_calls`. If it
-            # comes back zero now that the instructions actually reach the
-            # model, that is the finding, and the fix for it is upstream in
-            # Vibe, not another splice here.
-            #
-            # start_trace stays: a trace has to exist before steps can hang off
-            # it, and the agent is separately instructed to open its own. Two
-            # traces for one attempt is honest -- one is what happened, one is
-            # what the agent chose to record.
-            trace = await mem.start_trace(session_id, task=trace_task)
-            trace_id = trace.id
-            # Hand this attempt's trace to the step hook. Vibe's post_tool
-            # payload carries the tool call and the agent's cwd, but nothing
-            # about attempts or traces -- so the sidecar has to be told which
-            # trace the steps it is about to receive belong to.
-            if step_memory is not None and agent_label:
-                step_memory.set_trace(agent_label, trace_id)
+            procedure_started = time.monotonic()
+            try:
+                procedure = await mem.procedure()
+            except Exception as exc:
+                # Not fatal, and loud. An attempt with no procedure is a
+                # warm agent running as a cold one, which is a finding
+                # about this run rather than a reason to end it -- but it
+                # must never be silent, because warm-without-its-skill
+                # looks exactly like warm-with-a-useless-skill in the
+                # numbers.
+                print(f"  [{agent_label}] could not read the procedure from "
+                      f"Cognee ({exc!r}); this attempt runs without it")
+            off_clock += time.monotonic() - procedure_started
 
         # Token counters at the attempt boundary, so ATTEMPT tokens can be
         # reported apart from distillation tokens. The sampling itself is
@@ -2093,11 +2007,70 @@ async def migrate_codebase(
         usage_before = usage_probe() if usage_probe else {}
         off_clock += time.monotonic() - probe_started
 
-        task = attempt_prompt(last_error, skill_name)
         before_snapshot = source_tree(workspace)
         turns_before = workspace.assistant_turns_total()
         tools_before = workspace.tool_calls_total()
-        try:
+
+        # ONE ATTEMPT, AS A FUNCTION, so Cognee's own decorator can wrap it.
+        #
+        # `cognee.agent_memory` is the documented integration point
+        # (guides/agent-session-traces): it retrieves before the call and
+        # persists a session trace of the call afterwards -- parameters,
+        # status, return value, error. Wrapping this body is what makes
+        # warm's memory deterministic rather than a tool the model may or
+        # may not reach for.
+        #
+        # `last_error` is the first parameter for a reason: it is what
+        # `memory_query_from_method` names, so Cognee retrieves against
+        # the failure this attempt is working on. Attempt 1 passes None,
+        # Cognee derives no query and skips retrieval -- correct, and not
+        # an error.
+        #
+        # `_marks` is how the harness keeps its off_clock accounting
+        # honest across the decorator. Cognee's retrieval happens before
+        # this body runs and its trace write after, both inside the same
+        # await, so without the two stamps warm's bookkeeping would be
+        # charged to warm's thinking time -- which is exactly the
+        # asymmetry `off_clock` exists to prevent.
+        _marks: dict[str, Any] = {}
+
+        async def _attempt_turn(last_error: str | None = None,
+                                *, attempt: int = 0) -> str:
+            _marks["fn_started"] = time.monotonic()
+            # Read INSIDE the wrapped call: the decorator leaves what it
+            # retrieved on a contextvar that only exists for the duration
+            # of this frame. Empty for cold (no decorator), empty under
+            # `--memory-mode mcp`, and empty on attempt 1.
+            retrieved = await mem.retrieved() if mem is not None else ""
+            task = attempt_prompt(
+                last_error, skill_name,
+                procedure=procedure if mem is not None else None,
+                memory=retrieved or None,
+                mcp_tools=bool(mem is not None and uses_mcp(mem.mode)),
+            )
+            _marks["task"] = task
+            _marks["memory_chars"] = len(retrieved)
+            code, output = await _drive_vibe(task, attempt=attempt)
+            _marks["fn_ended"] = time.monotonic()
+            _marks["result"] = (code, output)
+            # A SHORT RETURN VALUE, and it has to be one. The decorator
+            # stores this as the trace's `method_return_value`, Cognee
+            # truncates it at 1,000 characters (MAX_SERIALIZED_VALUE_
+            # LENGTH), and `improve`'s distillation stage reads exactly
+            # that field when there is no LLM summary. Returning the Vibe
+            # stream would put its first kilobyte -- JSON framing, a
+            # directory listing -- into the graph as this attempt's
+            # lesson, which is worse than storing nothing because it
+            # reads as content.
+            #
+            # The real result travels in `_marks`; the verdict is not here
+            # at all, because it does not exist yet. It reaches Cognee
+            # after the grader has spoken, as the SkillRun score.
+            return (f"attempt {attempt}: vibe exited {code} after "
+                    f"{workspace.assistant_turns_total() - turns_before} "
+                    f"assistant turn(s); {stop_reason(output)}")
+
+        async def _drive_vibe(task: str, *, attempt: int) -> tuple[int, str]:
             # EVERY ATTEMPT STARTS A FRESH SESSION, IN BOTH ARMS.
             #
             # This used to be `attempt > 1 and last_ended_cleanly`: resume a
@@ -2140,10 +2113,7 @@ async def migrate_codebase(
                 timeout_s=max(1.0, (deadline + off_clock) - time.monotonic()
                                    - VERDICT_RESERVE_S),
                 resume=resume,
-                on_entry=(
-                    _entry_consumer(mem, session_id, step_memory, agent_label)
-                    if mem is not None and session_id else None
-                ),
+                on_entry=None,
             )
             # RECOVER A TRUNCATED TURN, WITHIN THIS ATTEMPT.
             #
@@ -2169,14 +2139,55 @@ async def migrate_codebase(
                            continuation=_cont + 1, reason=why)
                 more_code, more_output = await workspace.run_vibe(
                     task, timeout_s=max(1.0, left), resume=True,
-                    on_entry=(
-                        _entry_consumer(mem, session_id, step_memory,
-                                        agent_label)
-                        if mem is not None and session_id else None
-                    ),
+                    on_entry=None,
                 )
                 vibe_exit_code = more_code
                 vibe_output = f"{vibe_output}\n{more_output}"
+            return vibe_exit_code, vibe_output
+
+        # WRAPPED PER ATTEMPT, warm only. The decorator's configuration is
+        # fixed at decoration time and the session is per run, so this
+        # cannot be a module-level `@cognee.agent_memory(...)`.
+        turn = (mem.wrap_attempt(_attempt_turn) if mem is not None
+                else _attempt_turn)
+        try:
+            call_started = time.monotonic()
+            try:
+                await turn(last_error, attempt=attempt)
+                vibe_exit_code, vibe_output = _marks["result"]
+            except Exception as exc:
+                # A MEMORY FAILURE MUST NOT COST AN ATTEMPT, and the
+                # decorator can raise in one place the wrapped function
+                # cannot recover from: resolving the agent user, the
+                # dataset scope and the connection all happen BEFORE the
+                # body runs and are outside its own error handling.
+                # (Retrieval and trace persistence both swallow their own
+                # failures -- verified in cognee.modules.agent_memory.)
+                #
+                # So: if the body never ran, run it undecorated. If it did
+                # run, its result stands -- losing it because bookkeeping
+                # failed afterwards would throw away the agent's work.
+                if "result" in _marks:
+                    print(f"  [{agent_label}] cognee bookkeeping failed AFTER "
+                          f"the attempt ran; keeping the attempt: {exc!r}")
+                    vibe_exit_code, vibe_output = _marks["result"]
+                else:
+                    print(f"  [{agent_label}] cognee could not open this "
+                          f"attempt's memory ({exc!r}); running it without "
+                          f"retrieval or a trace")
+                    await _attempt_turn(last_error, attempt=attempt)
+                    vibe_exit_code, vibe_output = _marks["result"]
+            # WHAT COGNEE SPENT, charged to the harness rather than to the
+            # agent. The two stamps bracket the body, so everything outside
+            # them inside this await is the decorator: retrieval before,
+            # the session-trace write after.
+            fn_started = _marks.get("fn_started", call_started)
+            fn_ended = _marks.get("fn_ended", time.monotonic())
+            memory_seconds = ((fn_started - call_started)
+                              + max(0.0, time.monotonic() - fn_ended))
+            off_clock += memory_seconds
+            resume = False
+            memory_chars = int(_marks.get("memory_chars", 0))
             last_ended_cleanly = _ended_cleanly(vibe_exit_code, vibe_output)
 
             # Did the agent actually take a turn? If Vibe exited without
@@ -2205,12 +2216,6 @@ async def migrate_codebase(
             # (An aborted attempt has no steps, so search_steps cannot surface
             # it regardless.)
             if workspace.assistant_turns_total() <= turns_before:
-                if mem is not None and trace_id is not None:
-                    await mem.complete_trace(
-                        trace_id,
-                        outcome="no verdict; the agent completed no turn",
-                        success=False,
-                    )
                 await emit(
                     "ATTEMPT_ABORTED",
                     attempt=attempt,
@@ -2279,17 +2284,15 @@ async def migrate_codebase(
             # MigrationResult(False, 0). Run 30 printed "0 attempts" for both
             # swarms off the back of that, after 21 cold and 5 warm attempts had
             # actually started.
-            if mem is not None and trace_id is not None:
-                await mem.complete_trace(
-                    trace_id,
-                    outcome="ran out of time mid-attempt; no verdict for this one",
-                    success=False,
-                )
+            #
+            # NOTHING TO CLOSE. Two `mem.complete_trace(...)` calls used to
+            # live in these two handlers, and they outlived the object that
+            # had the method -- so the one path that runs when a run is
+            # already going wrong would have died with AttributeError.
+            # Cognee's decorator has already recorded this attempt's trace,
+            # with `status="error"` and the exception on it, before control
+            # reaches here.
             break
-        except Exception:
-            if mem is not None and trace_id is not None:
-                await mem.complete_trace(trace_id, outcome="error", success=False)
-            raise
 
         tools_used = workspace.tool_calls_total() - tools_before
         # MEMORY_READ now reports the AGENT's retrieval, not the orchestrator's.
@@ -2307,6 +2310,23 @@ async def migrate_codebase(
                 sources=sorted(agent_reads),
                 chars=0,
                 query=trace_task[:120],
+            )
+        # THE OTHER HALF, reported the same way and kept separate.
+        #
+        # `sources=["cognee.agent_memory"]` rather than a tool name,
+        # because this read is the HARNESS's: Cognee retrieved it before
+        # the attempt and the loop put it in the prompt. Counting the two
+        # together would answer "did warm have memory" while destroying
+        # the answer to "did warm go and get it", which is the question
+        # 40 runs of this project turned on.
+        if memory_chars:
+            await emit(
+                "MEMORY_READ",
+                attempt=attempt,
+                hits=1,
+                sources=["cognee.agent_memory"],
+                chars=memory_chars,
+                query=(last_error or trace_task)[:120],
             )
         probe_started = time.monotonic()
         usage_after = usage_probe() if usage_probe else {}
@@ -2327,6 +2347,13 @@ async def migrate_codebase(
         success = result.exit_code == 0
         signature = error_signature(result.output)
         passed = tests_passed(result.output)
+        # HOISTED, so the distiller scores on the same number the event
+        # log records. It was computed inline in the emit below and
+        # therefore reached nothing else -- which is how the skill came
+        # to be scored on `tests_passed`, a step function, while the
+        # measure that tracks the actual migration sat unused one line
+        # away. See cognee_layer.score_from_verdict.
+        closeness = _closeness(file_contents, package_path)
 
         await emit(
             "ATTEMPT_DONE",
@@ -2360,7 +2387,7 @@ async def migrate_codebase(
             # arm lands within 0.006 of it. Approximate, and ranks the
             # arms against each other rather than grading either; the
             # suite stays the oracle of success.
-            closeness=_closeness(file_contents, package_path),
+            closeness=closeness,
             # WHY it failed. This was only ever recorded on MEMORY_WRITE,
             # which is warm-only -- so cold's failures were invisible and
             # a run where cold scored 0 on five straight attempts could
@@ -2402,6 +2429,14 @@ async def migrate_codebase(
             memory_calls=sum(
                 v for k, v in tools_used.items() if _is_memory_tool(k)
             ),
+            # WHAT THE HARNESS PUT IN FRONT OF THE MODEL, in characters:
+            # the procedure Cognee holds plus whatever it retrieved for
+            # this attempt. Zero for cold, always. Recorded per attempt
+            # because it is the size of the one asymmetry between the
+            # arms that costs tokens, and an unmeasured asymmetry in this
+            # prompt has invalidated a run series before.
+            memory_chars=memory_chars,
+            procedure_chars=len(procedure),
         )
 
 
@@ -2546,141 +2581,84 @@ async def migrate_codebase(
         # applied to the memory calls that are awaited inline.
         try:
             if mem is not None:
-                # TraceOutcome rather than a bare string, so the fix is retrievable
-                # two ways: `error_kind` is written as a top-level indexed property
-                # (agents on an identical codebase hit byte-identical signatures,
-                # and an exact match beats a vector search on a string two agents
-                # both have verbatim), while `summary` carries the diff that
-                # cleared it and is what reasoning.get_context() surfaces.
-                # `success` NOW MEANS THE FULL SUITE PASSED. It used to be
-                # `resolved = success or advanced`, so a trace could carry
-                # success=True under a summary reading "The suite still fails
-                # with the same first error" -- observed in the graph at
-                # tests_passed=32. `_render` shows that flag to the next warm
-                # agent, so memory was reporting failures as successes.
+                # THE HARNESS NO LONGER WRITES THE AGENT'S MEMORY.
                 #
-                # "Advanced" is still worth recording, so it becomes its own
-                # metric rather than being folded into the flag. `outcome_schema`
-                # marks which definition a trace was written under: 1 is the old
-                # conflated flag, 2 is this one. Older traces are stamped 1 by
-                # scripts/mark_legacy_traces.py rather than deleted, so they can
-                # be excluded from analysis without losing the reasoning in them.
-                await mem.complete_trace(
-                    trace_id,
-                    outcome=TraceOutcome(
-                        success=success,
-                        summary=(
-                            observed_fix(
-                                before_snapshot,
-                                source_tree(workspace),
-                                prior_error=last_signature,
-                                next_error=signature,
-                                suite_passed=success,
-                                # The same delta `advanced` is computed from, so
-                                # the stored summary and the stored success flag
-                                # cannot contradict each other. See observed_fix().
-                                tests_delta=passed - last_passed,
-                            )
-                            or (
-                                "suite passed" if success else
-                                f"No edit was made. The suite still fails with:\n{signature}"
-                            )
-                        ),
-                        error_kind=trace_task,
-                        metrics={
-                            "attempt": float(attempt),
-                            "tests_passed": float(passed),
-                            "suite_passed": float(bool(success)),
-                            "advanced": float(bool(advanced)),
-                            "outcome_schema": 2.0,
-                        },
-                    ),
-                    generate_step_embeddings=True,
-                )
-                # `success or advanced`, written out. This line used to read
-                # `if resolved:`, a variable deleted when the trace outcome was
-                # made honest -- `resolved = success or advanced` was exactly
-                # the conflation that let a trace claim success at
-                # tests_passed=32. The name went; this reference did not, so
-                # every warm attempt would have died with NameError here,
-                # AFTER grading and inside the memory block. Found by the local
-                # rehearsal rather than by a pod.
+                # This wrote a TraceOutcome at the end of every attempt --
+                # `error_kind` as an indexed property so an identical
+                # failure signature matched exactly, `summary` carrying
+                # the diff that cleared it, `metrics` on the node, and
+                # `success` meaning the FULL SUITE PASSED (it once meant
+                # "passed or advanced", so traces claimed success at
+                # tests_passed=32 and memory reported failures as wins).
+                #
+                # All of it was the harness deciding what the agent
+                # should remember. Cognee's model is that the agent
+                # decides, through `remember` on its MCP server, and
+                # whether it does so is one of the things this
+                # experiment is now able to measure. The verdict still
+                # reaches Cognee -- as the SkillRun score, from the
+                # grader, which is the one judgement that must not come
+                # from the agent.
                 if success or advanced:
                     await emit("MEMORY_WRITE", error_kind=trace_task[:60],
                                on=("pass" if success else "progress"))
-                # The record of what happened, kept short on purpose. An earlier
-                # revision stored the entire Vibe stdout here, and since
-                # short_term.get_context() replays stored messages verbatim, the
-                # transcript came straight back out into the next prompt. The
-                # workshop stores str(result.output) -- one answer, not a log.
-                await mem.add_message(
-                    session_id, "assistant",
-                    f"attempt {attempt}: " + ("suite passed" if success else (signature or "no change")),
-                )
 
-                # BACK-FILL ONLY, and only when the live hook wrote nothing.
+                # SESSION TRACES -> THE GRAPH, which is what `improve` is
+                # for and the reason this call is not optional.
                 #
-                # This used to REPLACE the native writes. That was wrong: the
-                # hook writes cost latency, not tokens, so removing them saved
-                # nothing measurable and replaced the agent's real tool calls
-                # with my reconstruction of them from a transcript. The hook
-                # is wired back in (`enable_memory`), so in a healthy run this
-                # block is a no-op.
+                # Cognee's decorator wrote this attempt's trace into
+                # SESSION memory. Session memory is scoped to one session
+                # and is NOT graph-queryable: `recall(datasets=[...])`
+                # against it answers `status='memory_warming_up'`, which
+                # reads as a lost write and is not one. `improve` is the
+                # documented bridge -- `persist_agent_traces` turns the
+                # traces into graph nodes, `extract_agent_context` and
+                # `distill_sessions` draw the lessons out of them.
                 #
-                # It stays as a safety net because a silently dead hook has
-                # happened before -- "0 step(s) written, 0 errors" while the
-                # agent made 85 tool calls -- and an empty warm graph makes
-                # warm == cold and the whole run a null result.
+                # WITHOUT IT THE TRACES ARE WRITE-ONLY, and the whole
+                # deterministic half degrades to "this agent can see its
+                # own last five attempts" -- no cross-agent memory, no
+                # second run, nothing in the graph for the code-graph or
+                # skill queries to sit beside. That is precisely the shape
+                # of failure this project keeps having: a memory system
+                # that is fully wired and reads back empty.
                 #
-                # Everything the agent actually did,
-                # written once, after the verdict is known -- so each step is
-                # stored under a trace whose outcome is already honest, and the
-                # agent paid nothing for the writing during its own turn.
-                #
-                # `complete_trace` above closes the trace before this adds steps
-                # to it. That order is deliberate: the steps are evidence about
-                # an attempt that is already decided, and if ingestion dies
-                # halfway the trace still carries the right verdict.
+                # Off the clock, after the verdict, and never fatal.
+                # INGESTED carries what the stages reported, so "nothing
+                # reached the graph" is countable rather than inferred.
                 ingest_started = time.monotonic()
                 try:
-                    live_steps = 0
-                    if step_memory is not None:
-                        live_steps = max(
-                            0, (getattr(step_memory, "steps_written", 0) or 0)
-                            - steps_before_attempt)
-                    if live_steps:
-                        # The hook did its job live. Replaying the transcript
-                        # on top would double every step.
-                        print(f"  [{agent_label}] hook wrote {live_steps} step(s) "
-                              f"live; skipping back-fill")
-                        raise _LiveWritesPresent
-                    ingested = await ingest(mem, trace_id,
-                                            workspace.stream_entries(vibe_output))
+                    bridged = await mem.improve()
+                    stages = bridged.get("stages") or {}
+                    persisted = (stages.get("persist_agent_traces") or {})
+                    counts = persisted.get("counts") or {}
+                    steps_written = sum(
+                        v for v in counts.values() if isinstance(v, int))
                     await emit(
-                        "INGESTED", attempt=attempt, steps=len(ingested.steps),
-                        with_reasoning=ingested.steps_with_reasoning,
-                        tool_calls=ingested.tool_calls,
-                        failed_tool_calls=ingested.failed_tool_calls,
-                        skill_loaded=bool(ingested.skill_content),
+                        "INGESTED", attempt=attempt, steps=steps_written,
+                        with_reasoning=steps_written, tool_calls=0,
+                        failed_tool_calls=0, skill_loaded=bool(procedure),
+                        source="cognee.improve",
+                        stages={k: (v or {}).get("status")
+                                for k, v in stages.items()},
                     )
-                    if ingested.steps and not ingested.steps_with_reasoning:
-                        # The exact failure this design exists to fix. Loud,
-                        # because a graph of steps with empty `thought` is
-                        # searchable only by what was typed, and that looks
-                        # identical to a working graph from the outside.
-                        print(f"  [{agent_label}] WARNING: ingested "
-                              f"{len(ingested.steps)} step(s), NONE with "
-                              f"reasoning. search_steps embeds thought+action, "
-                              f"so this graph cannot be retrieved on why.")
-                except _LiveWritesPresent:
-                    await emit("INGESTED", attempt=attempt, steps=live_steps,
-                               with_reasoning=None, tool_calls=None,
-                               failed_tool_calls=None, skill_loaded=None,
-                               source="live_hook")
+                    if not steps_written:
+                        # Loud, for the same reason every other empty-graph
+                        # alarm in this file is loud: a deterministic half
+                        # that writes nothing leaves warm == cold with
+                        # extra latency, and every number in the summary
+                        # still looks healthy.
+                        print(f"  [{agent_label}] improve() bridged NO trace "
+                              f"steps into the graph: "
+                              f"{ {k: (v or {}).get('reason') for k, v in stages.items() if (v or {}).get('status') != 'completed'} }")
                 except Exception as exc:
-                    # Never fatal. The attempt is graded and the trace closed;
-                    # losing its steps costs a later distillation some recall.
-                    print(f"  [{agent_label}] ingestion failed: {exc!r}")
+                    # Never fatal. The attempt is graded; losing this costs
+                    # the next attempt some recall.
+                    print(f"  [{agent_label}] improve() failed: {exc!r}")
+                    await emit("INGESTED", attempt=attempt, steps=0,
+                               with_reasoning=0, tool_calls=0,
+                               failed_tool_calls=0, skill_loaded=bool(procedure),
+                               source="cognee.improve")
                 off_clock += time.monotonic() - ingest_started
 
                 # DISTILLATION, also off the clock, also after the verdict.
@@ -2696,25 +2674,24 @@ async def migrate_codebase(
                         outcome = await distiller(
                             attempt=attempt, tests_passed=passed,
                             suite_passed=bool(success), error=last_error,
+                            closeness=closeness,
                         )
+                        # A PLAIN DICT, and fewer fields than before.
+                        # `version`/`repairs`/`reason_detail` described
+                        # AIP's registry and its two-turn validator
+                        # repair loop -- Cognee has neither. What is
+                        # left is what actually happened: the score the
+                        # GRADER gave, whether Cognee drafted a proposal
+                        # from it, and whether that proposal was applied.
                         await emit(
                             "DISTILLED", attempt=attempt,
-                            version=outcome.version,
-                            accepted=outcome.accepted is not None,
-                            reason=(outcome.rejection.reason
-                                    if outcome.rejection else None),
-                            # The category alone ("invalid_schema") is not
-                            # actionable; the validator's own first diagnostic
-                            # is what names the offending field.
-                            reason_detail=((outcome.rejection.detail or "")[:400]
-                                           if outcome.rejection else None),
-                            repairs=outcome.repairs,
-                            seconds=round(outcome.seconds, 1),
-                            memory_tool_calls=outcome.memory_tool_calls,
-                            eligible_traces=outcome.eligible_traces,
+                            version=None,
+                            accepted=bool(outcome.get("applied")),
+                            score=outcome.get("score"),
+                            proposal_id=outcome.get("proposal_id"),
+                            procedure_chars=outcome.get("procedure_chars"),
+                            seconds=round(outcome.get("seconds", 0.0), 1),
                         )
-                        if outcome.note:
-                            print(f"  [{agent_label}] distillation: {outcome.note}")
                     except Exception as exc:
                         print(f"  [{agent_label}] distillation failed: {exc!r}")
                     off_clock += time.monotonic() - distil_started

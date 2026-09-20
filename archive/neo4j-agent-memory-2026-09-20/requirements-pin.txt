@@ -1,0 +1,2 @@
+13:# EXTRAS ARE LOAD-BEARING. This used to read a bare `neo4j-agent-memory`,
+34:neo4j-agent-memory[openai,gliner,spacy]

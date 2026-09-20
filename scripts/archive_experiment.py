@@ -31,8 +31,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+# The procedure now lives in Cognee, so this script needs the graph
+# credentials the run had. Without it the archive silently records
+# everything EXCEPT the thing the experiment produced.
+from dotenv import load_dotenv                       # noqa: E402
+
+load_dotenv(REPO / ".env")
+
 from export_demo import CAVEATS                      # noqa: E402
-from orchestrator import skills                      # noqa: E402
+from orchestrator import cognee_layer as C           # noqa: E402
 from orchestrator.manifest import FIXTURE_DIR        # noqa: E402
 
 
@@ -57,16 +64,19 @@ def attempts_by_arm(events: list[dict]) -> dict[str, list[dict]]:
     return out
 
 
-def skill_versions_used(arms: dict[str, list[dict]]) -> list[int]:
-    """The versions this experiment's attempts actually ran on.
+def skill_sizes(events: list[dict]) -> list[int]:
+    """The procedure's size after each distillation, in characters.
 
-    Taken from the attempts, not from the directory listing: the lineage
-    directory accumulates across experiments and a listing would sweep up
-    versions that belong to someone else's run.
+    WHAT THIS REPLACES, and why it cannot come back. `skill_versions_used`
+    read the version number each attempt ran on, out of a lineage
+    directory on this machine. Cognee rewrites `procedure` IN PLACE and
+    keeps no lineage, so there is no v5..v7 to archive and a counter
+    invented here would read as more than we know. The size after each
+    accepted proposal is the honest remnant -- it says the skill moved,
+    and by how much.
     """
-    seen = {a["skill_version"] for atts in arms.values() for a in atts
-            if a.get("skill_version") is not None}
-    return sorted(seen)
+    return [e.get("procedure_chars") for e in events
+            if e.get("type") == "DISTILLED" and e.get("procedure_chars")]
 
 
 def main() -> int:
@@ -94,23 +104,26 @@ def main() -> int:
         if src.exists():
             shutil.copy(src, out / src.name)
 
-    versions = skill_versions_used(arms)
-    lineage = out / "skills"
-    lineage.mkdir(exist_ok=True)
+    sizes = skill_sizes(events)
+    # THE PROCEDURE AS THE EXPERIMENT LEFT IT, pulled out of Cognee.
+    #
+    # This used to copy a directory of version files plus the live AIP
+    # package. There is no file and no lineage now -- the skill lives in
+    # the graph -- so the archive has to go and fetch it, and it must do
+    # so BEFORE the next experiment's `--reset-memory` overwrites it.
+    # Without this the only record of what the agents wrote is a
+    # character count.
     copied: list[str] = []
-    for v in versions:
-        # v0 is the empty scaffold that ships in the repo, not an archived
-        # version, so it has no file. Report what actually landed rather
-        # than what was asked for.
-        for path in skills.versions_dir().glob(f"v{v:03d}-*.md"):
-            shutil.copy(path, lineage / path.name)
-            copied.append(path.name)
-    # The live package as the experiment left it: body AND the references/
-    # tier, which is half the skill and is not in the version file.
-    live = skills.SKILLS_DIR / skills.SKILL_NAME
-    if live.is_dir():
-        shutil.copytree(live, out / "skill-final", dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns("__pycache__"))
+    try:
+        import asyncio
+
+        dataset = C.configure(dataset=f"msf-{FIXTURE_DIR.name}")
+        procedure = asyncio.run(C.current_procedure(dataset=dataset)) or ""
+        if procedure:
+            (out / "skill-final.md").write_text(procedure)
+            copied.append("skill-final.md")
+    except Exception as exc:                      # never lose the evidence
+        print(f"  could not read the final procedure from Cognee: {exc!r}")
 
     manifest = {
         "experiment": run_id,
@@ -123,6 +136,8 @@ def main() -> int:
                 "attempts": atts,
                 # Cold has no skill, so it reports none rather than a row
                 # of nulls that reads like missing data.
+                # Always empty under Cognee, and kept so the shape of an
+                # experiment.json does not change across the migration.
                 "skill_versions": [a["skill_version"] for a in atts
                                    if a.get("skill_version") is not None],
                 "best_tests": max((a["tests_passed"] or 0) for a in atts),
@@ -133,7 +148,7 @@ def main() -> int:
             }
             for arm, atts in sorted(arms.items())
         },
-        "skill_versions_ran_on": versions,
+        "procedure_chars_after_each_distillation": sizes,
         "skill_files_archived": sorted(copied),
         "trees": sorted(p.name for p in (out / "trees").glob("*.tgz")),
         "how_to_read": CAVEATS,
@@ -145,7 +160,7 @@ def main() -> int:
         print(f"  {arm:5} {len(a['attempts'])} attempt(s), "
               f"skills {a['skill_versions']}, best {a['best_tests']} test(s), "
               f"best v1 {a['best_v1_remaining']}")
-    print(f"  ran on skill version(s) {versions}, "
+    print(f"  procedure after each distillation: {sizes} chars, "
           f"{len(copied)} file(s) archived, "
           f"{len(manifest['trees'])} tree(s)")
     if manifest["trees"] and len(manifest["trees"]) < sum(

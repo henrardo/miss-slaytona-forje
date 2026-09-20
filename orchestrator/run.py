@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 """Both swarms, in parallel, against one shared model server: real Daytona
-sandboxes, real Neo4j memory, a real self-hosted model via SGLang.
+sandboxes, real Cognee memory, a real self-hosted model via SGLang.
 
-The one difference between the arms is memory. Warm agents get a ScopedMemory
-and a neo4j-agent-memory MCP block; cold agents are constructed with
-`mem=None` throughout and never get the block, so they have zero Neo4j
-contact -- not gated reads, none. Anything else that touches one arm and not
-the other is a bug, latency included.
+The one difference between the arms is memory, and it has TWO HALVES.
+Warm agents get a `cognee` MCP block -- tools they may choose to call --
+and a CogneeMemory, which wraps each attempt in `cognee.agent_memory` and
+puts the procedure Cognee holds, plus whatever Cognee retrieved, in the
+attempt prompt. Cold agents are constructed with `mem=None` throughout and
+get neither, so they have zero contact with the graph: not gated reads,
+none. Anything else that touches one arm and not the other is a bug,
+latency included.
 
-Memory READS are the agent's own: the package's MCP server, the package's own
-tool descriptions, and the package's own server instructions relayed into the
-prompt because Vibe drops them (see _MEMORY_TOOLS_GUIDE). The orchestrator no
-longer retrieves anything on an agent's behalf -- when it did, the agents never
-retrieved for themselves, and "these agents share memory" was a claim about
-this file rather than about them.
+The voluntary half alone is not enough for a small model, and this project
+has the evidence: 40 consecutive runs ended with zero agent-initiated
+memory calls while every check reported green. `--memory-mode` selects
+which halves are live, so "would it have gone and looked?" stays a
+question a run can ask rather than an assumption baked into the harness.
 
-Writes are not taken on the model's say-so: a trace is closed on the verdict of
-an independent pytest run in a fresh Daytona sandbox.
+The SCORE is not taken on the model's say-so: it is the verdict of an
+independent pytest run in a fresh Daytona sandbox, and it is what Cognee
+is handed as the skill run's success score.
 
 `--model` must emit tool calls under plain `tool_choice: "auto"` and must be
 able to end a turn with a text-only message. That is the one hard constraint
@@ -42,10 +45,10 @@ import time
 import traceback
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 from daytona import AsyncDaytona
 from dotenv import load_dotenv
-from neo4j_agent_memory import MemoryClient
 
 # `daytona`'s own SDK lazily loads .env internally, but only inside
 # AsyncDaytona()'s constructor -- too late for main()'s own preflight check
@@ -68,10 +71,9 @@ from orchestrator.vibe_agent import (
 )
 from orchestrator.events import EventBus
 from orchestrator.manifest import FIXTURE_DIR, load_manifest
-from orchestrator.memory import ScopedMemory, build_settings, graph_counts, reset_graph
+from orchestrator import cognee_layer as C
 from orchestrator.sandbox import SandboxPool, install_cleanup_handlers
 from orchestrator.snapshot import is_stale, load_state, pool_kwargs_from_state
-from orchestrator.step_memory import StepMemoryService
 
 # 4 a side (8 agents). Daytona's org CPU cap is the binding constraint, not a
 # guess: 12 agents starting at once hit a hard "Total CPU limit exceeded.
@@ -375,7 +377,7 @@ async def agent_worker(
     swarm: str,
     agent_id: int,
     pool: SandboxPool,
-    mem: ScopedMemory | None,
+    mem: Any | None,
     vibe_home: Path,
     vibe_cwd: Path,
     repo_dir: Path,
@@ -385,7 +387,6 @@ async def agent_worker(
     results: list,
     baseline_signature: str | None = None,
     baseline_passed: int = 0,
-    step_memory: StepMemoryService | None = None,
 ) -> MigrationResult:
     """One agent, one whole-codebase task -- no queue, nothing to claim: all
     N agents in a swarm are given the identical prompt ("migrate this
@@ -436,10 +437,6 @@ async def agent_worker(
                 session_id=session_id,
                 baseline_signature=baseline_signature,
                 baseline_passed=baseline_passed,
-                # So each attempt's trace id reaches the step hook: the hook
-                # only gets what Vibe hands it, which knows nothing about
-                # attempts or traces.
-                step_memory=step_memory,
                 agent_label=session_id,
             )
             results.append((swarm, agent_id, result))
@@ -517,7 +514,9 @@ async def run_swarm(swarm: str, tasks: list[asyncio.Task],
                 return
 
 
-async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = False) -> int:
+async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = False,
+                     memory_mode: str = "hybrid",
+                     cognee_mcp_url: str = "http://127.0.0.1:8811/mcp") -> int:
     manifest = load_manifest()
     state = load_state()
     pool_kwargs = pool_kwargs_from_state(state)
@@ -551,13 +550,13 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
     package_path = manifest["package_path"]
     tests_path = manifest["tests_path"]
 
-    # The step-memory sidecar, started BEFORE render_config because each warm
-    # agent's hooks.toml has to carry its port. Bound to 127.0.0.1 on an
-    # ephemeral port; holds one warm ScopedMemory per warm agent so the
-    # per-tool-call hook is a loopback round-trip rather than a 1.5s package
-    # import. See orchestrator/step_memory.py.
-    step_memory = StepMemoryService()
-    await step_memory.start()
+    # NO SIDECAR, NO HOOK, NO RELAY. They existed so a per-tool-call hook
+    # could reach a warm ScopedMemory over loopback instead of paying a
+    # 1.5s package import per call. All three are retired with the old
+    # memory layer, and so is the `step_memory` seam they were reached
+    # through -- the agent writes what it chooses through its MCP server,
+    # and what the harness writes it writes from here.
+    dataset = C.configure()
 
     for i in range(SWARM_SIZE):
         seed_repo("warm", i, package_path, tests_path)
@@ -567,12 +566,12 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         render_config(
             WARM_PROXY_URL, model, vibe_home=vibe_home_for("warm", i),
             active_model_alias="qwen-warm", auto_compact_threshold=AUTO_COMPACT_THRESHOLD,
+            # Writes the cognee `[[mcp_servers]]` block -- the VOLUNTARY
+            # half of warm's treatment. The deterministic half is the
+            # CogneeMemory handed to the agent worker below; neither
+            # implies the other, and cold gets neither.
             memory_enabled=True,
-            # Writes $VIBE_HOME/hooks.toml, so this agent records each step in
-            # the graph as it takes it and sees what other agents hit at the
-            # same point. Warm only -- cold gets no hooks.toml at all. See
-            # orchestrator/step_memory.py.
-            step_hook_port=step_memory.port,
+            cognee_mcp_url=cognee_mcp_url,
             agent_label=f"warm-{i}",
         )
         render_config(
@@ -604,24 +603,27 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
             return 1
 
     if reset_memory:
-        deleted = await reset_graph()
-        print(f"  --reset-memory: deleted {deleted} node(s) from the shared graph")
-    before_counts = await graph_counts()
+        # SCOPED TO THIS DATASET, and that is less than it sounds: Cognee's
+        # graph search is not dataset-scoped (measured -- see
+        # cognee_layer), so a run on a shared instance can still retrieve
+        # another fixture's lessons. swarm/run.py carries
+        # `--reset-memory-everything` for when a series needs a genuinely
+        # empty graph.
+        await C.forget_everything(dataset=dataset)
+        print(f"  --reset-memory: forgot dataset {dataset}")
+    before_counts = await C.assert_ready()
     print(f"  graph at start: {before_counts or '(empty)'}")
+    procedure = await C.ensure_seeded(dataset=dataset)
+    print(f"  skill: {len(procedure):,} chars in Cognee, dataset {dataset}")
 
-    mem_settings = build_settings()
     results: list[tuple[str, int, MigrationResult]] = []
     test_command = manifest["test_command"]
     # None means "the run never got far enough to extract" -- distinct from 0,
     # which means extraction ran and found nothing. The summary prints the
     # difference.
     entities_extracted: int | None = None
-    # Initialised out here for the same reason: the summary prints it, and a
-    # run that dies before the extraction block must not turn into a NameError
-    # in the reporting code.
-    steps_linked: int = 0
 
-    async with AsyncDaytona() as client, MemoryClient(mem_settings) as mem_client:
+    async with AsyncDaytona() as client:
         pool = SandboxPool(client, run_id=run_id, **pool_kwargs)
         # Wired, finally. sandbox.py has shipped this since M2 and nothing ever
         # called it, so a Ctrl-C or a SIGTERM mid-run left every live sandbox
@@ -632,44 +634,29 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         install_cleanup_handlers(pool)
         await pool.sweep()
 
-        # Force the embedding model to load and the vector indexes to be
-        # touched once, before the clock starts. neo4j-agent-memory loads
-        # sentence-transformers lazily on first use, so without this the very
-        # first warm agent pays a multi-second, *synchronous* model load on
-        # the shared event loop -- which stalls the cold agents too, putting
-        # warm's memory setup cost straight into cold's wall-clock. Paid once
-        # here, outside the measured window, where it belongs.
-        warmup_mem = ScopedMemory(mem_client, user_identifier="warm")
-        # Read side, via the package client directly -- ScopedMemory no longer
-        # wraps get_context, because the orchestrator no longer retrieves on an
-        # agent's behalf. The agents do their own reading over MCP; this call
-        # exists only to pay the model load here rather than inside the
-        # measured window.
-        await mem_client.get_context("warmup", session_id="warmup")
-        # The write path too, not just the read path. The extraction pipeline
-        # loads spaCy's en_core_web_sm and GLiNER's gliner_medium-v2.5 on first
-        # use -- measured at 12.8s -- and that load would otherwise land on
-        # whichever warm agent stored the first message, inside the measured
-        # window. Same reasoning as the get_context warmup above.
+        # Pay Cognee's first-use cost HERE, outside the measured window.
+        # The first `recall` of a process resolves the default user, opens
+        # the relational store, loads the embedder and touches the vector
+        # index; landing that on the first warm attempt would put warm's
+        # setup into the comparison, and -- because it is one event loop --
+        # into cold's wall-clock too.
         #
-        # The CONTENT is deliberately unrelated to the task. It used to read
-        # "migrating fastapi_mail config.py from pydantic BaseSettings to
-        # pydantic_settings for Pydantic v2" -- which is the correct fix for
-        # the first file in the failure chain, written into the warm arm's
-        # memory scope, on every run, and nowhere in cold's. Confirmed in the
-        # graph: a Conversation {session_id:'warmup', user_identifier:'warm'}
-        # with `pydantic_settings`, `pydantic-settings` and `pydantic
-        # BaseSettings` all present as warm-scope entities, retrievable by
-        # get_context's long-term search. The warm swarm was being handed part
-        # of the answer by the thing that was only supposed to load a model.
-        #
-        # Any string of similar length loads the same models, so this one says
-        # nothing about pydantic, migrations, or this codebase.
-        await warmup_mem.add_message(
-            "warmup", "assistant",
-            "Warmup message: Priya Raman met Tomas Nowak in Lisbon on Tuesday "
-            "to discuss the quarterly logistics review at Acme Freight.",
-        )
+        # The QUERY IS DELIBERATELY UNRELATED to the task. The warmup this
+        # replaces once read "migrating fastapi_mail config.py from
+        # pydantic BaseSettings to pydantic_settings for Pydantic v2",
+        # which is the correct fix for the first file in the failure
+        # chain, written into the warm arm's memory on every run and
+        # nowhere in cold's. The thing that was only supposed to load a
+        # model was handing warm part of the answer.
+        warmup_mem = C.CogneeMemory(dataset=dataset, label="warmup",
+                                    session_id="warmup", mode=memory_mode)
+        try:
+            await warmup_mem.context(
+                "Priya Raman met Tomas Nowak in Lisbon on Tuesday to discuss "
+                "the quarterly logistics review at Acme Freight.")
+        except Exception as exc:
+            print(f"  cognee warmup failed ({exc!r}); the first warm attempt "
+                  f"will pay it instead")
 
         # The suite's starting state, measured rather than assumed. Every
         # agent's checkout is a byte-identical copy of the same pristine
@@ -713,15 +700,17 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
             deadline_s=hard_deadline_s,
         )
 
-        # One ScopedMemory per warm agent, shared between that agent's worker
-        # and the step hook -- the hook must write into the SAME scope the
-        # worker opens its trace in, or its steps hang off nothing.
+        # One CogneeMemory per warm agent. The SESSION IS PER RUN AND PER
+        # AGENT (`{run_id}:warm-{i}`), never the bare label: every trace
+        # this project ever wrote landed in one session called "warm-0",
+        # 98 runs of it, and everything that walked that session got
+        # slower until it stopped finishing.
         warm_mems = {
-            i: ScopedMemory(mem_client, user_identifier="warm")
+            i: C.CogneeMemory(dataset=dataset, label=f"warm-{i}",
+                              session_id=f"{dataset}:{run_id}:warm-{i}",
+                              mode=memory_mode)
             for i in range(SWARM_SIZE)
         }
-        for i, m in warm_mems.items():
-            step_memory.register(f"warm-{i}", m)
 
         warm_tasks = [
             asyncio.ensure_future(agent_worker(
@@ -731,7 +720,6 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
                 repo_dir=repo_dir_for("warm", i, package_path),
                 test_command=test_command, deadline=deadline, bus=bus, results=results,
                 baseline_signature=baseline_signature, baseline_passed=baseline_passed,
-                step_memory=step_memory,
             ))
             for i in range(SWARM_SIZE)
         ]
@@ -775,44 +763,34 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         if leaked:
             print(f"  WARNING: swept {leaked} sandbox(es) not accounted for locally")
 
-        # Entities, once, AFTER the agents' clock has stopped and while
-        # mem_client is still open. Messages are stored during the run with
-        # extract_entities=False, because extraction is 0.50s of spaCy +
-        # GLiNER + OpenAI per message -- 45.5s per attempt when it ran inline,
-        # paid by warm alone, and most of why warm completed 8-10 attempts per
-        # run against cold's 21-28. This is the package's own answer: its
-        # docstring names extract_entities_from_session for "messages loaded
-        # without extraction". Same entities, same POLE+O typing, off the
-        # agents' budget.
-        # Both halves, because they cover different text and neither covers the
-        # other. extract_entities_from_session reads MESSAGES; nothing in the
-        # package reads ReasoningStep.thought -- add_step only embeds. On this
-        # task the reasoning is where the substance is, and most of it never
-        # becomes a message: a turn that is pure reasoning plus a tool call has
-        # no text content at all.
+        # ONE LAST BRIDGE, after the agents' clock has stopped.
         #
-        # link_step_entities was written for that gap and then called from
-        # nowhere. The run it shipped in recorded 141 steps, 15 Entity nodes
-        # and ZERO (:ReasoningStep)-[:TOUCHED]->(:Entity) edges; the 101 edges
-        # credited to it came from a throwaway script run by hand against a
-        # finished graph, never from a run.
+        # `migrate_codebase` calls `improve` after each attempt, so in a
+        # healthy run this is a no-op that reports `skipped -- no new
+        # session entries`. It runs anyway because the attempt-level call
+        # is inside the loop's own "never fatal" guard: an agent whose
+        # last improve() failed, or which was cancelled between the
+        # verdict and the bridge, would otherwise leave its final -- and
+        # most informative -- trace in session memory only, where the
+        # next run cannot see it.
+        #
+        # ENTITY EXTRACTION IS GONE FROM HERE, and that is a real change
+        # rather than a deletion: the old layer ran spaCy + GLiNER +
+        # OpenAI over every message in a 240s-bounded pass, because inline
+        # extraction cost 2,071ms per message. Cognee extracts inside
+        # `improve`, so what used to be a separate after-the-clock pass is
+        # now one of its stages.
         entities_extracted = 0
         for i in range(SWARM_SIZE):
-            scoped = ScopedMemory(mem_client, user_identifier="warm")
             try:
-                stats = await scoped.extract_entities_from_session(f"warm-{i}")
+                bridged = await warm_mems[i].improve()
+                stages = bridged.get("stages") or {}
                 entities_extracted += sum(
-                    v for v in stats.values() if isinstance(v, int)
-                )
+                    sum(v for v in (s.get("counts") or {}).values()
+                        if isinstance(v, int))
+                    for s in stages.values() if isinstance(s, dict))
             except Exception as exc:
-                print(f"  entity extraction failed for warm-{i}: {exc!r}")
-            # Separately guarded: the two draw on the same extractor but fail
-            # independently, and losing the messages half must not silently
-            # take the reasoning half with it.
-            try:
-                steps_linked += await scoped.link_step_entities(f"warm-{i}")
-            except Exception as exc:
-                print(f"  step entity linking failed for warm-{i}: {exc!r}")
+                print(f"  improve() failed for warm-{i}: {exc!r}")
 
         warm_results = [r for (s, _a, r) in results if s == "warm"]
         cold_results = [r for (s, _a, r) in results if s == "cold"]
@@ -910,27 +888,33 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         print(f"GATE FAILED: {graded} attempts graded, {oracle} oracle runs. "
               f"This run measured NOTHING -- discard it. Every number above is "
               f"an artifact of agents that never reached a verdict.")
-    if reads:
-        calls = sum(e.get("hits", 0) for e in reads)
-        srcs = sorted({s for e in reads for s in e.get("sources") or []})
+    # THE TWO HALVES, REPORTED APART. `cognee.agent_memory` is the
+    # harness's own deterministic retrieval; anything else is a tool the
+    # agent chose to call. Summing them would answer "did warm have
+    # memory" and destroy the answer to "did warm go and get it", which
+    # is the question 40 runs of this project turned on.
+    injected = [e for e in reads if "cognee.agent_memory" in (e.get("sources") or [])]
+    chosen = [e for e in reads if e not in injected]
+    if chosen:
+        calls = sum(e.get("hits", 0) for e in chosen)
+        srcs = sorted({s for e in chosen for s in e.get("sources") or []})
         # "calls", not "hits". This counts what the agent ASKED, which is not
         # what it got: the first agent-initiated read in this project's history
         # was `memory_get_context(session_id=null, query=null)`, and the server
         # answered with an OpenAI 400 ("input cannot be an empty string").
         # Reported as a hit at the time, which was wrong.
-        print(f"     warm memory tools: {len(reads)} attempt(s) called them, "
-              f"{calls} call(s), {srcs or 'nobody'}")
-    # The per-step hook is the honest measure of shared reasoning: steps the
-    # AGENTS wrote as they worked, and prior agents' steps injected back into
-    # their tool output. See orchestrator/step_memory.py.
-    print(f"     {step_memory.summary()}")
-    if entities_extracted is not None:
-        print(f"     entities extracted after the clock stopped: {entities_extracted} "
-              f"from messages, {steps_linked} TOUCHED edge(s) from reasoning steps")
-    if step_memory.steps_written == 0:
-        print("     the step hook wrote nothing -- warm's graph is empty, so "
-              "warm == cold and any token_ratio above is a null result.")
-    await step_memory.stop()
+        print(f"     warm called its memory tools itself on {len(chosen)} "
+              f"attempt(s), {calls} call(s), {srcs}")
+    else:
+        print("     warm never called a memory tool itself -- a finding "
+              "about the model, not an error")
+    print(f"     cognee retrieved for warm on {len(injected)} attempt(s), "
+          f"{sum(e.get('chars', 0) for e in injected):,} chars injected")
+    print(f"     improve() stage counts after the clock stopped: "
+          f"{entities_extracted}")
+    if not injected and not chosen:
+        print("     WARM READ NOTHING, by either route -- warm == cold plus "
+              "latency, and any token ratio above is a null result.")
     return 0 if (graded and oracle) else 1
 
 
@@ -1029,7 +1013,12 @@ def check_containment(run_started_at: float) -> tuple[list[str], list[str]]:
 # One representative, side-effect-free tool per server, with arguments that are
 # valid but harmless. Listing a tool is not the same as the tool working.
 _SMOKE_TESTS: dict[str, tuple[str, dict]] = {
-    "neo4j-agent-memory": ("memory_get_context", {"query": "pydantic BaseSettings moved"}),
+    # cognee-mcp's own read tool, with the arguments its signature takes
+    # (`query`, not `query_text`). An empty graph answers this with
+    # "memory_warming_up" rather than an error, which passes -- correctly:
+    # the question here is whether the server WORKS, not whether anything
+    # has been remembered yet.
+    "cognee": ("recall", {"query": "pydantic BaseSettings moved", "top_k": 3}),
     "web": ("lookup", {"query": "what package provides validate_email in python"}),
 }
 
@@ -1244,6 +1233,21 @@ def main() -> int:
              "agents do for each other inside one run; omit it to measure a graph that has "
              "accumulated across runs. Both are real demos; they are different claims.",
     )
+    parser.add_argument(
+        "--memory-mode", choices=C.MEMORY_MODES, default="hybrid",
+        help="WHICH HALVES OF WARM'S TREATMENT ARE LIVE. `hybrid` is both: "
+             "the cognee MCP server the agent may call, and the procedure "
+             "plus retrieved context the harness puts in its prompt. `mcp` "
+             "is the tools alone, which measures whether the model goes "
+             "and looks. `deterministic` is the injection alone, which "
+             "measures the memory without the model's willingness to use "
+             "a tool. `off` makes warm == cold.",
+    )
+    parser.add_argument(
+        "--cognee-mcp-url", default="http://127.0.0.1:8811/mcp",
+        help="Where cognee-mcp is listening. Start it with "
+             "`cognee-mcp --transport http --host 127.0.0.1 --port 8811`.",
+    )
     args = parser.parse_args()
     _set_swarm_size(args.swarm_size)
 
@@ -1265,7 +1269,9 @@ def main() -> int:
     if problems:
         return 1
 
-    return asyncio.run(main_async(args.deadline_s, args.model, args.reset_memory))
+    return asyncio.run(main_async(args.deadline_s, args.model, args.reset_memory,
+                                  memory_mode=args.memory_mode,
+                                  cognee_mcp_url=args.cognee_mcp_url))
 
 
 if __name__ == "__main__":

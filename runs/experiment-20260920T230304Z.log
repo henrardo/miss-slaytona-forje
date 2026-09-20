@@ -1,0 +1,744 @@
+cognee-mcp: http://127.0.0.1:8814/mcp (this machine, sharing the orchestrator's stores)
+reverse tunnel: pod 127.0.0.1:8811 -> harness 127.0.0.1:8814
+host script: /opt/swarm/id_fix_proxy.py sha256 217ed12ff314
+host script: /opt/swarm/web/server.py sha256 9530cf75edd9
+host script: /opt/swarm/web/requirements.txt sha256 9434fbe28613
+
+[2m2026-09-20T23:03:18.371734[0m [[32m[1minfo     [0m] [1mDeleted old log file: /Users/t6w652j6ft/.cognee/logs/2026-09-20_22-56-09.log[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T23:03:18.371900[0m [[32m[1minfo     [0m] [1mLog file created at: /Users/t6w652j6ft/.cognee/logs/2026-09-20_23-03-18.log[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m [36mlog_file[0m=[35m/Users/t6w652j6ft/.cognee/logs/2026-09-20_23-03-18.log[0m
+
+[2m2026-09-20T23:03:18.371994[0m [[33m[1mwarning  [0m] [1mCognee 1.0 changes: New API — remember/recall/forget/improve (V1 add/cognify/search still work). Session memory enabled by default (CACHING=false to disable). Multi-user access control on by default (ENABLE_BACKEND_ACCESS_CONTROL=false to disable). Agents (@cognee.agent) auto-verified on registration. See https://docs.cognee.ai/[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T23:03:18.372076[0m [[32m[1minfo     [0m] [1mLogging initialized           [0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m [36mcognee_version[0m=[35m1.6.0[0m [36mdatabase_path[0m=[35m/Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.cognee_system/databases[0m [36mos_info[0m=[35m'Darwin 25.6.0 (Darwin Kernel Version 25.6.0: Fri Jul 31 19:18:48 PDT 2026; root:xnu-12377.161.14~5/RELEASE_ARM64_T6020)'[0m [36mpython_version[0m=[35m3.11.14[0m [36mstructlog_version[0m=[35m25.5.0[0m
+
+[2m2026-09-20T23:03:18.372172[0m [[32m[1minfo     [0m] [1mDatabase storage: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.cognee_system/databases[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T23:03:20.502581[0m [[32m[1minfo     [0m] [1mauth posture: authentication=disabled, multi_tenant=disabled (inherited from ENABLE_BACKEND_ACCESS_CONTROL)[0m [[0m[1m[34mget_authenticated_user[0m][0m
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:699> wait_for=<Future pending cb=[_chain_future.<locals>._call_check_cancel() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/futures.py:387, Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 9.907 seconds[0m
+cognee: graph reachable from the harness, 162 APOC procedure(s), 8,247 node(s)
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:748> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 1.186 seconds[0m
+
+[1mReceived session ID: f2e1f522c5dd437a8a14ab39b9a13dca[0m
+
+[1mNegotiated protocol version: 2025-11-25[0m
+  MCP web: 1 tool(s)
+  MCP web: lookup answered 1101 chars -- working
+
+[1mReceived session ID: c83f4d1594744d10b0397f9042505a5c[0m
+
+[1mNegotiated protocol version: 2025-11-25[0m
+  MCP cognee: 11 tool(s)
+  MCP cognee: recall answered 73 chars -- working
+
+[1msetup plugin alembic.autogenerate.schemas[0m
+
+[1msetup plugin alembic.autogenerate.tables[0m
+
+[1msetup plugin alembic.autogenerate.types[0m
+
+[1msetup plugin alembic.autogenerate.constraints[0m
+
+[1msetup plugin alembic.autogenerate.defaults[0m
+
+[1msetup plugin alembic.autogenerate.comments[0m
+
+[1msetup plugin alembic.ext.checkconstraint_byname[0m
+
+[1mUsing database: sqlite+aiosqlite:////Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/cognee/.cognee_system/databases/cognee_db[0m
+
+[1mContext impl SQLiteImpl.      [0m
+
+[1mWill assume non-transactional DDL.[0m
+
+[1mRelational migrations applied (target head).[0m
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:756> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 0.902 seconds[0m
+
+[1mExecuting <Task pending name='Task-143' coro=<aembedding() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/litellm/utils.py:1681> wait_for=<Future pending cb=[_chain_future.<locals>._call_check_cancel() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/futures.py:387, Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_release_waiter(<Future pendi...events.py:428>)() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:431] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.198 seconds[0m
+
+[2m2026-09-20T23:03:38.191476[0m [[32m[1minfo     [0m] [1mremember: added entry to session 'probe-1789945415'[0m [[0m[1m[34mremember[0m][0m
+
+[1mReceived session ID: 44ae358662fa423187a17893f3f1fcb6[0m
+
+[1mNegotiated protocol version: 2025-11-25[0m
+
+[2m2026-09-20T23:03:38.496688[0m [[32m[1minfo     [0m] [1mSkipping LLM connection test: this pipeline has no LLM task.[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T23:03:38.496818[0m [[32m[1minfo     [0m] [1mTesting connection to Embedding endpoint...[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T23:03:38.733228[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:03:38.745693[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:38.757964[0m [[32m[1minfo     [0m] [1mExtracting feedback QAs from session cache[0m [[0m[1m[34mextract_feedback_qas[0m][0m
+
+[2m2026-09-20T23:03:38.764224[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:38.775051[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:03:38.827356[0m [[32m[1minfo     [0m] [1mFeedback weight memify pipeline completed[0m [[0m[1m[34mapply_feedback_weights_pipeline[0m][0m [36mextra[0m=[35m{'dataset_id': '662a3447-8361-5fa8-862d-1541b8cdf771', 'session_count': 1, 'alpha': 0.1, 'batch_size': 100}[0m
+
+[2m2026-09-20T23:03:38.827484[0m [[32m[1minfo     [0m] [1mimprove: feedback weights applied from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:03:38.890166[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:03:38.900882[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_user_sessions`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:38.911532[0m [[32m[1minfo     [0m] [1mFetching session metadata for current user[0m [[0m[1m[34mextract_user_sessions[0m][0m
+
+[2m2026-09-20T23:03:38.916623[0m [[32m[1minfo     [0m] [1mExtracted session probe-1789945415 via SessionManager: 1 new of 1 total Q&A pairs[0m [[0m[1m[34mextract_user_sessions[0m][0m
+
+[2m2026-09-20T23:03:38.916723[0m [[32m[1minfo     [0m] [1mCoroutine task started: `cognify_session`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:38.926931[0m [[32m[1minfo     [0m] [1mProcessing session probe-1789945415 window (1 entries persisted after this) for cognification[0m [[0m[1m[34mcognify_session[0m][0m
+
+[2m2026-09-20T23:03:38.994473[0m [[32m[1minfo     [0m] [1mPipeline run started: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:03:39.004717[0m [[32m[1minfo     [0m] [1mCoroutine task started: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:39.015206[0m [[32m[1minfo     [0m] [1mCoroutine task started: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:39.025344[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset starting[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.025452[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] starting: save files and compute content hashes (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.025562[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] finished in 0.000 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.025620[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] starting: resolve data IDs (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.036328[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] finished in 0.011 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.036443[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] starting: process files and build data records (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.036580[0m [[32m[1minfo     [0m] [1mRegistered loader: pypdf_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.036651[0m [[32m[1minfo     [0m] [1mRegistered loader: text_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.036729[0m [[32m[1minfo     [0m] [1mRegistered loader: code_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.036795[0m [[32m[1minfo     [0m] [1mRegistered loader: image_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.036853[0m [[32m[1minfo     [0m] [1mRegistered loader: audio_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.036911[0m [[32m[1minfo     [0m] [1mRegistered loader: video_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.036960[0m [[32m[1minfo     [0m] [1mRegistered loader: csv_loader [0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.037024[0m [[32m[1minfo     [0m] [1mRegistered loader: unstructured_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.037080[0m [[32m[1minfo     [0m] [1mRegistered loader: advanced_pdf_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.037140[0m [[32m[1minfo     [0m] [1mRegistered loader: beautiful_soup_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.037289[0m [[32m[1minfo     [0m] [1mRegistered loader: docling_loader[0m [[0m[1m[34mcognee.infrastructure.loaders.LoaderEngine[0m][0m
+
+[2m2026-09-20T23:03:39.037921[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] finished in 0.001 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.037982[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] starting: DB commit (1 new, 0 updated)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.044487[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] finished in 0.006 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.044571[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset finished in 0.019 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:03:39.044685[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:39.054949[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:39.065330[0m [[32m[1minfo     [0m] [1mPipeline run completed: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:03:39.139715[0m [[32m[1minfo     [0m] [1mTesting connection to LLM endpoint...[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T23:03:39.923653[0m [[32m[1minfo     [0m] [1mPipeline run started: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:03:39.934841[0m [[32m[1minfo     [0m] [1mCoroutine task started: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:39.946012[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:39.989376[0m [[32m[1minfo     [0m] [1mPipeline run started: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:03:40.000402[0m [[32m[1minfo     [0m] [1mCoroutine task started: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:40.011225[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:40.034816[0m [[32m[1minfo     [0m] [1mCoroutine task started: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:40.057875[0m [[32m[1minfo     [0m] [1mCoroutine task started: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+  cognee: the agent's server returns what the harness remembers -- one memory, not two
+gpu: 1x NVIDIA H200, 143771 MiB | harness: a9ffe83
+repo: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/fixtures/x12sdk
+tarball: 274,890 bytes
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:789> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 1.021 seconds[0m
+
+[2m2026-09-20T23:03:42.665479[0m [[32m[1minfo     [0m] [1mCoroutine task started: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:42.812887[0m [[32m[1minfo     [0m] [1mCoroutine task started: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:03:43.305799[0m [[32m[1minfo     [0m] [1mRetrieved 66 nodes and 79 edges in 0.52 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:03:43.605547[0m [[32m[1minfo     [0m] [1mRetrieved 79 nodes and 79 edges in 0.26 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+skill: 1,684 chars in Cognee, dataset msf-x12sdk
+memory mode: hybrid  (mcp tools: True, injected context: True)
+distiller: cognee  (its own authoring model)
+  warm-0 memory tools: 11 loaded
+  warm-0 seeded (memory)
+  cold-0 seeded
+  arms differ in ['config_names', 'tools'] -- KNOWN, and a confound in any warm-vs-cold number from this run. See KNOWN_ARM_DIFFERENCES.
+      config_names: warm=['cognee', 'local', 'mistralai/Mistral-Small-4-119B-2603', 'web'] cold=['local', 'mistralai/Mistral-Small-4-119B-2603', 'web']
+      tools: warm=['bash', 'cognee_cognify_file', 'cognee_create_dataset_json', 'cognee_forget', 'cognee_get...] cold=['bash', 'edit', 'grep', 'read_file', 'skill', 'task', 'todo', 'web_fetch', 'web_lookup', ...]
+baseline: 0 passing of 261 | pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#basesettings-has-moved-to-pydantic-settings for more details.
+provenance: {'prov_model': 'mistralai/Mistral-Small-4-119B-2603', 'prov_gpu': '1x NVIDIA H200, 143771 MiB', 'prov_commit': 'a9ffe83', 'prov_writable': True, 'prov_fixture': 'x12sdk', 'prov_experiment': 'swarm-1789945391'}
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:1031> wait_for=<_GatheringFuture pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:709> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 34.300 seconds[0m
+
+[1mExecuting <Task pending name='Task-1232' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.380 seconds[0m
+
+[2m2026-09-20T23:04:18.789870[0m [[32m[1minfo     [0m] [1mRetrieved 79 nodes and 101 edges in 0.40 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:04:19.092571[0m [[32m[1minfo     [0m] [1mRetrieved 79 nodes and 103 edges in 0.26 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[1mExecuting <Task pending name='Task-1231' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.289 seconds[0m
+
+[2m2026-09-20T23:04:19.495302[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.506177[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.516322[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.526550[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.536995[0m [[32m[1minfo     [0m] [1mPipeline run completed: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:04:19.558960[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.569389[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.579714[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.590134[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.600252[0m [[32m[1minfo     [0m] [1mPipeline run completed: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:04:19.683428[0m [[32m[1minfo     [0m] [1mSkipping agent memory retrieval because no usable query could be derived.[0m [[0m[1m[34magent_memory[0m][0m
+
+[2m2026-09-20T23:04:19.706631[0m [[32m[1minfo     [0m] [1mSession data successfully cognified[0m [[0m[1m[34mcognify_session[0m][0m
+
+[2m2026-09-20T23:04:19.713659[0m [[32m[1minfo     [0m] [1mSession probe-1789945415 persist watermark advanced to 1[0m [[0m[1m[34mcognify_session[0m][0m
+
+[2m2026-09-20T23:04:19.713809[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `cognify_session`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.723929[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_user_sessions`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:04:19.734192[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:04:19.783779[0m [[32m[1minfo     [0m] [1mSession persistence pipeline completed[0m [[0m[1m[34mpersist_sessions_in_knowledge_graph[0m][0m
+
+[2m2026-09-20T23:04:19.783887[0m [[32m[1minfo     [0m] [1mimprove: session Q&A persisted from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:04:19.808525[0m [[32m[1minfo     [0m] [1mimprove: distilled session 'probe-1789945415' -> status=no_gated_entries documents=0[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:04:19.815690[0m [[32m[1minfo     [0m] [1mremember: session 'probe-1789945415' bridged to permanent graph[0m [[0m[1m[34mremember[0m][0m
+
+[1mExecuting <Task pending name='Task-1231' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 1.098 seconds[0m
+
+[1mExecuting <Task pending name='Task-1232' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.116 seconds[0m
+
+[1mExecuting <Task pending name='Task-1232' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 1.058 seconds[0m
+
+[2m2026-09-20T23:07:51.633271[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:07:51.644143[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:51.654439[0m [[32m[1minfo     [0m] [1mExtracting feedback QAs from session cache[0m [[0m[1m[34mextract_feedback_qas[0m][0m
+
+[2m2026-09-20T23:07:51.659177[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:51.669343[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:07:51.719514[0m [[32m[1minfo     [0m] [1mFeedback weight memify pipeline completed[0m [[0m[1m[34mapply_feedback_weights_pipeline[0m][0m [36mextra[0m=[35m{'dataset_id': '662a3447-8361-5fa8-862d-1541b8cdf771', 'session_count': 1, 'alpha': 0.1, 'batch_size': 100}[0m
+
+[2m2026-09-20T23:07:51.719613[0m [[32m[1minfo     [0m] [1mimprove: feedback weights applied from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:07:51.785232[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:07:51.795729[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_agent_trace_feedbacks`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:51.806039[0m [[32m[1minfo     [0m] [1mFetching agent trace feedback for current user[0m [[0m[1m[34mextract_agent_trace_feedbacks[0m][0m
+
+[2m2026-09-20T23:07:51.812488[0m [[32m[1minfo     [0m] [1mExtracted session swarm-1789945391:warm-0 via SessionManager: 1 session_feedback entries (1 new of 1 trace steps)[0m [[0m[1m[34mextract_agent_trace_feedbacks[0m][0m
+
+[2m2026-09-20T23:07:51.812591[0m [[32m[1minfo     [0m] [1mCoroutine task started: `cognify_agent_trace_feedback`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:51.822746[0m [[32m[1minfo     [0m] [1mProcessing agent trace content for cognification[0m [[0m[1m[34mcognify_agent_trace_feedback[0m][0m
+
+[2m2026-09-20T23:07:51.884811[0m [[32m[1minfo     [0m] [1mPipeline run started: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:07:51.894905[0m [[32m[1minfo     [0m] [1mCoroutine task started: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:51.905329[0m [[32m[1minfo     [0m] [1mCoroutine task started: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:51.915560[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset starting[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.915678[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] starting: save files and compute content hashes (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.915774[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] finished in 0.000 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.915831[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] starting: resolve data IDs (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.924675[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] finished in 0.009 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.924774[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] starting: process files and build data records (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.925395[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] finished in 0.001 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.925460[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] starting: DB commit (1 new, 0 updated)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.930848[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] finished in 0.005 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.930922[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset finished in 0.015 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:07:51.931029[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:51.941507[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:51.951872[0m [[32m[1minfo     [0m] [1mPipeline run completed: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:07:52.050560[0m [[32m[1minfo     [0m] [1mPipeline run started: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:07:52.060765[0m [[32m[1minfo     [0m] [1mCoroutine task started: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:52.071048[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:52.097775[0m [[32m[1minfo     [0m] [1mCoroutine task started: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:56.780564[0m [[32m[1minfo     [0m] [1mCoroutine task started: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:58.835066[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:58.845421[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:58.855612[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:58.865718[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:58.875775[0m [[32m[1minfo     [0m] [1mPipeline run completed: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:07:58.936289[0m [[32m[1minfo     [0m] [1mAgent trace content successfully cognified[0m [[0m[1m[34mcognify_agent_trace_feedback[0m][0m
+
+[2m2026-09-20T23:07:58.941323[0m [[32m[1minfo     [0m] [1mSession swarm-1789945391:warm-0 trace persist watermark advanced to 1[0m [[0m[1m[34mcognify_agent_trace_feedback[0m][0m
+
+[2m2026-09-20T23:07:58.941432[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `cognify_agent_trace_feedback`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:58.952206[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_agent_trace_feedbacks`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:07:58.962192[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:07:59.009770[0m [[32m[1minfo     [0m] [1mAgent trace feedback persistence pipeline completed[0m [[0m[1m[34mpersist_agent_trace_feedbacks_in_knowledge_graph[0m][0m [36mextra[0m=[35m{'dataset_id': '662a3447-8361-5fa8-862d-1541b8cdf771', 'session_count': 1, 'node_set_name': 'agent_trace_feedbacks', 'raw_trace_content': False, 'last_n_steps': None}[0m
+
+[2m2026-09-20T23:07:59.009907[0m [[32m[1minfo     [0m] [1mimprove: agent trace steps persisted from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+LiteLLM.Info: If you need to debug this error, use `litellm._turn_on_debug()'.
+
+
+[2m2026-09-20T23:07:59.239624[0m [[33m[1mwarning  [0m] [1mlitellm_native: openai/gpt-5.6-luna rejected the strict schema for AgentContextExtraction; demoting to non-strict json_schema for this process (litellm.BadRequestError: OpenAIException - Invalid schema for response_format 'AgentContextExtraction': In context=('properties', 'lessons', 'items'), 'oneOf' is not permitted.)[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T23:08:05.371516[0m [[32m[1minfo     [0m] [1mPipeline run started: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:08:05.382446[0m [[32m[1minfo     [0m] [1mCoroutine task started: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:05.393082[0m [[32m[1minfo     [0m] [1mCoroutine task started: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:05.403199[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset starting[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.403293[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] starting: save files and compute content hashes (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.403381[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] finished in 0.000 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.403434[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] starting: resolve data IDs (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.411155[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] finished in 0.008 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.411247[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] starting: process files and build data records (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.411976[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] finished in 0.001 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.412040[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] starting: DB commit (1 new, 0 updated)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.417407[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] finished in 0.005 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.417475[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset finished in 0.014 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:08:05.417587[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:05.427810[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:05.437830[0m [[32m[1minfo     [0m] [1mPipeline run completed: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:08:05.553261[0m [[32m[1minfo     [0m] [1mPipeline run started: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:08:05.563571[0m [[32m[1minfo     [0m] [1mCoroutine task started: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:05.573887[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:05.606961[0m [[32m[1minfo     [0m] [1mCoroutine task started: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:08.649423[0m [[32m[1minfo     [0m] [1mCoroutine task started: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[1mExecuting <Task finished name='Task-3826' coro=<aembedding() done, defined at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/litellm/utils.py:1571> result=EmbeddingResp...details=None)) created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.148 seconds[0m
+
+[2m2026-09-20T23:08:10.586258[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:10.597291[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:10.608127[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:10.618932[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:08:10.629819[0m [[32m[1minfo     [0m] [1mPipeline run completed: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:08:10.702626[0m [[32m[1minfo     [0m] [1mimprove: distilled session 'swarm-1789945391:warm-0' -> status=completed documents=1[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:08:10.873565[0m [[32m[1minfo     [0m] [1mRetrieved 13 nodes and 19 edges for Skill in 0.11 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:08:11.773601[0m [[32m[1minfo     [0m] [1mRetrieved 14 nodes and 21 edges for Skill in 0.05 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:08:12.412035[0m [[32m[1minfo     [0m] [1mRetrieved 106 nodes and 166 edges in 0.53 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:08:23.961346[0m [[32m[1minfo     [0m] [1mRetrieved 107 nodes and 169 edges in 0.26 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:08:24.239018[0m [[32m[1minfo     [0m] [1mRetrieved 107 nodes and 169 edges in 0.26 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:08:25.292038[0m [[32m[1minfo     [0m] [1mRetrieved 107 nodes and 169 edges in 0.29 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:08:25.574915[0m [[32m[1minfo     [0m] [1mRetrieved 107 nodes and 169 edges in 0.24 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+  warm-0: score 0.000, applied, procedure now 4,371 chars
+
+[1mExecuting <Task pending name='Task-1232' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.300 seconds[0m
+
+[2m2026-09-20T23:08:26.168322[0m [[32m[1minfo     [0m] [1mRetrieved 107 nodes and 169 edges in 0.25 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:08:26.443728[0m [[32m[1minfo     [0m] [1mRetrieved 107 nodes and 169 edges in 0.24 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[1mExecuting <Task pending name='Task-1231' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.290 seconds[0m
+
+[2m2026-09-20T23:08:27.362062[0m [[32m[1minfo     [0m] [1mVector collection retrieval completed: Retrieved distances from 13 collections in 0.36s[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T23:08:27.362467[0m [[32m[1minfo     [0m] [1mRetrieving ID-filtered graph from database.[0m [[0m[1m[34mCogneeGraph[0m][0m
+
+[2m2026-09-20T23:08:27.658097[0m [[32m[1minfo     [0m] [1mID-filtered retrieval: 82 nodes and 129 edges in 0.30s[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:08:27.660810[0m [[32m[1minfo     [0m] [1mGraph projection completed: 82 nodes, 129 edges in 0.00s[0m [[0m[1m[34mCogneeGraph[0m][0m
+
+[2m2026-09-20T23:08:27.661930[0m [[32m[1minfo     [0m] [1mCompleted resolving edges to text[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m [36mextra[0m=[35m{'node_count': 6, 'connection_count': 5}[0m
+
+[1mExecuting <Task pending name='Task-1232' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.115 seconds[0m
+
+[1mExecuting <Task pending name='Task-1232' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 1.074 seconds[0m
+
+[1mExecuting <Task pending name='Task-1231' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 1.264 seconds[0m
+
+[2m2026-09-20T23:11:51.225414[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:11:51.236135[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.246407[0m [[32m[1minfo     [0m] [1mExtracting feedback QAs from session cache[0m [[0m[1m[34mextract_feedback_qas[0m][0m
+
+[2m2026-09-20T23:11:51.251646[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.261673[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:11:51.305397[0m [[32m[1minfo     [0m] [1mFeedback weight memify pipeline completed[0m [[0m[1m[34mapply_feedback_weights_pipeline[0m][0m [36mextra[0m=[35m{'dataset_id': '662a3447-8361-5fa8-862d-1541b8cdf771', 'session_count': 1, 'alpha': 0.1, 'batch_size': 100}[0m
+
+[2m2026-09-20T23:11:51.305501[0m [[32m[1minfo     [0m] [1mimprove: feedback weights applied from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:11:51.369696[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:11:51.379698[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_agent_trace_feedbacks`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.389726[0m [[32m[1minfo     [0m] [1mFetching agent trace feedback for current user[0m [[0m[1m[34mextract_agent_trace_feedbacks[0m][0m
+
+[2m2026-09-20T23:11:51.396355[0m [[32m[1minfo     [0m] [1mExtracted session swarm-1789945391:warm-0 via SessionManager: 1 session_feedback entries (1 new of 2 trace steps)[0m [[0m[1m[34mextract_agent_trace_feedbacks[0m][0m
+
+[2m2026-09-20T23:11:51.396466[0m [[32m[1minfo     [0m] [1mCoroutine task started: `cognify_agent_trace_feedback`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.406435[0m [[32m[1minfo     [0m] [1mProcessing agent trace content for cognification[0m [[0m[1m[34mcognify_agent_trace_feedback[0m][0m
+
+[2m2026-09-20T23:11:51.465543[0m [[32m[1minfo     [0m] [1mPipeline run started: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:11:51.475580[0m [[32m[1minfo     [0m] [1mCoroutine task started: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.485652[0m [[32m[1minfo     [0m] [1mCoroutine task started: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.495723[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset starting[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.495822[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] starting: save files and compute content hashes (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.495931[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] finished in 0.000 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.495980[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] starting: resolve data IDs (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.503989[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] finished in 0.008 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.504087[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] starting: process files and build data records (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.504656[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] finished in 0.001 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.504741[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] starting: DB commit (1 new, 0 updated)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.511021[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] finished in 0.006 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.511102[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset finished in 0.015 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:11:51.511217[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.521442[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.531557[0m [[32m[1minfo     [0m] [1mPipeline run completed: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:11:51.641812[0m [[32m[1minfo     [0m] [1mPipeline run started: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:11:51.652169[0m [[32m[1minfo     [0m] [1mCoroutine task started: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.662562[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:51.700384[0m [[32m[1minfo     [0m] [1mCoroutine task started: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:55.432453[0m [[32m[1minfo     [0m] [1mCoroutine task started: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[1mExecuting <Task finished name='Task-9790' coro=<aembedding() done, defined at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/litellm/utils.py:1571> result=EmbeddingResp...details=None)) created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.115 seconds[0m
+
+[2m2026-09-20T23:11:57.175955[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:57.186369[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:57.196380[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:57.206638[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:57.216835[0m [[32m[1minfo     [0m] [1mPipeline run completed: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:11:57.270653[0m [[32m[1minfo     [0m] [1mAgent trace content successfully cognified[0m [[0m[1m[34mcognify_agent_trace_feedback[0m][0m
+
+[2m2026-09-20T23:11:57.274416[0m [[32m[1minfo     [0m] [1mSession swarm-1789945391:warm-0 trace persist watermark advanced to 2[0m [[0m[1m[34mcognify_agent_trace_feedback[0m][0m
+
+[2m2026-09-20T23:11:57.274522[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `cognify_agent_trace_feedback`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:57.284864[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_agent_trace_feedbacks`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:11:57.294771[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:11:57.339449[0m [[32m[1minfo     [0m] [1mAgent trace feedback persistence pipeline completed[0m [[0m[1m[34mpersist_agent_trace_feedbacks_in_knowledge_graph[0m][0m [36mextra[0m=[35m{'dataset_id': '662a3447-8361-5fa8-862d-1541b8cdf771', 'session_count': 1, 'node_set_name': 'agent_trace_feedbacks', 'raw_trace_content': False, 'last_n_steps': None}[0m
+
+[2m2026-09-20T23:11:57.339545[0m [[32m[1minfo     [0m] [1mimprove: agent trace steps persisted from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:11:58.207955[0m [[32m[1minfo     [0m] [1mSession swarm-1789945391:warm-0: all 1 gated entries already distilled into dataset 662a3447-8361-5fa8-862d-1541b8cdf771[0m [[0m[1m[34msession_distillation[0m][0m
+
+[2m2026-09-20T23:11:58.208129[0m [[32m[1minfo     [0m] [1mimprove: distilled session 'swarm-1789945391:warm-0' -> status=no_new_entries documents=0[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:11:58.490792[0m [[32m[1minfo     [0m] [1mRetrieved 15 nodes and 24 edges for Skill in 0.09 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:11:59.367428[0m [[32m[1minfo     [0m] [1mRetrieved 16 nodes and 26 edges for Skill in 0.05 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:11:59.798707[0m [[32m[1minfo     [0m] [1mRetrieved 114 nodes and 189 edges in 0.32 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:12:10.252668[0m [[32m[1minfo     [0m] [1mRetrieved 115 nodes and 193 edges in 0.29 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:12:10.551667[0m [[32m[1minfo     [0m] [1mRetrieved 115 nodes and 193 edges in 0.28 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:12:11.479549[0m [[32m[1minfo     [0m] [1mRetrieved 115 nodes and 193 edges in 0.34 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:12:11.828007[0m [[32m[1minfo     [0m] [1mRetrieved 115 nodes and 193 edges in 0.31 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+  warm-0: score 0.215, applied, procedure now 5,420 chars
+
+[1mExecuting <Task pending name='Task-1232' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.308 seconds[0m
+
+[2m2026-09-20T23:12:12.471708[0m [[32m[1minfo     [0m] [1mRetrieved 115 nodes and 193 edges in 0.29 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:12:12.832231[0m [[32m[1minfo     [0m] [1mRetrieved 115 nodes and 193 edges in 0.32 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[1mExecuting <Task pending name='Task-1231' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.295 seconds[0m
+
+[2m2026-09-20T23:12:13.701218[0m [[32m[1minfo     [0m] [1mVector collection retrieval completed: Retrieved distances from 13 collections in 0.39s[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m
+
+[2m2026-09-20T23:12:13.701549[0m [[32m[1minfo     [0m] [1mRetrieving ID-filtered graph from database.[0m [[0m[1m[34mCogneeGraph[0m][0m
+
+[2m2026-09-20T23:12:13.999562[0m [[32m[1minfo     [0m] [1mID-filtered retrieval: 90 nodes and 153 edges in 0.30s[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:12:14.001426[0m [[32m[1minfo     [0m] [1mGraph projection completed: 90 nodes, 153 edges in 0.00s[0m [[0m[1m[34mCogneeGraph[0m][0m
+
+[2m2026-09-20T23:12:14.002521[0m [[32m[1minfo     [0m] [1mCompleted resolving edges to text[0m [[0m[1m[34mcognee.shared.logging_utils[0m][0m [36mextra[0m=[35m{'node_count': 7, 'connection_count': 5}[0m
+
+[1mExecuting <Task pending name='Task-1232' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.127 seconds[0m
+
+[1mExecuting <Task pending name='Task-1232' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.960 seconds[0m
+
+[1mExecuting <Task pending name='Task-1231' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_wait.<locals>._on_completion() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:519] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 1.299 seconds[0m
+
+[2m2026-09-20T23:15:16.957552[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:16.967942[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:16.978096[0m [[32m[1minfo     [0m] [1mExtracting feedback QAs from session cache[0m [[0m[1m[34mextract_feedback_qas[0m][0m
+
+[2m2026-09-20T23:15:16.982933[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:16.993369[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:17.089054[0m [[32m[1minfo     [0m] [1mFeedback weight memify pipeline completed[0m [[0m[1m[34mapply_feedback_weights_pipeline[0m][0m [36mextra[0m=[35m{'dataset_id': '662a3447-8361-5fa8-862d-1541b8cdf771', 'session_count': 1, 'alpha': 0.1, 'batch_size': 100}[0m
+
+[2m2026-09-20T23:15:17.089194[0m [[32m[1minfo     [0m] [1mimprove: feedback weights applied from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:15:17.155331[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:17.165563[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_agent_trace_feedbacks`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:17.175546[0m [[32m[1minfo     [0m] [1mFetching agent trace feedback for current user[0m [[0m[1m[34mextract_agent_trace_feedbacks[0m][0m
+
+[2m2026-09-20T23:15:17.181891[0m [[32m[1minfo     [0m] [1mExtracted session swarm-1789945391:warm-0 via SessionManager: 1 session_feedback entries (1 new of 3 trace steps)[0m [[0m[1m[34mextract_agent_trace_feedbacks[0m][0m
+
+[2m2026-09-20T23:15:17.181989[0m [[32m[1minfo     [0m] [1mCoroutine task started: `cognify_agent_trace_feedback`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:17.192169[0m [[32m[1minfo     [0m] [1mProcessing agent trace content for cognification[0m [[0m[1m[34mcognify_agent_trace_feedback[0m][0m
+
+[2m2026-09-20T23:15:17.249242[0m [[32m[1minfo     [0m] [1mPipeline run started: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:17.259651[0m [[32m[1minfo     [0m] [1mCoroutine task started: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:17.270065[0m [[32m[1minfo     [0m] [1mCoroutine task started: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:17.280127[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset starting[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.280197[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] starting: save files and compute content hashes (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.280292[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 1/4] finished in 0.000 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.280349[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] starting: resolve data IDs (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.288632[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 2/4] finished in 0.008 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.288717[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] starting: process files and build data records (1 items)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.289268[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 3/4] finished in 0.000 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.289330[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] starting: DB commit (1 new, 0 updated)[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.294608[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset [loop 4/4] finished in 0.005 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.294759[0m [[32m[1minfo     [0m] [1mcognee-core store_to_dataset finished in 0.015 seconds[0m [[0m[1m[34mcognee.tasks.ingestion.ingest_data[0m][0m
+
+[2m2026-09-20T23:15:17.294874[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `ingest_data`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:17.304921[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `resolve_data_directories`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:17.315430[0m [[32m[1minfo     [0m] [1mPipeline run completed: `cb354be3-d705-5106-b3ac-569ba280fbe1`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:17.434455[0m [[32m[1minfo     [0m] [1mPipeline run started: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:17.444995[0m [[32m[1minfo     [0m] [1mCoroutine task started: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:17.455323[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:17.505980[0m [[32m[1minfo     [0m] [1mCoroutine task started: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:23.245216[0m [[32m[1minfo     [0m] [1mCoroutine task started: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[1mExecuting <Task finished name='Task-16336' coro=<aembedding() done, defined at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/.venv/lib/python3.11/site-packages/litellm/utils.py:1571> result=EmbeddingResp...details=None)) created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py:680> took 0.137 seconds[0m
+
+[2m2026-09-20T23:15:25.296113[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `add_data_points`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:25.306831[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `extract_graph_and_summarize`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:25.317175[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_chunks_from_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:25.327472[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `classify_documents`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:25.337642[0m [[32m[1minfo     [0m] [1mPipeline run completed: `1e13eec9-db78-55bf-b631-96b2e10d58e3`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:25.434733[0m [[32m[1minfo     [0m] [1mAgent trace content successfully cognified[0m [[0m[1m[34mcognify_agent_trace_feedback[0m][0m
+
+[2m2026-09-20T23:15:25.438550[0m [[32m[1minfo     [0m] [1mSession swarm-1789945391:warm-0 trace persist watermark advanced to 3[0m [[0m[1m[34mcognify_agent_trace_feedback[0m][0m
+
+[2m2026-09-20T23:15:25.438686[0m [[32m[1minfo     [0m] [1mCoroutine task completed: `cognify_agent_trace_feedback`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:25.450143[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_agent_trace_feedbacks`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:25.461389[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:25.510542[0m [[32m[1minfo     [0m] [1mAgent trace feedback persistence pipeline completed[0m [[0m[1m[34mpersist_agent_trace_feedbacks_in_knowledge_graph[0m][0m [36mextra[0m=[35m{'dataset_id': '662a3447-8361-5fa8-862d-1541b8cdf771', 'session_count': 1, 'node_set_name': 'agent_trace_feedbacks', 'raw_trace_content': False, 'last_n_steps': None}[0m
+
+[2m2026-09-20T23:15:25.510654[0m [[32m[1minfo     [0m] [1mimprove: agent trace steps persisted from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:15:27.056856[0m [[32m[1minfo     [0m] [1mSession swarm-1789945391:warm-0: all 1 gated entries already distilled into dataset 662a3447-8361-5fa8-862d-1541b8cdf771[0m [[0m[1m[34msession_distillation[0m][0m
+
+[2m2026-09-20T23:15:27.057035[0m [[32m[1minfo     [0m] [1mimprove: distilled session 'swarm-1789945391:warm-0' -> status=no_new_entries documents=0[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:15:27.254809[0m [[32m[1minfo     [0m] [1mRetrieved 17 nodes and 30 edges for Skill in 0.10 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:15:28.069806[0m [[32m[1minfo     [0m] [1mRetrieved 18 nodes and 32 edges for Skill in 0.06 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:15:28.860424[0m [[32m[1minfo     [0m] [1mRetrieved 128 nodes and 233 edges in 0.69 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:15:38.754194[0m [[32m[1minfo     [0m] [1mRetrieved 129 nodes and 238 edges in 0.58 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:15:39.353870[0m [[32m[1minfo     [0m] [1mRetrieved 129 nodes and 238 edges in 0.57 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:15:41.288798[0m [[32m[1minfo     [0m] [1mRetrieved 129 nodes and 238 edges in 0.78 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:15:42.617002[0m [[32m[1minfo     [0m] [1mRetrieved 129 nodes and 238 edges in 1.14 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+  warm-0: score 0.230, applied, procedure now 5,603 chars
+
+[2m2026-09-20T23:15:42.864919[0m [[32m[1minfo     [0m] [1mPipeline run started: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:42.875263[0m [[32m[1minfo     [0m] [1mAsync Generator task started: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:42.885331[0m [[32m[1minfo     [0m] [1mExtracting feedback QAs from session cache[0m [[0m[1m[34mextract_feedback_qas[0m][0m
+
+[2m2026-09-20T23:15:42.890195[0m [[32m[1minfo     [0m] [1mAsync Generator task completed: `extract_feedback_qas`[0m [[0m[1m[34mrun_tasks_base[0m][0m
+
+[2m2026-09-20T23:15:42.900214[0m [[32m[1minfo     [0m] [1mPipeline run completed: `7968dd7c-7313-597e-8b32-2917c0e58627`[0m [[0m[1m[34mrun_tasks_with_telemetry()[0m][0m
+
+[2m2026-09-20T23:15:42.951722[0m [[32m[1minfo     [0m] [1mFeedback weight memify pipeline completed[0m [[0m[1m[34mapply_feedback_weights_pipeline[0m][0m [36mextra[0m=[35m{'dataset_id': '662a3447-8361-5fa8-862d-1541b8cdf771', 'session_count': 1, 'alpha': 0.1, 'batch_size': 100}[0m
+
+[2m2026-09-20T23:15:42.951836[0m [[32m[1minfo     [0m] [1mimprove: feedback weights applied from 1 session(s)[0m [[0m[1m[34mimprove[0m][0m
+
+[2m2026-09-20T23:15:42.976383[0m [[32m[1minfo     [0m] [1mSession swarm-1789945391:warm-0: all 1 gated entries already distilled into dataset 662a3447-8361-5fa8-862d-1541b8cdf771[0m [[0m[1m[34msession_distillation[0m][0m
+
+[2m2026-09-20T23:15:42.976471[0m [[32m[1minfo     [0m] [1mimprove: distilled session 'swarm-1789945391:warm-0' -> status=no_new_entries documents=0[0m [[0m[1m[34mimprove[0m][0m
+  warm-0: improve/feedback_weights {'sessions': 1}
+  warm-0: improve/extract_agent_context {'lessons': 0, 'sessions_failed': 0}
+  warm-0: improve/distill_sessions {'documents': 0, 'sessions_completed': 0, 'sessions_failed': 0}
+  warm-0: 2 memory tool call(s) during its attempts
+  cognee retrieved for warm on 2 attempt(s), 885 chars injected into the prompt. This is warm's deterministic treatment: it costs prompt tokens, and cold pays none of them.
+
+============================================================
+hardware: 1x NVIDIA H200, 143771 MiB | model: mistralai/Mistral-Small-4-119B-2603
+WARM (shared memory): 0/1 converged | 3 attempts | errors cleared 3 | best tests passing 60 | in 14,236,198 / out 41,161
+COLD (no memory)  : 0/1 converged | 3 attempts | errors cleared 3 | best tests passing 0 | in 10,947,242 / out 37,601
+     BLOCKING EVENT LOOP: 24 callback(s) over the threshold -- agents cannot run concurrently while this happens
+     34.3s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:1031> wait_for
+     9.9s  Executing <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:699> wait_for=
+     1.3s  Executing <Task pending name='Task-1231' coro=<agent_worker() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:536> wait
+
+GATE ok: 6 attempt(s) graded by 6 real Daytona run(s); 0 sandbox(es) swept
+     graph writes: 3 trace step(s) bridged from session memory into the graph by cognee.improve(), over 3 attempt(s)
+
+[1mExecuting <Task pending name='Task-1' coro=<main_async() running at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:1158> wait_for=<Future pending cb=[Task.task_wakeup()] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:428> cb=[_run_until_complete_cb() at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:181] created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 0.606 seconds[0m
+
+[2m2026-09-20T23:15:44.126584[0m [[32m[1minfo     [0m] [1mRetrieved 129 nodes and 238 edges in 0.39 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+
+[2m2026-09-20T23:15:44.506613[0m [[32m[1minfo     [0m] [1mRetrieved 129 nodes and 238 edges in 0.34 seconds[0m [[0m[1m[34mNeo4jAdapter[0m][0m
+     skill: 1,684 chars at the start, 5,603 at the end; 1/1 warm agent(s) also called memory of their own accord
+     improve() stage counts after the clock stopped: 1
+metrics: skill vNone (421 approx tokens, ) | counts toward clearly-working: YES
+  GPU: 1x NVIDIA H200, 143771 MiB at $4.59/hr x 753s = $0.96 for this RUN -- provisioning and the model download are before the first event and are not counted here
+  arms differed in ['config_names', 'tools'] -- the treatment (memory + skill)
+  cold: 0 passed, 3 attempt(s), 291 turn(s), 521s attempt / 0s distil | attempt tokens 10,942,073 in / 37,599 out | distil tokens 0 in / 0 out
+  warm: 60 passed, 3 attempt(s), 307 turn(s), 542s attempt / 44s distil | attempt tokens 14,221,992 in / 41,157 out | distil tokens 0 in / 0 out
+    distillation: 3/3 accepted, versions -, 0 memory tool call(s)
+event log: runs/swarm-1789945391.jsonl | metrics: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/swarm-1789945391-metrics.json | table: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/cross-run.md | series: /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/runs/swarm-1789945391-series.json
+
+[1mExecuting <Task finished name='Task-1' coro=<main_async() done, defined at /Users/t6w652j6ft/Documents/GitHub/miss-slaytona-forje/swarm/run.py:652> result=0 created at /opt/homebrew/Cellar/python@3.11/3.11.14_2/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:100> took 0.305 seconds[0m

@@ -199,49 +199,51 @@ def test_provision_starts_a_proxy_for_every_measured_thing() -> None:
     assert "/usage" in script, "the script must verify each proxy answers"
 
 
-def test_an_external_writers_tokens_are_not_reported_as_zero() -> None:
-    """An OpenAI call does not pass through the pod's counting proxy, so
-    the runner must read the writer's own counters. Reporting zero would
-    say the distillation was free rather than unmeasured."""
-    from orchestrator.writers import ExternalWriter
+def test_the_distillation_cost_is_not_silently_reported_as_zero() -> None:
+    """A distillation cost of 0 must mean "measured 0", never "not measured".
 
-    writer = ExternalWriter("gpt-5.5-2026-04-23", api_key="test-key")
-    assert writer.usage == {"prompt_tokens": 0, "completion_tokens": 0}
-    writer.usage["prompt_tokens"] = 41_000
-    writer.usage["completion_tokens"] = 2_100
-    result = _collect(distil_usage={"warm": dict(writer.usage)})
-    assert result.arms["warm"].distil_prompt_tokens == 41_000
-    assert result.arms["warm"].distil_completion_tokens == 2_100
-
-
-def test_the_runner_reads_the_writers_own_usage() -> None:
-    """Pinned by source, because getting this wrong is silent: the numbers
-    are plausible, just always zero."""
+    The old external writer kept its own token counters because an OpenAI
+    call does not pass through the pod's counting proxy, and without them
+    the distiller reported as free rather than as unmeasured. Cognee
+    exposes no usage counter at all, so the runner reads the proxy -- and
+    the comment at that call site has to keep saying which of the two
+    zeros this is, because the distinction has been lost once already.
+    """
     import inspect
 
     import swarm.run as runner
     src = inspect.getsource(runner.main_async)
-    assert 'getattr(writer, "usage", None)' in src
-    assert "proxy_usage(host, args.distill_proxy)" in src, (
-        "the agent writer's tokens still have to come from the proxy")
+    assert "proxy_usage(host, args.distill_proxy)" in src
+    assert "never measured" in src, (
+        "the zero-vs-unmeasured distinction must stay written down")
 
 
 def test_after_clock_graph_work_is_bounded() -> None:
-    """Entity extraction is an OpenAI round trip per message, running
-    after the measured window. One run finished its agent work at t=214
-    and was still blocked in SSL inside this block 18 minutes later,
-    stalling an A/B sweep. It cannot change a result, so it must not be
-    able to hold a run open."""
+    """NOTHING AFTER THE MEASURED WINDOW MAY HOLD A RUN OPEN.
+
+    Entity extraction WAS an OpenAI round trip per message, running after
+    the clock: one run finished its agent work at t=214 and was still
+    blocked in SSL 18 minutes later, stalling an A/B sweep. That pass is
+    Cognee's job now and is gone.
+
+    What replaced it is `improve()` -- the bridge from session memory into
+    the graph, which the attempt loop also calls per attempt and which
+    main_async calls once more per warm agent at the end, because an agent
+    cancelled between its last verdict and its last bridge would otherwise
+    strand its most informative trace. Same class of work, same risk, so
+    the same rule: it runs under an explicit timeout.
+    """
     import inspect
 
     import swarm.run as runner
     src = inspect.getsource(runner.main_async)
-    assert "ENTITY_TIMEOUT_S" in src
-    assert src.count("asyncio.wait_for") >= 2, (
-        "both extract_entities_from_session and link_step_entities must be "
-        "bounded; either one can block indefinitely")
-    assert "asyncio.TimeoutError" in src
-    assert runner.ENTITY_TIMEOUT_S <= 600
+    assert "extract_entities_from_session" not in src, (
+        "the after-clock extraction pass is Cognee's job now")
+    assert "asyncio.wait_for(scopes[label].improve()" in src, (
+        "the after-clock improve() call must be bounded -- an unbounded "
+        "OpenAI round trip after the measured window cannot change a "
+        "result but can hold a finished run open indefinitely")
+    assert "timeout=ENTITY_TIMEOUT_S" in src
 
 
 def test_progress_is_measurable_when_the_package_will_not_import() -> None:
