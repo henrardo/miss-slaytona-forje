@@ -1104,3 +1104,23 @@ def test_the_first_attempt_reports_state_without_a_comparison() -> None:
     # task, not a measurement.)
     assert "surfaces 1 ->" not in account
     assert "Cleared" not in account and "Changed" not in account
+
+
+def test_attempt_one_claims_nothing_was_reintroduced() -> None:
+    """`prev_v1` is seeded from the pristine tree; `prev_tree` is not.
+
+    Comparing against an empty breakdown made every surface present on
+    attempt 1 read as newly added. Run 8's warm was told "REINTRODUCED:
+    253 x Field(const/regex/items), 42 x conint/constr/etc" about
+    surfaces it had never touched -- a false statement in the one place
+    the experiment claims is measured rather than claimed.
+    """
+    from orchestrator.vibe_agent import _attempt_account
+
+    account = _attempt_account(
+        attempt=1, package_path="x12sdk",
+        tree={"x12sdk/a.py": b"x: conint(ge=1)\n@validator\n"},
+        prev_tree=None, prev_v1=383, prev_parse_ok=None, started_from=None)
+    assert "REINTRODUCED" not in account
+    assert "Cleared" not in account
+    assert "v1 surfaces remaining: 2." in account

@@ -1343,10 +1343,15 @@ def _attempt_account(*, attempt: int, package_path: str | None,
         else:
             lines.append("Changed no files.")
 
-    if prev_v1 is not None:
+    # BOTH, or neither. `prev_v1` is seeded from the pristine tree so that
+    # attempt 1 can be judged for progress, but `prev_tree` is None there --
+    # and comparing against an empty breakdown made every surface present
+    # read as newly added. Run 8's attempt 1 told warm "REINTRODUCED: 253 x
+    # Field(const/regex/items), 42 x conint/constr/etc" about surfaces it
+    # had never touched.
+    if prev_v1 is not None and prev_tree is not None:
         lines.append(f"v1 surfaces {prev_v1} -> {v1_now}.")
-        before = (surfaces.breakdown(prev_tree, within=package_path)
-                  if prev_tree is not None else {})
+        before = surfaces.breakdown(prev_tree, within=package_path)
         after = surfaces.breakdown(tree, within=package_path)
         cleared = {k: before[k] - after.get(k, 0) for k in before
                    if before[k] > after.get(k, 0)}

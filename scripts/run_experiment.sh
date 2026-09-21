@@ -30,6 +30,26 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+# FILE DESCRIPTORS. macOS ships a 256 soft limit (`launchctl limit maxfiles`)
+# and this process needs ~227 before it does anything: cognee pulls in
+# neo4j, lancedb, torch and friends, and 179 of those fds are shared
+# libraries. Every ssh round trip then wants a few more.
+#
+# Run 8 measured what that costs. At t=660 cold's attempt 3 could not open
+# an ssh session: the client cannot pass its stdin/stdout/stderr to the
+# multiplexing master without fds, so it died with
+# `mux_client_request_session: send fds failed` and exit 255, three seconds
+# in, before Vibe started and before a single token was generated. Warm's
+# session was already open, so warm kept running and cold aborted 126 times
+# in a row -- and an abort is not an exception, so MAX_CONSECUTIVE_AGENT_
+# FAILURES never fired and the retry loop had no exit. The run went
+# warm-only for 25 minutes and looked, in the event log, like a cold arm
+# that would not work.
+#
+# Not a leak: the fds are legitimately held. The limit is simply too low.
+ulimit -n 4096 2>/dev/null || ulimit -n 2048 2>/dev/null || true
+echo "file descriptor limit: $(ulimit -n)"
+
 HOST="${1:?ssh host}"
 PORT="${2:?ssh port}"
 ATTEMPTS="${3:-3}"
