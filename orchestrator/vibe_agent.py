@@ -1755,6 +1755,10 @@ async def migrate_codebase(
     session_id: str | None = None,
     baseline_signature: str | None = None,
     baseline_passed: int = 0,
+    # The pristine tree's v1 surface count, so attempt 1 is judged against
+    # the untouched checkout rather than against nothing. 383 on x12sdk.
+    # None only where the caller has no fixture to count (the rehearsal).
+    baseline_v1: int | None = None,
     agent_label: str | None = None,
     skill_name: str | None = None,
     # The denominator the grader's score is a proportion of. Read from the
@@ -1857,6 +1861,9 @@ async def migrate_codebase(
     # None means "no answer key for this fixture", which is the one case
     # where the tests delta is still the best signal available.
     last_closeness: float | None = None
+    # WHAT `advanced` KEYS ON. Seeded from the baseline tree, so attempt 1
+    # is judged against the untouched checkout rather than against nothing.
+    last_v1: int | None = baseline_v1
     last_ended_cleanly: bool = False
     # Seconds spent AFTER an attempt on work that is not the agent's:
     # ingestion, and later distillation. Added back to the deadline so the
@@ -2304,6 +2311,11 @@ async def migrate_codebase(
         # measure that tracks the actual migration sat unused one line
         # away. See cognee_layer.score_from_verdict.
         closeness = _closeness(file_contents, package_path)
+        # HOISTED, because `advanced` keys on it now. It was computed inline
+        # in the emit below and so reached nothing else -- the same shape of
+        # mistake that left `closeness` unused by the scorer for a whole
+        # series.
+        v1_remaining = surfaces.count(file_contents, within=package_path)
         # ONE READ of the hook's journal per attempt, before the events that
         # report it: `read_hook_journal` truncates the file, so a second
         # reader would find it empty and report a hook that never fired.
@@ -2322,8 +2334,7 @@ async def migrate_codebase(
             # defined even when the tree does not parse, and it moves when
             # an attempt fixes 12 of 40 sites. Not an oracle; the suite
             # stays the only thing that decides success.
-            v1_remaining=surfaces.count(file_contents,
-                                        within=package_path),
+            v1_remaining=v1_remaining,
             # IS THE CODE INTACT? The other half of the pair, and the half
             # that was missing. `v1_remaining` says how much migration
             # exists; this says whether it still compiles. Together they
@@ -2496,36 +2507,48 @@ async def migrate_codebase(
         rejected = bool(shimmed or gutted)
         # DID THIS ATTEMPT MOVE THE MIGRATION?
         #
-        # On closeness, not on `tests_passed`, and this was wrong on the pod
-        # for one round. `tests_passed` has two effective values on these
-        # fixtures -- the package imports or it does not -- so warm's first
-        # attempt went 0 -> 0 tests while taking closeness from the
-        # baseline's -0.049 to +0.0092 and leaving every file parsing. It was
-        # filed under `<fixture>-failed`, which is the block the NEXT attempt
-        # is told not to repeat, and `SkillRunEntry.feedback` was set to -1.0
-        # -- so the loop was actively teaching warm that its best work was
-        # its worst.
+        # On `v1_remaining`. That is the third measure this has keyed on and
+        # the first that answers the question asked, so the two it replaces
+        # are both worth writing down -- each was wrong in a way that read as
+        # correct, and each punished warm for good work.
         #
-        # This is the same fault the score already carried once
-        # (`success_score` was tests/total); it was fixed there and left
-        # here, where it decides the LABEL rather than the number.
+        # `tests_passed` has two effective values on these fixtures: the
+        # package imports or it does not. Warm's first pod attempt went
+        # 0 -> 0 tests while clearly improving, and was recorded as a
+        # failure.
+        #
+        # `closeness` is textual similarity to the human's merged PR. Warm's
+        # second attempt made two correct edits --
+        #
+        #     -    class Config:
+        #     -        allow_mutation = False
+        #     -        frozen = True
+        #     +    model_config = ConfigDict(frozen=True,)
+        #
+        #     -@field_validator(..., mode="before", allow_reuse=True)
+        #     +@field_validator(..., mode="before")
+        #     +@classmethod
+        #
+        # -- and closeness FELL, 0.0206 -> 0.0146, because the right answer
+        # written with different whitespace is further from the reference
+        # text. It stays the reported score, where ranking two arms against
+        # one implementation is what it is for; it cannot decide whether an
+        # attempt progressed.
+        #
+        # `v1_remaining` counts what must change for the migration to be
+        # real, off the source, and is defined even when the tree does not
+        # parse. Over the same two attempts it went 383 -> 309 -> 305 for
+        # warm and 367 -> 367 for cold, which is what both arms did.
         #
         # The suite is still the oracle of DONE: `success` short-circuits
         # this, and a shimmed or gutted tree can never count as progress
-        # whatever either measure says.
-        if closeness is not None:
-            # 0.0 IS THE UNTOUCHED CHECKOUT -- the measure is normalised
-            # against the baseline tree -- so attempt 1 has a floor to be
-            # judged against and does not fall back to the step function on
-            # the very attempt that exposed it. Cold's first attempt scored
-            # -0.049 (it broke its own tree) and warm's +0.0092, against
-            # this same 0.0.
+        # whatever any measure says.
+        if v1_remaining is not None and last_v1 is not None:
+            moved = v1_remaining < last_v1
+        elif closeness is not None:
             prior = last_closeness if last_closeness is not None else 0.0
             moved = closeness > prior
         else:
-            # No answer key for this fixture: the tests delta is all there
-            # is, with the step-function caveat that motivated everything
-            # above.
             moved = passed > last_passed
         advanced = not success and not rejected and moved
 
@@ -2784,6 +2807,7 @@ async def migrate_codebase(
         # regression.
         if not rejected:
             last_passed = passed
+            last_v1 = v1_remaining
             # Not updated on a rejected attempt, for the same reason
             # `last_passed` is not: a shimmed tree can score well, and
             # raising the bar to it would make the attempt that un-shims the

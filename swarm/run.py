@@ -57,10 +57,12 @@ from orchestrator.sandbox import SandboxPool, install_cleanup_handlers
 from orchestrator.run import (MAX_CONSECUTIVE_AGENT_FAILURES, _smoke_test_tool,
                               run_swarm)
 from orchestrator import metrics as metrics_mod
+from orchestrator import surfaces
 from orchestrator import series
 from orchestrator.sync import AttemptSync, NullSync
 from orchestrator.snapshot import load_state, pool_kwargs_from_state
 from orchestrator.vibe_agent import (AttemptBudget, MigrationResult,
+                                     _collect_file_contents,
                                      error_signature, migrate_codebase,
                                      tests_passed)
 from orchestrator.manifest import FIXTURE_DIR, load_manifest
@@ -582,6 +584,7 @@ async def agent_worker(*, ws: AgentWorkspace, warm: bool, pool: SandboxPool,
                        test_command: str, deadline: float, bus: EventBus,
                        mem: Any | None,
                        baseline_signature: str | None, baseline_passed: int,
+                       baseline_v1: int | None = None,
                        results: list, skill_name: str | None = None,
                        package_path: str | None = None,
                        run_id: str | None = None,
@@ -610,7 +613,8 @@ async def agent_worker(*, ws: AgentWorkspace, warm: bool, pool: SandboxPool,
             ws=ws, warm=warm, pool=pool, test_command=test_command,
             deadline=deadline, emit=emit, mem=mem,
             baseline_signature=baseline_signature,
-            baseline_passed=baseline_passed, results=results,
+            baseline_passed=baseline_passed, baseline_v1=baseline_v1,
+            results=results,
             skill_name=skill_name, package_path=package_path,
             run_id=run_id, tests_total=tests_total,
             usage_probe=usage_probe, sync=sync, best=best,
@@ -637,6 +641,7 @@ async def _attempt_until_done(*, ws, warm, pool, test_command, deadline, emit,
                               # migrate_codebase directly and never enters
                               # this wrapper. See test_swarm_signatures.
                               mem, baseline_signature, baseline_passed,
+                              baseline_v1,
                               results, skill_name, tests_total, usage_probe,
                               sync, best, consecutive_failures, budget=None,
                               on_attempt_tree=None):
@@ -665,6 +670,7 @@ async def _attempt_until_done(*, ws, warm, pool, test_command, deadline, emit,
                 session_id=f"{run_id}:{ws.label}" if warm else None,
                 baseline_signature=baseline_signature,
                 baseline_passed=baseline_passed,
+                baseline_v1=baseline_v1,
                 # BOTH ARMS, always. This was `ws.label if warm else None`,
                 # and the only thing that reads it unconditionally is the
                 # attempt barrier -- so cold arrived as "anonymous", which
@@ -994,8 +1000,16 @@ async def main_async(args, watch=None) -> int:
         raise RuntimeError(
             f"{FIXTURE_DIR.name}/manifest.yaml has no `test_total`. Without "
             f"it every skill run scores against an invented denominator.")
+    # WHAT THE UNTOUCHED TREE COUNTS, off the source. `advanced` keys on
+    # this falling, so attempt 1 needs the floor; without it the first
+    # attempt of every run falls back to a measure that has twice been
+    # wrong.
+    baseline_v1 = surfaces.count(
+        _collect_file_contents(repo / (load_manifest().get("package_path")
+                                       or ".")),
+        within=load_manifest().get("package_path"))
     print(f"baseline: {baseline_passed} passing of {baseline_total} | "
-          f"{baseline_signature or '(none)'}")
+          f"{baseline_v1} v1 surface(s) | {baseline_signature or '(none)'}")
 
     state = load_state()
     async with AsyncDaytona() as client:

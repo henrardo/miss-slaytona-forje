@@ -606,7 +606,7 @@ class _FakePool:
         return SandboxResult(exit_code=code, output=output, create_ms=1.0)
 
 
-def _run_loop(mem, *, attempts=2, verdicts=None):
+def _run_loop(mem, *, attempts=2, verdicts=None, baseline_v1=None):
     import time as _time
 
     ws = _FakeWorkspace()
@@ -626,7 +626,7 @@ def _run_loop(mem, *, attempts=2, verdicts=None):
         deadline=_time.monotonic() + 600, emit=emit, mem=mem,
         session_id="run:warm-0" if mem is not None else None,
         agent_label="warm-0" if mem is not None else "cold-0",
-        tests_total=10,
+        tests_total=10, baseline_v1=baseline_v1,
         budget=vibe_agent.AttemptBudget(attempts),
     ))
     return result, events, ws
@@ -658,7 +658,7 @@ def test_the_loop_reports_the_signal_it_sent(fake_cognee,
     assert "a distilled lesson about field_validator" in ws.prompts[1]
 
 
-def test_progress_is_judged_on_closeness_not_the_test_count(
+def test_progress_is_judged_on_v1_surfaces_cleared(
         fake_cognee, monkeypatch) -> None:
     """MEASURED ON THE POD, 2026-09-21, and it cost a round of a $4.59/hr run.
 
@@ -673,19 +673,26 @@ def test_progress_is_judged_on_closeness_not_the_test_count(
     entries = types.ModuleType("cognee.memory.entries")
     entries.SkillRunEntry = lambda **kw: types.SimpleNamespace(**kw)
     monkeypatch.setitem(sys.modules, "cognee.memory.entries", entries)
+    # 0 -> 0 tests, closeness FALLING, and one v1 surface cleared. All
+    # three happened together on the pod: warm rewrote `class Config:
+    # allow_mutation = False` as `model_config = ConfigDict(frozen=True,)`
+    # -- correct -- and closeness fell because the right answer with
+    # different whitespace is further from the reference text.
     monkeypatch.setattr(vibe_agent, "_closeness",
-                        lambda contents, package: 0.0092)
+                        lambda contents, package: 0.0146)
+    monkeypatch.setattr(vibe_agent.surfaces, "count",
+                        lambda contents, within=None: 305)
 
     mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", label="warm-0",
                          session_id="run:warm-0", mode="hybrid")
-    _, events, _ = _run_loop(mem, attempts=1, verdicts=[
+    _, events, _ = _run_loop(mem, attempts=1, baseline_v1=309, verdicts=[
         (1, "E   TypeError: field_validator() got an unexpected keyword "
             "argument 'allow_reuse'\n=== 261 failed in 1.0s ==="),
     ])
     written = [kw for name, kw in events if name == "MEMORY_WRITE"]
     assert written and written[0]["on"] == "progress", (
-        "an attempt that moved closeness off the untouched checkout is "
-        "verified progress, whatever the step function says")
+        "an attempt that cleared a v1 surface is verified progress, "
+        "whatever the step function or the text similarity says")
     assert fake_cognee.remembered[-1][0].feedback == 1.0
 
 
@@ -701,10 +708,13 @@ def test_damage_is_recorded_as_damage_even_though_it_edited(
     monkeypatch.setitem(sys.modules, "cognee.memory.entries", entries)
     monkeypatch.setattr(vibe_agent, "_closeness",
                         lambda contents, package: -0.049)
+    # Not one v1 surface cleared, and the tree no longer parses.
+    monkeypatch.setattr(vibe_agent.surfaces, "count",
+                        lambda contents, within=None: 383)
 
     mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", label="warm-0",
                          session_id="run:warm-0", mode="hybrid")
-    _, events, _ = _run_loop(mem, attempts=1, verdicts=[
+    _, events, _ = _run_loop(mem, attempts=1, baseline_v1=383, verdicts=[
         (1, "E   SyntaxError: invalid syntax\n=== 261 failed in 1.0s ==="),
     ])
     written = [kw for name, kw in events if name == "MEMORY_WRITE"]
