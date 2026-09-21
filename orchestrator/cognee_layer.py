@@ -54,6 +54,12 @@ MAX_BLOCK_CHARS = 2500
 # read will follow. 500 is its own `maximum=`, not a preference: a larger
 # `limit` is clamped without an error. 40 pages is 20,000 facts, against
 # x12sdk's 2,247 -- a runaway guard, not a budget.
+# The most a non-green attempt can score. 1.0 means the suite passed; a tree
+# that merely looks perfect must not be indistinguishable from one that
+# works. Warm's best tree today -- 0 surfaces left, 65/65 compiling -- passed
+# 34 of 261 tests.
+NEAR_MISS_CEILING = 0.95
+
 CODE_PAGE_SIZE = 500
 CODE_MAX_PAGES = 40
 
@@ -446,21 +452,61 @@ async def ensure_skill(*, dataset: str = DEFAULT_DATASET) -> str:
 
 
 def score_from_verdict(*, tests_passed: int, tests_total: int,
-                       closeness: float | None = None) -> float:
-    """THE FUZZY MEASURE IS THE SCORE.
+                       closeness: float | None = None,
+                       v1_remaining: int | None = None,
+                       baseline_v1: int | None = None,
+                       parse_ok: int | None = None,
+                       parse_total: int | None = None) -> float:
+    """THE PAIR IS THE SCORE: how much migration exists, discounted by damage.
 
-    `tests_passed` is a step function on these fixtures -- the package imports
+    This is the number `improve_skill` ranks runs by, so its only real job is
+    to DISCRIMINATE between attempts. It did not. Measured on run 12, warm's
+    own write log:
+
+        a6  on=progress     score=0.0
+        a7  on=progress     score=0.0
+        a8  on=progress     score=0.0
+        a9  on=no-progress  score=0.0
+        a10 on=progress     score=0.0
+        a11 on=progress     score=0.0
+
+    Six consecutive attempts, four of them real progress (v1 320 -> 253),
+    every one handed to Cognee as 0.0 -- because the score was clamped
+    `closeness`, and closeness goes negative the moment a file stops
+    parsing. Warm's procedure was being rewritten from no gradient at all.
+
+    Both halves of the measure pair now compose, because each alone is
+    gameable and today demonstrated both ways:
+
+      surfaces cleared   cold reached 0 of 383 with 18 files unimportable,
+                         then reverted to 365 to make it compile.
+      files parsing      the untouched v1 tree scores 65/65 having migrated
+                         nothing.
+
+    So: the fraction of the checkout's v1 surfaces cleared, multiplied by
+    the fraction of its files that still compile. Warm's a8 (255 left of
+    383, 63/65 parsing) scores 0.32; cold's a4 (0 left, 47/65) scores 0.72;
+    an untouched tree scores 0.0. It is a RANKING for Cognee, not a verdict
+    -- a green suite short-circuits to 1.0 and the suite remains the only
+    thing that decides success.
+
+    `closeness` stays as the fallback for callers that have no surface
+    count, so nothing that used the old signature silently scores zero. The
+    last fallback is `tests_passed`, and it is here only because something
+    must be: it is a step function on these fixtures -- the package imports
     or it does not -- so one correct edit moves it by hundreds while the
-    migration is barely begun. Measured on x12sdk: warm's best test score (60
-    of 261) came from its LEAST reference-like tree (closeness 0.0161), while
-    cold at 0 tests was at 0.0495.
-
-    closeness is signed: -1.9748 was recorded when cold left a syntax error.
-    Clamped to 0. A green suite is 1.0 regardless, because closeness ranks
-    resemblance to one implementation, never correctness.
+    migration is barely begun, and 70% of graded attempts scored exactly 0.
     """
     if tests_total > 0 and tests_passed >= tests_total:
         return 1.0
+    if v1_remaining is not None and baseline_v1:
+        cleared = (baseline_v1 - v1_remaining) / baseline_v1
+        intact = (parse_ok / parse_total) if parse_ok is not None and parse_total else 1.0
+        # CAPPED BELOW 1.0, because 1.0 is the oracle's and nothing else's.
+        # Warm's best tree of the day -- every surface cleared, all 65 files
+        # compiling -- scored 1.000 here on the first version, and it passed
+        # 34 of 261 tests. A perfect spelling score is not a migration.
+        return max(0.0, min(NEAR_MISS_CEILING, cleared * intact))
     if closeness is None:
         return max(0.0, min(1.0, tests_passed / tests_total)) if tests_total > 0 else 0.0
     return max(0.0, min(1.0, float(closeness)))
@@ -470,6 +516,10 @@ async def record_attempt(*, attempt: int, fixture: str,
                          tests_passed: int, tests_total: int,
                          closeness: float | None,
                          helped: bool,
+                         v1_remaining: int | None = None,
+                         baseline_v1: int | None = None,
+                         parse_ok: int | None = None,
+                         parse_total: int | None = None,
                          summary: str,
                          error_signature: str | None = None,
                          latency_ms: int = 0,
@@ -494,7 +544,10 @@ async def record_attempt(*, attempt: int, fixture: str,
     import cognee
 
     score = score_from_verdict(tests_passed=tests_passed,
-                               tests_total=tests_total, closeness=closeness)
+                               tests_total=tests_total, closeness=closeness,
+                               v1_remaining=v1_remaining,
+                               baseline_v1=baseline_v1,
+                               parse_ok=parse_ok, parse_total=parse_total)
     if not improve_skill:
         return {"score": score, "proposal_id": None, "applied": False,
                 "procedure_chars": len(await current_procedure(

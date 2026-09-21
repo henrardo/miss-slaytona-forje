@@ -293,7 +293,7 @@ class SwarmHost:
     def _ensure_control_dir(self) -> None:
         os.makedirs(self.CONTROL_DIR, mode=0o700, exist_ok=True)
 
-    def argv(self, command: str) -> list[str]:
+    def argv(self, command: str, *, multiplex: bool = True) -> list[str]:
         """The ssh argv for `command`. One builder, so the blocking and the
         async paths cannot drift in flags -- `BatchMode` and `IdentitiesOnly`
         in particular decide whether a wedged key prompts or fails fast.
@@ -320,20 +320,44 @@ class SwarmHost:
         is the behaviour we want -- a dead master should cost one slow call,
         not a failed attempt.
         """
+        # `multiplex=False` IS FOR THE ONE CALL THAT MUST NOT FAIL.
+        #
+        # Multiplexing is worth ~1.5s on every short round trip, and there
+        # are dozens per attempt. But it puts every call behind one shared
+        # master, and a wedged master takes them all down: measured on runs
+        # 8, 10 and 12, an arm's Vibe invocation died at exit 255 in three
+        # seconds with `mux_client_request_session: send fds failed` --
+        # zero assistant turns, no prompt sent, no token generated -- while
+        # the other arm, whose session was already open, carried on. Run 8
+        # spun 126 times on it; run 12 lost cold's arm at attempt 9.
+        # Recycling the master does not clear it (tried by hand and
+        # automatically, at 5 consecutive aborts, both times).
+        #
+        # So the Vibe call opens its own connection. It runs for minutes,
+        # so the handshake it pays back is noise, and it is the only call
+        # whose failure costs an attempt rather than a retry.
         self._ensure_control_dir()
+        control = ([
+            "-o", "ControlMaster=auto",
+            "-o", f"ControlPath={self.CONTROL_DIR}/cm-%C",
+            "-o", "ControlPersist=120",
+        ] if multiplex else [
+            "-o", "ControlMaster=no",
+            "-o", "ControlPath=none",
+        ])
         return [
             "ssh", "-i", str(self.identity),
             "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
             "-o", "StrictHostKeyChecking=no",
-            "-o", "ControlMaster=auto",
-            "-o", f"ControlPath={self.CONTROL_DIR}/cm-%C",
-            "-o", "ControlPersist=120",
+            *control,
             "-p", str(self.port), f"{self.user}@{self.host}",
             command,
         ]
 
-    def argv_as(self, agent_user: str, command: str) -> list[str]:
-        return self.argv(f"su - {shlex.quote(agent_user)} -c {shlex.quote(command)}")
+    def argv_as(self, agent_user: str, command: str, *,
+                multiplex: bool = True) -> list[str]:
+        return self.argv(f"su - {shlex.quote(agent_user)} -c {shlex.quote(command)}",
+                         multiplex=multiplex)
 
     def recycle_control_master(self) -> bool:
         """Drop the multiplexing master so the next call builds a fresh one.
@@ -360,9 +384,10 @@ class SwarmHost:
         return result.returncode == 0
 
     def run(self, command: str, *, timeout: float = 600.0,
-            check: bool = True) -> subprocess.CompletedProcess:
+            check: bool = True,
+            multiplex: bool = True) -> subprocess.CompletedProcess:
         return subprocess.run(
-            self.argv(command),
+            self.argv(command, multiplex=multiplex),
             capture_output=True, text=True, timeout=timeout, check=check,
         )
 
@@ -383,7 +408,8 @@ class SwarmHost:
         names = [line.strip() for line in out if line.strip()]
         return f"{len(names)}x {names[0]}" if names else "unknown GPU"
 
-    def run_as(self, agent_user: str, command: str, **kw) -> subprocess.CompletedProcess:
+    def run_as(self, agent_user: str, command: str, *,
+               multiplex: bool = True, **kw) -> subprocess.CompletedProcess:
         """Run `command` as the agent, from its own home.
 
         `su - <user> -c` rather than `sudo -u`: it resets the environment to
@@ -393,7 +419,8 @@ class SwarmHost:
         operator's repo root through `PWD` before the agent made a single tool
         call.
         """
-        return self.run(f"su - {shlex.quote(agent_user)} -c {shlex.quote(command)}", **kw)
+        return self.run(f"su - {shlex.quote(agent_user)} -c {shlex.quote(command)}",
+                        multiplex=multiplex, **kw)
 
     def put(self, data: bytes, dst: str, *, mode: str = "600",
             owner: str | None = None) -> None:
@@ -1330,6 +1357,11 @@ class AgentWorkspace:
             return self.host.run_as(
                 self.user, self._vibe_command(prompt, resume=resume),
                 timeout=timeout, check=False,
+                # ITS OWN CONNECTION. See SwarmHost.argv: a wedged shared
+                # master killed this call at exit 255 with zero assistant
+                # turns on runs 8, 10 and 12, and it is the only call whose
+                # failure costs an attempt rather than a retry.
+                multiplex=False,
             )
         except subprocess.TimeoutExpired as exc:
             # Kill the remote process too -- the local ssh dying leaves Vibe

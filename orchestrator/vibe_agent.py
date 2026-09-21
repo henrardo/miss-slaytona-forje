@@ -2977,6 +2977,14 @@ async def migrate_codebase(
                         tests_total=tests_total,
                         closeness=closeness,
                         helped=helped,
+                        # THE PAIR, so the score Cognee ranks on has a
+                        # gradient. Without these it fell back to clamped
+                        # closeness and handed 0.0 to six consecutive
+                        # attempts of run 12, four of them real progress.
+                        v1_remaining=v1_remaining,
+                        baseline_v1=baseline_v1,
+                        parse_ok=parse_ok,
+                        parse_total=parse_total,
                         # For the proposal to read, not for a later prompt:
                         # what the grader saw, in one line.
                         summary=_attempt_headline(

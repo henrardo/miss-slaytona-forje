@@ -1168,3 +1168,88 @@ def test_the_account_leads_with_the_outcome() -> None:
     assert "for the suite to say" in clean.splitlines()[0]
     for overclaim in ("works", "complete", "succeeded"):
         assert overclaim not in clean.splitlines()[0]
+
+
+def test_the_score_discriminates_between_attempts() -> None:
+    """The number `improve_skill` ranks runs by was flat zero.
+
+    Run 12's warm write log, verbatim:
+
+        a6  on=progress     score=0.0
+        a7  on=progress     score=0.0
+        a8  on=progress     score=0.0
+        a9  on=no-progress  score=0.0
+        a10 on=progress     score=0.0
+        a11 on=progress     score=0.0
+
+    Six consecutive attempts, four of them real progress (v1 320 -> 253),
+    all handed to Cognee as 0.0 -- because the score was clamped
+    `closeness`, which goes negative as soon as one file stops parsing. The
+    procedure was being rewritten from no gradient at all.
+
+    Both halves of the measure pair now compose, because each alone was
+    gamed today: cold reached 0 of 383 surfaces with 18 files unimportable,
+    and an untouched v1 tree scores 65/65 on parsing having migrated
+    nothing.
+    """
+    s = C.score_from_verdict
+    pair = dict(tests_passed=0, tests_total=261, baseline_v1=383)
+
+    untouched = s(**pair, v1_remaining=383, parse_ok=65, parse_total=65)
+    warm_a8 = s(**pair, v1_remaining=255, parse_ok=63, parse_total=65)
+    warm_a11 = s(**pair, v1_remaining=253, parse_ok=63, parse_total=65)
+    cold_broken = s(**pair, v1_remaining=0, parse_ok=47, parse_total=65)
+    cold_reverted = s(**pair, v1_remaining=365, parse_ok=65, parse_total=65)
+
+    # It moves at all, which is the whole point.
+    assert untouched == 0.0
+    assert warm_a11 > warm_a8 > cold_reverted > untouched
+    # Damage is priced in: clearing everything while breaking 18 files does
+    # not score as a finished migration.
+    assert cold_broken < 0.75
+
+    # 1.0 IS THE ORACLE'S AND NOTHING ELSE'S. Warm's best tree of the day --
+    # every surface cleared, all 65 files compiling -- passed 34 of 261
+    # tests, and scored 1.000 on the first version of this.
+    looks_perfect = s(tests_passed=34, tests_total=261, baseline_v1=383,
+                      v1_remaining=0, parse_ok=65, parse_total=65)
+    assert looks_perfect == C.NEAR_MISS_CEILING < 1.0
+    assert s(tests_passed=261, tests_total=261, baseline_v1=383,
+             v1_remaining=0, parse_ok=65, parse_total=65) == 1.0
+
+    # Callers with no surface count still get the old behaviour rather than
+    # a silent zero.
+    assert s(tests_passed=0, tests_total=261, closeness=0.4) == 0.4
+
+
+def test_the_vibe_call_does_not_share_the_ssh_master() -> None:
+    """A wedged shared master killed an arm three times today.
+
+    Runs 8, 10 and 12: the Vibe invocation exited 255 in ~3 seconds with
+    `mux_client_request_session: send fds failed` and zero assistant turns
+    -- no prompt sent, no token generated -- while the other arm, whose
+    session was already open, carried on. Run 8 spun 126 times; run 12 lost
+    cold's arm at attempt 9. Recycling the master does not clear it, tried
+    by hand and automatically.
+
+    Short round trips keep multiplexing, which is worth ~1.5s each and
+    there are dozens per attempt. The Vibe call runs for minutes, so its
+    handshake is noise, and it is the only call whose failure costs an
+    attempt rather than a retry.
+    """
+    import inspect
+    from pathlib import Path
+
+    from swarm.agent_workspace import AgentWorkspace, SwarmHost
+
+    host = SwarmHost(host="pod", port=22, identity=Path("/dev/null"))
+    shared = host.argv("echo hi")
+    own = host.argv("echo hi", multiplex=False)
+    assert "ControlMaster=auto" in shared and "ControlPersist=120" in shared
+    assert "ControlMaster=no" in own and "ControlPath=none" in own
+    assert not any(a.startswith("ControlPath=") and a != "ControlPath=none"
+                   for a in own)
+
+    src = inspect.getsource(AgentWorkspace.invoke_vibe)
+    assert "multiplex=False" in src, (
+        "the Vibe invocation must open its own connection")
