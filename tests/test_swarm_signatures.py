@@ -253,3 +253,29 @@ def test_preflight_proves_the_two_memories_are_one() -> None:
     assert "cognee.remember" in probe and "call_tool" in probe, (
         "the probe must WRITE through the harness and READ through the "
         "agents' own server; anything else re-checks one side twice")
+
+
+def test_the_progress_floor_reaches_the_agent_loop() -> None:
+    """`baseline_v1` threaded through four layers and passed at none of them.
+
+    `advanced` keys on `v1_remaining` falling below `last_v1`, and
+    `last_v1` is seeded from `baseline_v1`. The parameter existed on
+    `agent_worker`, `_attempt_until_done`, `migrate_codebase` and
+    `_run_attempts` -- and `tasks_for()`, the only caller, did not pass
+    it. So `last_v1` was None on every attempt of run 4 and `moved` fell
+    through to the closeness branch, which is the measure v1_remaining
+    replaced for scoring correct edits as regressions. Warm cleared 74 of
+    383 v1 surfaces and reached Cognee as `no-progress`, score 0.0.
+
+    Nothing else caught it: the parameter is spelled correctly in four
+    places, the default is a legal value, and the fallback chain is
+    designed to tolerate a missing measure silently.
+    """
+    import inspect
+
+    src = inspect.getsource(swarm_run.main_async)
+    assert "baseline_v1=baseline_v1" in src, (
+        "tasks_for() must pass the floor it computed; without it every "
+        "attempt is judged by closeness")
+    assert src.index("baseline_v1 = surfaces.count") < src.index(
+        "baseline_v1=baseline_v1"), "computed before it is handed over"

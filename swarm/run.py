@@ -1086,6 +1086,13 @@ async def main_async(args, watch=None) -> int:
                 mem=scopes.get(label) if warm else None,
                 baseline_signature=baseline_signature,
                 baseline_passed=baseline_passed, results=results,
+                # THE FLOOR `advanced` KEYS ON. Omitted here once while
+                # being threaded through all four layers below, which left
+                # `last_v1` None and sent every attempt down the closeness
+                # branch -- the measure this one replaced. Warm's first
+                # attempt cleared 74 v1 surfaces and reached Cognee as
+                # score 0.0, no-progress. test_swarm_signatures pins it.
+                baseline_v1=baseline_v1,
                 # Warm only, and it is the ONLY thing warm's prompt carries
                 # that cold's does not. Cold has no skills directory, so the
                 # prefix would be a stray token rather than a load.
