@@ -280,8 +280,9 @@ def test_the_prompt_is_the_users_request_and_not_our_coaching() -> None:
     # got. Numbering is contiguous, so cold is never told to skip a step.
     assert ("\n11. If you become stuck, look in places you have not looked "
             "before.") in cold
-    assert "\n12. Continue iteratively until the migration is complete." in cold
-    assert "13." not in cold
+    assert "\n12. There is no job too large for you." in cold
+    assert "\n13. Continue iteratively until the migration is complete." in cold
+    assert "14." not in cold
     assert "memory" not in cold.lower(), "cold has no memory tools to be told about"
     # "keep going until" came off this list on 2026-09-16 and went back on
     # when the instruction that needed it was reverted: it bought 1 pytest run
@@ -328,8 +329,8 @@ def test_warm_gets_the_memory_steps_and_the_packages_own_instructions() -> None:
     for coaching in ("ALWAYS", "You should", "Make sure to", "first call"):
         assert coaching not in MEMORY_TOOLS_GUIDE, (
             f"{coaching!r} is instruction, not description")
-    assert "\n15. Continue iteratively until the migration is complete." in warm
-    assert "16." not in warm
+    assert "\n16. Continue iteratively until the migration is complete." in warm
+    assert "17." not in warm
     # The three memory steps, and the closing note that they are optional.
     assert warm.count("memory tools") == 2
     assert "You do not have to follow them." in warm

@@ -1124,3 +1124,42 @@ def test_attempt_one_claims_nothing_was_reintroduced() -> None:
     assert "REINTRODUCED" not in account
     assert "Cleared" not in account
     assert "v1 surfaces remaining: 2." in account
+
+
+def test_the_account_leads_with_the_outcome() -> None:
+    """Cognee renders a recalled trace as "<fn> succeeded. Output: <this>".
+
+    That wording is not ours to change, so whatever follows "Output:" has
+    to settle whether the job is done. With the detail first, run 9's warm
+    read two entries opening "succeeded" and met the contradiction ~600
+    characters later, at the bottom of each. It made 1 edit in 37 turns
+    and said "Task completed."
+
+    A clean parse is reported as nothing more than a clean parse: run 8's
+    cold arm was 65/65 parsing and died on a NameError, so "it parses"
+    must never be rendered as "it works".
+    """
+    from orchestrator.vibe_agent import _attempt_account
+
+    broken = _attempt_account(
+        attempt=2, package_path="x12sdk",
+        tree={"x12sdk/a.py": b"def f(\n", "x12sdk/b.py": b"x = 1\n"},
+        prev_tree=None, prev_v1=None, prev_parse_ok=None, started_from=None)
+    assert broken.startswith("NOT DONE: 1 of 2 source file(s) do not parse")
+    assert "no test can pass" in broken.splitlines()[0]
+
+    surfaces_left = _attempt_account(
+        attempt=2, package_path="x12sdk",
+        tree={"x12sdk/a.py": b"@validator\ndef f(): pass\n"},
+        prev_tree=None, prev_v1=None, prev_parse_ok=None, started_from=None)
+    assert surfaces_left.startswith(
+        "NOT DONE: 1 Pydantic v1 surface(s) are still in the source.")
+
+    clean = _attempt_account(
+        attempt=2, package_path="x12sdk",
+        tree={"x12sdk/a.py": b"x = 1\n"},
+        prev_tree=None, prev_v1=None, prev_parse_ok=None, started_from=None)
+    assert clean.startswith("No v1 surfaces remain in the source")
+    assert "for the suite to say" in clean.splitlines()[0]
+    for overclaim in ("works", "complete", "succeeded"):
+        assert overclaim not in clean.splitlines()[0]

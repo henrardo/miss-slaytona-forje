@@ -696,6 +696,16 @@ def _task_prompt(
         # attempts, 18 of them in a file its own code-graph block never
         # named, while re-reading the two files it already knew.
         "If you become stuck, look in places you have not looked before.",
+        # BOTH ARMS. Measured on run 9: warm's first attempt ended "Given
+        # the complexity and time, I'll stop here and summarize the
+        # migration work completed so far", and its turn count then fell
+        # 62 -> 37 -> 23 across three attempts while its memory grew
+        # 2,302 -> 3,183 -> 4,063 characters. Cold's third attempt used 3
+        # turns. Both arms were electing to stop, and a work list of 255
+        # surfaces across 19 files reads as a reason to.
+        #
+        # The operator's words, verbatim.
+        "There is no job too large for you.",
         "Continue iteratively until the migration is complete.",
     ]
     base = (
@@ -1326,7 +1336,28 @@ def _attempt_account(*, attempt: int, package_path: str | None,
     """
     parse_ok, parse_total = surfaces.parses(tree, within=package_path)
     v1_now = surfaces.count(tree, within=package_path)
-    lines = [f"Attempt {attempt} on the {package_path or 'package'} "
+    # THE OUTCOME FIRST, because Cognee renders every recalled trace as
+    # "<function> succeeded. Output: <this string>" and that wording is
+    # not ours to change. With the detail first, warm's memory opened with
+    # "succeeded" and reached the contradiction ~600 characters later, at
+    # the bottom of each entry. Whatever follows "Output:" has to be the
+    # fact that settles whether the job is done.
+    #
+    # Only measured claims: a tree that parses may still fail to import
+    # (run 8's cold arm was 65/65 parsing and died on a NameError), so a
+    # clean parse is reported as nothing more than a clean parse.
+    if parse_ok < parse_total:
+        headline = (f"NOT DONE: {parse_total - parse_ok} of {parse_total} "
+                    f"source file(s) do not parse, so the package cannot "
+                    f"be imported and no test can pass.")
+    elif v1_now:
+        headline = (f"NOT DONE: {v1_now} Pydantic v1 surface(s) are still "
+                    f"in the source.")
+    else:
+        headline = ("No v1 surfaces remain in the source; whether the "
+                    "package behaves correctly is for the suite to say.")
+    lines = [headline,
+             f"Attempt {attempt} on the {package_path or 'package'} "
              f"Pydantic v1 -> v2 migration."]
     if started_from:
         lines.append(f"Started from the suite failing with: "
