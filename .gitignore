@@ -160,3 +160,17 @@ runs/
 # run actually needs -- skills/pydantic-v2-migration/SKILL.md, read by
 # cognee_layer.SEED_SKILL_PATH -- stays tracked.
 skills/live-archive-*/
+
+# MACHINE-LOCAL STATE, and shipping it is worse than shipping nothing.
+#
+# `.snapshot_state-<fixture>.json` records a Daytona snapshot -- its mode,
+# cpu, memory and the fixture hash it was built from -- and `swarm/run.py`
+# requires one (`load_state()` raises without it). But the snapshot it names
+# lives in the account that built it. A cloner running against ours would
+# get a confusing Daytona failure; with the file absent they get the error
+# that tells them what to do: "run scripts/build_snapshot.py first".
+.snapshot_state-*.json
+
+# Read by nothing. Grepped the whole tree: no module, script or shell file
+# mentions it.
+.freeze-hash

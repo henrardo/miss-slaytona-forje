@@ -140,6 +140,21 @@ of disk) and `gpu.allowedCudaVersions: ["13.0"]` — an exact set, not a floor.
 A `minCudaVersion: "12.8"` floor got a 12.8 host, and `torch.cuda` then
 reported no accelerator while `nvidia-smi` looked healthy.
 
+**First, once per clone: build your own Daytona snapshot.** The grader runs
+the suite in a disposable sandbox, and the sandbox comes from a snapshot in
+*your* Daytona account. `.snapshot_state-<fixture>.json` records which one,
+and it is deliberately not in this repository — a snapshot id from someone
+else's account fails confusingly, where an absent file fails clearly.
+
+```bash
+.venv/bin/python scripts/build_snapshot.py     # writes .snapshot_state-<fixture>.json
+```
+
+Optionally `scripts/grade_fixture.py` too: it runs the fixture's answer key
+and writes `.oracle-<fixture>.json`, which is where the charts get their
+reference lines. Both fixtures ship with theirs already measured, so this is
+only needed for a fixture you add yourself.
+
 ```bash
 # On the pod, in this order. The model download is the long pole (40-60 min),
 # so start it first and provision underneath it.
