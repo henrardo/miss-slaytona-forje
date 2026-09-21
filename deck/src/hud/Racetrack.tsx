@@ -398,11 +398,35 @@ export function useRacers(armed: boolean): {
       }
     }
 
-    const measure: Measure = hasCloseness
-      ? { kind: 'closeness' }
-      : baseline > 0
+    // SURFACES FIRST, and the reason is what the racers did without it.
+    //
+    // `closeness` used to win this choice whenever the fixture reported any,
+    // which on x12sdk is always. Two things followed, and both were visible
+    // on stage. POSITION came from `shareOf`, which under the closeness
+    // measure is the TESTS share -- and on swarm-1789987670 warm's best is
+    // 64 of 261 against cold's 61, so the two racers sat on top of each
+    // other. SPEED came from closeness, which is SIGNED, so warm (positive
+    // on nine of ten attempts) ran forward while cold (negative on all ten)
+    // ran backwards. Near-identical positions, opposite directions: the
+    // race read as arbitrary because neither number was the one the run is
+    // judged on.
+    //
+    // Surfaces cleared is that number, it is monotonic by construction
+    // above (`Math.max`), and it separates the arms the way the run does:
+    // warm 337 of 383 cleared, cold 160. Both racers then move forward,
+    // warm roughly twice as fast, and the gap on the track IS the gap in
+    // the data.
+    //
+    // Closeness has not gone anywhere -- it is on its own card, where a
+    // signed number belongs, and the alarm halo below still reads the parse
+    // count so clearing surfaces by breaking the package cannot look like
+    // winning.
+    const measure: Measure =
+      baseline > 0
         ? { kind: 'surfaces', baseline }
-        : { kind: 'tests' }
+        : hasCloseness
+          ? { kind: 'closeness' }
+          : { kind: 'tests' }
 
     const best: Record<Arm, number> = { warm: 0, cold: 0 }
     const cleared: Record<Arm, number> = { warm: 0, cold: 0 }
@@ -575,7 +599,12 @@ function caption(
       : c.measure.kind === 'surfaces'
         ? // "of 364 seen", not "of 383": the untouched count is never emitted,
           // because the first graded attempt has already edited the tree.
-          `no closeness on this fixture · v1 surfaces of ${c.measure.baseline} seen`
+          //
+          // It no longer says "no closeness on this fixture" -- x12sdk
+          // reports closeness and the race simply is not run on it, because
+          // it is signed and would send an arm backwards. See the measure
+          // choice above.
+          `lap = v1 surfaces cleared, of ${c.measure.baseline} seen`
         : 'no closeness on this fixture · tests passing, paced against the leader'
   const graded = c.graded === 0 ? 'no graded attempt yet' : `${c.graded} graded`
   // Closeness can be earned by an edit that does not compile, and the race
