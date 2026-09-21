@@ -694,6 +694,67 @@ def test_attempt_two_reads_back_what_attempt_one_wrote(
     assert "PydanticUserError" in ws.prompts[1] or "ImportError" in ws.prompts[1]
 
 
+def test_progress_is_judged_on_closeness_not_the_test_count(
+        fake_cognee, monkeypatch) -> None:
+    """MEASURED ON THE POD, 2026-09-21, and it cost a round of a $4.59/hr run.
+
+    Warm's first attempt went 0 -> 0 tests while taking closeness from the
+    untouched checkout's 0.0 to +0.0092 and leaving all 65 files parsing --
+    its best result, and better than cold's -0.049. It was filed under
+    `<fixture>-failed`, which is the block the NEXT attempt is told not to
+    repeat, and `SkillRunEntry.feedback` went in as -1.0. The loop was
+    teaching warm that its best work was its worst.
+
+    The score already keyed on closeness; the LABEL still keyed on
+    `tests_passed`, which has two effective values on these fixtures. Same
+    fault, one layer along."""
+    monkeypatch.setattr(C, "current_procedure", _async_value("1. Move it."))
+    monkeypatch.setattr(C, "_apply_improvement", _async_value(None))
+    entries = types.ModuleType("cognee.memory.entries")
+    entries.SkillRunEntry = lambda **kw: types.SimpleNamespace(**kw)
+    monkeypatch.setitem(sys.modules, "cognee.memory.entries", entries)
+    # A tree that moves toward the reference while passing no more tests.
+    monkeypatch.setattr(vibe_agent, "_closeness",
+                        lambda contents, package: 0.0092)
+
+    mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", label="warm-0",
+                         session_id="run:warm-0", mode="hybrid")
+    _, events, ws = _run_loop(mem, attempts=1, verdicts=[
+        (1, "E   TypeError: field_validator() got an unexpected keyword "
+            "argument 'allow_reuse'\n=== 261 failed in 1.0s ==="),
+    ])
+    written = [kw for name, kw in events if name == "MEMORY_WRITE"]
+    assert written and written[0]["node_set"] == "x12sdk-worked", (
+        "an attempt that moved closeness off the untouched checkout is "
+        "verified progress, whatever the step function says")
+    # ...and the skill is taught the same way.
+    entry = fake_cognee.remembered[-1][0]
+    assert entry.feedback == 1.0
+
+
+def test_damage_is_filed_under_failed_even_though_it_edited(
+        fake_cognee, monkeypatch) -> None:
+    """The other side of the same switch: cold's first pod attempt left a
+    SyntaxError and scored -0.049. Below the untouched checkout is not
+    progress."""
+    monkeypatch.setattr(C, "current_procedure", _async_value("1. Move it."))
+    monkeypatch.setattr(C, "_apply_improvement", _async_value(None))
+    entries = types.ModuleType("cognee.memory.entries")
+    entries.SkillRunEntry = lambda **kw: types.SimpleNamespace(**kw)
+    monkeypatch.setitem(sys.modules, "cognee.memory.entries", entries)
+    monkeypatch.setattr(vibe_agent, "_closeness",
+                        lambda contents, package: -0.049)
+
+    mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", label="warm-0",
+                         session_id="run:warm-0", mode="hybrid")
+    _, events, _ = _run_loop(mem, attempts=1, verdicts=[
+        (1, "E   SyntaxError: invalid syntax\n=== 261 failed in 1.0s ==="),
+    ])
+    written = [kw for name, kw in events if name == "MEMORY_WRITE"]
+    assert written and written[0]["node_set"] == "x12sdk-failed"
+    assert fake_cognee.remembered[-1][0].feedback == -1.0
+
+
 def test_a_regression_is_filed_under_failed(fake_cognee, monkeypatch) -> None:
     """An attempt that leaves the suite no better is verified waste, and the
     next attempt is told not to repeat it. This is the half that cannot come

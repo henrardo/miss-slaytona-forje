@@ -1997,6 +1997,10 @@ async def migrate_codebase(
     # whole run, warm-2 reaching 32 of 33 passing on its first attempt, was
     # silently discarded because there was "no baseline to compare against".
     last_passed: int = baseline_passed
+    # THE MEASURE `helped` KEYS ON, seeded at the baseline tree's own value.
+    # None means "no answer key for this fixture", which is the one case
+    # where the tests delta is still the best signal available.
+    last_closeness: float | None = None
     last_ended_cleanly: bool = False
     # Seconds spent AFTER an attempt on work that is not the agent's:
     # ingestion, and later distillation. Added back to the deadline so the
@@ -2635,7 +2639,40 @@ async def migrate_codebase(
         # `advanced` blocks that at the source, and leaves `signature` and
         # `passed` telling the truth for everything else.
         rejected = bool(shimmed or gutted)
-        advanced = not success and not rejected and passed > last_passed
+        # DID THIS ATTEMPT MOVE THE MIGRATION?
+        #
+        # On closeness, not on `tests_passed`, and this was wrong on the pod
+        # for one round. `tests_passed` has two effective values on these
+        # fixtures -- the package imports or it does not -- so warm's first
+        # attempt went 0 -> 0 tests while taking closeness from the
+        # baseline's -0.049 to +0.0092 and leaving every file parsing. It was
+        # filed under `<fixture>-failed`, which is the block the NEXT attempt
+        # is told not to repeat, and `SkillRunEntry.feedback` was set to -1.0
+        # -- so the loop was actively teaching warm that its best work was
+        # its worst.
+        #
+        # This is the same fault the score already carried once
+        # (`success_score` was tests/total); it was fixed there and left
+        # here, where it decides the LABEL rather than the number.
+        #
+        # The suite is still the oracle of DONE: `success` short-circuits
+        # this, and a shimmed or gutted tree can never count as progress
+        # whatever either measure says.
+        if closeness is not None:
+            # 0.0 IS THE UNTOUCHED CHECKOUT -- the measure is normalised
+            # against the baseline tree -- so attempt 1 has a floor to be
+            # judged against and does not fall back to the step function on
+            # the very attempt that exposed it. Cold's first attempt scored
+            # -0.049 (it broke its own tree) and warm's +0.0092, against
+            # this same 0.0.
+            prior = last_closeness if last_closeness is not None else 0.0
+            moved = closeness > prior
+        else:
+            # No answer key for this fixture: the tests delta is all there
+            # is, with the step-function caveat that motivated everything
+            # above.
+            moved = passed > last_passed
+        advanced = not success and not rejected and moved
 
         # BARRIER 1: nobody starts off-clock work until BOTH arms have
         # finished attempt N.
@@ -2914,6 +2951,11 @@ async def migrate_codebase(
         # regression.
         if not rejected:
             last_passed = passed
+            # Not updated on a rejected attempt, for the same reason
+            # `last_passed` is not: a shimmed tree can score well, and
+            # raising the bar to it would make the attempt that un-shims the
+            # file and legitimately improves read as a regression.
+            last_closeness = closeness
         last_error = _trim_error_for_prompt(_localize_sandbox_paths(result.output, vibe_cwd))
 
     await emit("FILE_DONE", success=False, attempts=attempt)

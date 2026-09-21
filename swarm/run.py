@@ -1438,10 +1438,6 @@ def main() -> int:
     # than always-on. Lands in its own dataset: a map of the code is not
     # a memory of attempts at it, and mixing them makes "what does warm
     # know" unanswerable.
-    p.add_argument("--code-graph", action="store_true",
-                   help="ingest the repo as a Cognee code graph before the "
-                        "run (dataset <dataset>-code), queryable with "
-                        "SearchType.CODE.")
     p.add_argument("--reset-memory", action="store_true",
                    help="Forget THIS fixture's dataset before starting.")
     # THE ONLY COMPLETE RESET AVAILABLE ON ONE INSTANCE. Graph search is
@@ -1480,9 +1476,17 @@ def main() -> int:
                         "rewrite is skipped, so the skill under test cannot "
                         "change underneath the run.")
     # ON BY DEFAULT. A code graph of the repository under migration is
-    # plain Cognee, deterministic and keyless, and it is the one thing
-    # warm can know about the codebase that is not derived from its own
-    # past attempts. Off is the control.
+    # plain Cognee, deterministic and keyless, and it is the one thing warm
+    # can know about the codebase that is not derived from its own past
+    # attempts. Off is the control.
+    #
+    # THERE WAS A SECOND FLAG FOR THIS, `--code-graph` (store_true, default
+    # False), left over from when it was opt-in. argparse fills the
+    # namespace in the order actions were added and does not overwrite a
+    # dest already set, so the FIRST action for a dest wins the default --
+    # this one was dead and every run silently had no code graph. Caught on
+    # the pod, 3 minutes into a $4.59/hr run, by the setup line printing
+    # "code graph: off" with nothing on the command line asking for that.
     p.add_argument("--no-code-graph", dest="code_graph", action="store_false",
                    default=True,
                    help="do not ingest the fixture as a code graph, so "
