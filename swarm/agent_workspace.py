@@ -335,6 +335,30 @@ class SwarmHost:
     def argv_as(self, agent_user: str, command: str) -> list[str]:
         return self.argv(f"su - {shlex.quote(agent_user)} -c {shlex.quote(command)}")
 
+    def recycle_control_master(self) -> bool:
+        """Drop the multiplexing master so the next call builds a fresh one.
+
+        `mux_client_request_session: send fds failed` is the client failing
+        to hand its stdin/stdout/stderr to the master. Measured twice, on
+        runs 8 and 10: cold's attempts died with it at exit 255 in three
+        seconds, before Vibe started and before a token was generated,
+        while warm -- whose session was already open on the same master --
+        carried on. It is not the fd limit (run.py held 234 of a
+        1,048,576 allowance) and it is not the model.
+
+        The master is shared, long-lived and survives every killed run, so
+        the one thing that reliably clears it is throwing it away.
+        `ControlMaster=auto` then re-establishes it on the next call, which
+        is exactly the tolerant behaviour `argv` documents.
+        """
+        result = subprocess.run(
+            ["ssh", "-O", "exit",
+             "-o", f"ControlPath={self.CONTROL_DIR}/cm-%C",
+             "-i", str(self.identity), "-p", str(self.port),
+             f"{self.user}@{self.host}"],
+            capture_output=True, text=True, timeout=30.0, check=False)
+        return result.returncode == 0
+
     def run(self, command: str, *, timeout: float = 600.0,
             check: bool = True) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -531,6 +555,17 @@ class AgentWorkspace:
     # something the agent wrote there itself.
     _HOME_KEEP = (".bashrc", ".bash_logout", ".profile", ".cache",
                   ".vibe", ".vibe-distill", "distill", "venv")
+
+    def recycle_control_master(self) -> bool:
+        """Delegate to the host, so the attempt loop can find it.
+
+        The loop looks this up on the WORKSPACE (`getattr(workspace,
+        "recycle_control_master", None)`), because the local orchestrator's
+        workspace has no ssh transport to recycle and must simply not have
+        the method. Defined only on SwarmHost, the lookup missed and the
+        recovery never fired.
+        """
+        return self.host.recycle_control_master()
 
     def clear_stray_home_files(self) -> list[str]:
         """Drop files the agent left in its home between attempts.

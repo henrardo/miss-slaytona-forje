@@ -30,24 +30,22 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-# FILE DESCRIPTORS. macOS ships a 256 soft limit (`launchctl limit maxfiles`)
-# and this process needs ~227 before it does anything: cognee pulls in
-# neo4j, lancedb, torch and friends, and 179 of those fds are shared
-# libraries. Every ssh round trip then wants a few more.
+# FILE DESCRIPTORS, as a floor and never as a ceiling.
 #
-# Run 8 measured what that costs. At t=660 cold's attempt 3 could not open
-# an ssh session: the client cannot pass its stdin/stdout/stderr to the
-# multiplexing master without fds, so it died with
-# `mux_client_request_session: send fds failed` and exit 255, three seconds
-# in, before Vibe started and before a single token was generated. Warm's
-# session was already open, so warm kept running and cold aborted 126 times
-# in a row -- and an abort is not an exception, so MAX_CONSECUTIVE_AGENT_
-# FAILURES never fired and the retry loop had no exit. The run went
-# warm-only for 25 minutes and looked, in the event log, like a cold arm
-# that would not work.
+# A previous version of this set `ulimit -n 4096` flat, on the theory that
+# macOS's 256 soft limit was starving the ssh clients. That theory was
+# WRONG and the line was harmful: `launchctl limit maxfiles 256` is
+# launchd's default, not this shell's, and the shell already had
+# 1,048,576. Measured mid-run: run.py held 234 fds. Descriptors were never
+# the constraint, and the line lowered the limit by three orders of
+# magnitude to "fix" it.
 #
-# Not a leak: the fds are legitimately held. The limit is simply too low.
-ulimit -n 4096 2>/dev/null || ulimit -n 2048 2>/dev/null || true
+# Kept as a floor because the process does need a few hundred -- cognee
+# pulls in neo4j, lancedb and torch, 179 of those fds being shared
+# libraries -- and a shell that starts at 256 would genuinely be tight.
+if [ "$(ulimit -n)" -lt 4096 ] 2>/dev/null; then
+  ulimit -n 4096 2>/dev/null || true
+fi
 echo "file descriptor limit: $(ulimit -n)"
 
 HOST="${1:?ssh host}"

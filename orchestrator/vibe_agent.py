@@ -193,6 +193,21 @@ MCP_SHIM_DIR = Path("/private/tmp/msf-mcp")
 # create, and on run 8 the service was returning 404s and hanging. Grading
 # is the only thing that decides success, and it comes out of a 1500s clock.
 VERDICT_RESERVE_S = 240.0
+
+# HOW MANY ABORTED STARTS AN ARM TOLERATES. An abort is Vibe exiting with
+# no assistant turn -- nothing was asked of the model, so nothing was
+# measured. Runs 8 and 10 each saw an arm abort on a transport error and
+# retry without limit, because an abort is not an exception and
+# MAX_CONSECUTIVE_AGENT_FAILURES never saw it: 126 in a row on run 8, 25
+# minutes of an arm producing nothing.
+#
+# 20 at ~7s apart is a little over two minutes of patience, which covers a
+# saturated model endpoint; past that it is the harness, and the run must
+# say so instead of spinning. The recycle every 5 is the measured remedy
+# for the one error that has caused this twice -- see
+# AgentWorkspace.recycle_control_master.
+MAX_CONSECUTIVE_ABORTS = 20
+ABORT_RECYCLE_EVERY = 5
 # How many times one attempt may be resumed after a truncated turn. Three is
 # enough for the observed failure (one bad turn, then the model carries on)
 # and small enough that a serving layer emitting nothing but unparseable
@@ -796,6 +811,30 @@ def _task_prompt(
         base += (
             f"\n\nThe test suite still fails:\n```\n{last_error}\n```"
         )
+    # THE INSTRUCTION GOES LAST, after the evidence it is about.
+    #
+    # Measured on run 10, warm attempt 3. The prompt was 14,318 characters
+    # and ended with 3,400 characters of pytest traceback -- the last thing
+    # the model read was "3 errors in 0.69s". The sixteen numbered steps,
+    # including "Make your edits", sat at character 0, thirteen thousand
+    # characters earlier. Nine of those sixteen steps are review, plan or
+    # research; one is editing.
+    #
+    # The transcript is the model following that faithfully: twenty-eight
+    # turns of grep, then "Now let me create a comprehensive plan", then
+    # "Task completed." with ZERO edits -- and a text-only assistant turn
+    # is exactly Vibe's stop condition, so the attempt ended there. It
+    # never compiled anything, while fourteen of its own files did not
+    # parse. Turn counts across the run: 100, 25, 29.
+    #
+    # Nothing new is said here and no content is duplicated: the closing
+    # line restates step 7 and step 16 of the list the operator wrote,
+    # in the position where the model will actually act on them. Identical
+    # for both arms.
+    if last_error or verdict:
+        base += ("\n\nNow make the edits. Work on the codebase itself rather "
+                 "than on a plan or a report, and keep going until the suite "
+                 "passes.")
     # LAST, so it is the very first thing in the message. Vibe only treats a
     # prompt as a skill invocation when it STARTS with `/<name>`
     # (SkillManager.parse_skill_command: `stripped.startswith("/")`, then
@@ -2034,6 +2073,8 @@ async def migrate_codebase(
     # attempt 1, which reports its state without a comparison.
     last_tree: dict[str, bytes] | None = None
     last_parse_ok: int | None = None
+    # Reset by any attempt that reaches the model; see MAX_CONSECUTIVE_ABORTS.
+    consecutive_aborts = 0
     # Zero, not None. The starting state is known, not unknown: pristine v1
     # under pydantic v2 dies at collection and passes 0 tests (verified
     # directly against the fixture). Seeding this as None made `advanced`
@@ -2371,16 +2412,57 @@ async def migrate_codebase(
             # (An aborted attempt has no steps, so search_steps cannot surface
             # it regardless.)
             if workspace.assistant_turns_total() <= turns_before:
+                consecutive_aborts += 1
                 await emit(
                     "ATTEMPT_ABORTED",
                     attempt=attempt,
                     reason="vibe completed no assistant turn",
                     vibe_exit_code=vibe_exit_code,
                     vibe_stop=stop_reason(vibe_output),
+                    consecutive=consecutive_aborts,
                 )
                 attempt -= 1  # it did not happen; do not inflate the count
+                # AN ABORT LOOP HAS TO END, AND IT HAS TO TRY TO HEAL.
+                #
+                # An abort is not an exception, so MAX_CONSECUTIVE_AGENT_
+                # FAILURES never saw these and the loop had no exit at
+                # all. Run 8's cold arm aborted 126 times in a row on
+                # `mux_client_request_session: send fds failed` and run
+                # 10's did it again -- 25 minutes of an arm that produced
+                # nothing while the event log showed a cold agent that
+                # simply would not work, which is indistinguishable from
+                # the experiment's own result.
+                #
+                # Every ABORT_RECYCLE_EVERY tries, throw the ssh
+                # multiplexing master away: that is the one thing measured
+                # to clear this state, and `ControlMaster=auto` rebuilds
+                # it on the next call. After MAX_CONSECUTIVE_ABORTS, stop
+                # -- an arm that cannot start Vibe is a broken harness,
+                # not a slow agent, and it must say so rather than spin.
+                if consecutive_aborts % ABORT_RECYCLE_EVERY == 0:
+                    recycle = getattr(workspace, "recycle_control_master",
+                                      None)
+                    if recycle is not None:
+                        print(f"  [{agent_label}] {consecutive_aborts} "
+                              f"consecutive aborts; recycling the ssh "
+                              f"control master")
+                        try:
+                            recycle()
+                        except Exception as exc:      # never cost the run
+                            print(f"  [{agent_label}] recycle failed: {exc!r}")
+                if consecutive_aborts >= MAX_CONSECUTIVE_ABORTS:
+                    await emit("FILE_DONE", success=False, attempts=attempt,
+                               reason=f"{consecutive_aborts} consecutive "
+                                      f"aborts; vibe never started")
+                    return MigrationResult(
+                        False, attempt,
+                        errors_cleared=max(0, len(seen_signatures) - 1),
+                        best_passed=best_passed,
+                        last_signature=last_signature,
+                    )
                 await asyncio.sleep(5.0)  # don't spin on a saturated endpoint
                 continue
+            consecutive_aborts = 0
             # NO TRANSCRIPT REPLAY HERE ANY MORE. The agent's steps were
             # already written, by the agent, as it took them -- Vibe's
             # `post_tool` hook calls add_step/record_tool_call at each tool

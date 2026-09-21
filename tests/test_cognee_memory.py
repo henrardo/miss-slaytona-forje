@@ -519,8 +519,13 @@ def test_colds_prompt_is_unchanged_by_any_of_this() -> None:
     assert "Your procedure" not in cold
     assert "Your memory of this codebase" not in cold
     assert "cognee" not in cold.lower()
-    assert cold.endswith("The test suite still fails:\n```\n"
-                         "E   ImportError: BaseSettings\n```")
+    # The traceback, and then the closing directive -- the prompt used to
+    # END on the traceback, which left the model's most recent context an
+    # error dump with nothing asked of it. See
+    # test_the_instruction_comes_after_the_evidence.
+    assert ("The test suite still fails:\n```\n"
+            "E   ImportError: BaseSettings\n```") in cold
+    assert cold.rstrip().endswith("keep going until the suite passes.")
 
 
 def test_warms_prompt_carries_the_procedure_and_the_brief() -> None:
@@ -536,7 +541,7 @@ def test_warms_prompt_carries_the_procedure_and_the_brief() -> None:
     # warm-1 spent three attempts reporting on the memory instead of
     # migrating anything.
     assert warm.startswith("Please migrate this codebase")
-    assert warm.rstrip().endswith("```")
+    assert warm.rstrip().endswith("keep going until the suite passes.")
     assert warm.index("Your procedure") < warm.index("The test suite still fails")
 
 

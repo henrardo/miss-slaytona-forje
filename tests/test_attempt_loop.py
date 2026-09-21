@@ -357,6 +357,11 @@ def test_the_retry_prompt_only_states_the_failure() -> None:
     assert p == (
         _task_prompt(None, memory_enabled=False)
         + "\n\nThe test suite still fails:\n```\nSomeError: boom\n```"
+        # The closing directive, which restates steps 7 and 16 of the
+        # operator's own list in the position where the model acts on
+        # them. See test_the_instruction_comes_after_the_evidence.
+        + "\n\nNow make the edits. Work on the codebase itself rather than "
+          "on a plan or a report, and keep going until the suite passes."
     )
 
 
@@ -883,3 +888,99 @@ def test_the_stuck_step_goes_to_both_arms() -> None:
     line = "If you become stuck, look in places you have not looked before."
     assert line in _task_prompt(None, memory_enabled=True)
     assert line in _task_prompt(None, memory_enabled=False)
+
+
+def test_the_instruction_comes_after_the_evidence() -> None:
+    """Run 10 measured a prompt built upside down.
+
+    14,318 characters, ending in 3,400 characters of pytest traceback --
+    the last thing the model read was "3 errors in 0.69s". The sixteen
+    numbered steps, "Make your edits" among them, sat at character 0.
+    Nine of the sixteen are review, plan or research; one is editing.
+
+    Warm's third attempt followed that faithfully: twenty-eight turns of
+    grep, "Now let me create a comprehensive plan", then "Task
+    completed." with zero edits -- and a text-only assistant turn is
+    Vibe's stop condition, so the attempt ended there. It never compiled
+    anything while fourteen of its own files did not parse.
+
+    So the closing directive goes after the traceback, and only on the
+    attempts that have one: attempt 1 has no evidence to follow.
+    """
+    from orchestrator.vibe_agent import _task_prompt
+
+    closing = "Now make the edits."
+    first = _task_prompt(None, memory_enabled=False)
+    assert closing not in first, "attempt 1 has no verdict and no errors yet"
+
+    later = _task_prompt("E   SyntaxError: bad", memory_enabled=False,
+                         verdict="- 0 of 261 tests passing")
+    assert closing in later
+    assert later.index("SyntaxError") < later.index(closing), (
+        "the instruction must come after the evidence, or the model's most "
+        "recent context is an error dump with nothing asked of it")
+    assert later.rstrip().endswith("keep going until the suite passes.")
+    # It restates the operator's own steps; it must not smuggle in technique.
+    tail = later[later.index(closing):]
+    for technique in ("pytest", "edit tool", "byte-for-byte", "compileall"):
+        assert technique not in tail, technique
+
+
+def test_both_arms_get_the_closing_directive() -> None:
+    """It needs no memory to follow, so a warm-only version would be a
+    second undeclared asymmetry."""
+    from orchestrator.vibe_agent import attempt_prompt
+
+    warm = attempt_prompt("E: x", "skill", procedure="P", memory="M",
+                          verdict="- 0 of 2 passing", mcp_tools=True)
+    cold = attempt_prompt("E: x", None, verdict="- 0 of 2 passing")
+    for p in (warm, cold):
+        assert p.rstrip().endswith("keep going until the suite passes.")
+
+
+def test_an_abort_loop_ends_and_tries_to_heal() -> None:
+    """An abort is not an exception, so nothing capped it.
+
+    Vibe exiting with no assistant turn means nothing was asked of the
+    model and nothing was measured. Runs 8 and 10 each had an arm abort
+    on `mux_client_request_session: send fds failed` and retry without
+    limit -- 126 times in a row on run 8, 25 minutes of an arm producing
+    nothing while the event log showed what looked like a cold agent that
+    would not work. MAX_CONSECUTIVE_AGENT_FAILURES only counts exceptions
+    out of migrate_codebase, and an abort raises none.
+    """
+    import inspect
+
+    from orchestrator.vibe_agent import (
+        ABORT_RECYCLE_EVERY,
+        MAX_CONSECUTIVE_ABORTS,
+    )
+
+    assert 0 < ABORT_RECYCLE_EVERY < MAX_CONSECUTIVE_ABORTS
+    src = inspect.getsource(vibe_agent.migrate_codebase)
+    # It counts them...
+    assert "consecutive_aborts += 1" in src
+    # ...tries the one remedy measured to clear that error...
+    assert "recycle_control_master" in src
+    assert "consecutive_aborts % ABORT_RECYCLE_EVERY" in src
+    # ...gives up rather than spinning...
+    assert "consecutive_aborts >= MAX_CONSECUTIVE_ABORTS" in src
+    # ...and any attempt that actually reached the model clears the count,
+    # so a single hiccup an hour in cannot end the arm.
+    assert "consecutive_aborts = 0" in src
+
+
+def test_recycling_the_master_is_an_ssh_exit_on_the_shared_path() -> None:
+    """It has to target the SAME ControlPath `argv` uses, or it drops
+    nothing and the loop keeps failing."""
+    import inspect
+
+    from swarm.agent_workspace import AgentWorkspace, SwarmHost
+
+    src = inspect.getsource(SwarmHost.recycle_control_master)
+    assert '"-O", "exit"' in src
+    assert "ControlPath={self.CONTROL_DIR}/cm-%C" in src
+    # And the loop looks it up on the WORKSPACE, so the delegate has to
+    # exist there too -- defined only on the host, the getattr missed and
+    # the recovery never fired.
+    assert hasattr(AgentWorkspace, "recycle_control_master")
