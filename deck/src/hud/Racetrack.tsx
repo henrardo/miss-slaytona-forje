@@ -598,7 +598,6 @@ function caption(
   c: RaceClock,
   warm: RacerState,
   cold: RacerState,
-  laps: Record<Arm, number>,
 ): { top: string; sub: string } {
   const signed = (n: number) => (n >= 0 ? '+' : '−') + Math.abs(n).toFixed(3)
   /** One racer's numbers: what it scored, what that makes it, where it is. */
@@ -612,10 +611,11 @@ function caption(
         : c.measure.kind === 'surfaces'
           ? `${r.cleared} cleared`
           : `${r.passed} passing`
-    // `net`, because a racer that went backwards has a negative lap count and
-    // the sign is the point: it is behind where it started.
-    const net = laps[r.arm]
-    return `${r.arm} ${score} · ${rate} · net ${net < 0 ? '−' : ''}${Math.abs(net)}`
+    // THE STANDING, not a lap count. A racer parks at the mark its share
+    // earns it (see useLapping), so laps no longer measure anything: both
+    // arms settle and the count stops. The share is what the track is
+    // showing, so the caption reads the same number back.
+    return `${r.arm} ${score} · ${rate} · ${Math.round(r.share * 100)}% of the track`
   }
   const measure =
     c.measure.kind === 'closeness'
@@ -735,13 +735,36 @@ function useLapping({
         const racer = s[arm]
         // `lapSeconds` is signed: an arm whose latest attempt scored negative
         // closeness took the tree further from the answer, and runs backwards.
-        if (racer.running) dist.current[arm] += dt / racer.lapSeconds
-        // A converged arm parks on the line. A running one uses the WHOLE lap,
-        // 0..1, deliberately: squeezing it into START_T..FINISH_T left a 3% gap
-        // at the line that the token hopped across once a lap — measured at
-        // ~104px. That inset exists to separate a finisher from a non-starter,
-        // and neither is a thing that is moving.
-        place(arm, racer.finished ? FINISH_T : dist.current[arm] % 1)
+        // CAPPED AT THE MARK, so a parked racer is actually parked: left
+        // to accumulate, `dist` grew for the whole talk, `Math.floor(dist)`
+        // ticked once a lap forever and re-rendered the track, the lane
+        // paths and the caption next to a force simulation and twenty live
+        // cards -- for a number nothing reads any more.
+        if (racer.running) {
+          dist.current[arm] = Math.min(
+            racer.share,
+            dist.current[arm] + dt / racer.lapSeconds,
+          )
+        }
+        // POSITION IS THE ARM'S SHARE. It cannot be `dist % 1`.
+        //
+        // It was, and that is why cold appeared to win a race it was
+        // losing by 63 points of share. `dist % 1` is the racer's PHASE
+        // within its current lap, not its progress: on a closed oval the
+        // faster racer laps, wraps to zero, and spends most of the next
+        // lap behind the slower one. Whoever was further round looked
+        // ahead, which is a fact about wall-clock and lane geometry rather
+        // than about either arm's migration.
+        //
+        // So the racer travels TO the mark its data earns and stops there.
+        // Speed still comes from `lapSeconds`, so the leader gets to its
+        // mark first and the approach is the race; the standing when they
+        // settle is `share`, in the same unit for both, and the gap between
+        // them on the track is the gap in the run. A racer whose share
+        // falls -- cold reverting its migration -- slides back, because
+        // `Math.min` tracks the share downward too.
+        const mark = racer.finished ? 1 : dist.current[arm]
+        place(arm, START_T + mark * (FINISH_T - START_T))
       }
       const counted = {
         warm: Math.floor(dist.current.warm),
@@ -793,7 +816,7 @@ export function Racetrack({ outer, inner, radius, visible }: RacetrackProps) {
     { s: warm, oval: laneOval(LANES.warm), art: ART.warm },
   ]
 
-  const { refs, laps } = useLapping({
+  const { refs } = useLapping({
     warm,
     cold,
     ovals: { cold: laneOval(LANES.cold), warm: laneOval(LANES.warm) },
@@ -802,7 +825,7 @@ export function Racetrack({ outer, inner, radius, visible }: RacetrackProps) {
     running: visible,
   })
 
-  const says = caption(clock, warm, cold, laps)
+  const says = caption(clock, warm, cold)
 
   return (
     <div
