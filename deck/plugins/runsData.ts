@@ -15,6 +15,10 @@
  *   GET /api/series-across[?file=]   -> a cross-run chart document
  *   GET /api/skills                  -> every distilled skill version, sized
  *   GET /api/skills/:v               -> one version's full text
+ *   GET /api/tokens                  -> every run's token spend, oldest first
+ *   GET /api/reasoning[?cap=]        -> the newest packaged agent's transcripts
+ *   GET /api/attempts?run=           -> every graded attempt of one run
+ *   GET /api/verification            -> graded attempts + the code each submitted
  *   GET /api/doc/cross-run           -> runs/cross-run.md
  *   GET /api/source?file=            -> a whitelisted repo source file
  *
@@ -122,8 +126,453 @@ const SOURCE_WHITELIST = new Set([
   'orchestrator/sync.py',
   'harness/memory_step_hook.py',
   'harness/reasoning_relay.py',
+  // The fixture report: the Daytona card reads the baseline-vs-answer-key
+  // pair out of it rather than restating the numbers in the component.
+  'runs/x12sdk-report.md',
 ])
 const EVENT_LOG_LINE = /^event log:\s*runs\/([\w.-]+)\.jsonl/m
+
+/**
+ * One arm's spend, and one run's pair of them. See `/api/tokens`.
+ *
+ * PER ARM, not summed. There are two agents in every run — warm-0 and
+ * cold-0 — and the whole comparison is between them, so an endpoint that
+ * added them together would destroy the only thing the card is for.
+ */
+interface ArmTokens {
+  in: number
+  out: number
+  distilIn: number
+  distilOut: number
+  attempts: number
+  turns: number
+  seconds: number
+  passed: number
+}
+
+interface RunTokens {
+  id: string
+  warm: ArmTokens
+  cold: ArmTokens
+  /** Wall clock, first event to last. What the GPU is billed for. */
+  runSeconds: number
+  /**
+   * Wall seconds in which SOME agent was generating, which is the only
+   * honest denominator for a tokens-per-second figure that aggregates both
+   * arms. See `activeSeconds()`.
+   */
+  activeSeconds: number
+  counts: boolean
+}
+
+const NO_ARM: ArmTokens = {
+  in: 0,
+  out: 0,
+  distilIn: 0,
+  distilOut: 0,
+  attempts: 0,
+  turns: 0,
+  seconds: 0,
+  passed: 0,
+}
+
+/**
+ * How long this run was actually generating, in wall seconds.
+ *
+ * NEITHER OF THE TWO EASY NUMBERS IS RIGHT.
+ *
+ *   `run_seconds` is wall clock, and a third of it is idle: grading in
+ *   Daytona, distillation, sandbox creation, and both arms waiting on the
+ *   `AttemptSync` barrier. Dividing both arms' tokens by it understates
+ *   throughput — measured on swarm-1789987670, 2,304 s against 1,611 s of
+ *   generating.
+ *
+ *   The two arms' `attempt_seconds` SUMMED is worse, because the arms run
+ *   CONCURRENTLY. Adding their clocks together counts the same wall second
+ *   twice and makes concurrency look like a slowdown: 2,746 s, i.e. longer
+ *   than the run.
+ *
+ * So: per ROUND — `AttemptSync` holds the arms in step, one attempt each —
+ * take the longer of the two attempts, because that is how much wall time
+ * that round consumed while at least one agent was generating. Sum the
+ * rounds. An unpaired attempt (one arm outlived the other's budget) ran
+ * alone and contributes its own seconds.
+ *
+ * Reads `per_attempt[].seconds`, which `orchestrator/vibe_agent.py` already
+ * reports with the harness's own bookkeeping subtracted — so the idle this
+ * is trying to exclude is excluded at source, not estimated here.
+ */
+function activeSeconds(
+  warm: Record<string, number>[] | undefined,
+  cold: Record<string, number>[] | undefined,
+): number {
+  const w = (warm ?? []).map((p) => Number(p?.seconds) || 0)
+  const c = (cold ?? []).map((p) => Number(p?.seconds) || 0)
+  let total = 0
+  for (let i = 0; i < Math.max(w.length, c.length); i++) {
+    total += Math.max(w[i] ?? 0, c[i] ?? 0)
+  }
+  return total
+}
+
+/**
+ * The agents' own transcripts, out of the packaged run artifacts.
+ *
+ * `scripts/package_run.py` brings each agent's `$VIBE_HOME` home off the pod,
+ * so `runs/exp<n>-artifacts/home/agent-<arm>-0/.vibe/logs/session/session_<id>`
+ * holds the REAL session: `messages.jsonl`, one JSON object per message, and
+ * `meta.json` with the session's clock and which agent it was. (Written with
+ * no glob in it on purpose: a `*` followed by a slash ends this comment.)
+ *
+ * THE THOUGHT IS THE ASSISTANT'S `content`. Measured against
+ * Mistral-Small-4-119B on SGLang: `reasoning_content` comes back None and
+ * the model's reasoning arrives as ordinary assistant content beside the
+ * tool call it justifies — `scripts/rehearse_loop.py` has the same note. So
+ * there is no separate reasoning channel to read here, and a card that
+ * looked for one would find every step blank.
+ *
+ * A STEP is an assistant message plus the tool results that answered it.
+ * Vibe writes them as separate lines, so they are paired back up here
+ * rather than in the component.
+ */
+const SESSION_SKIP = new Set(['__pycache__', 'node_modules', '.git', 'plots'])
+
+/** Every `messages.jsonl` under `runs/`, depth-capped. */
+function findSessions(root: string, depth = 0): string[] {
+  if (depth > 9) return []
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const out: string[] = []
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      if (SESSION_SKIP.has(e.name)) continue
+      out.push(...findSessions(path.join(root, e.name), depth + 1))
+    } else if (e.name === 'messages.jsonl') {
+      out.push(path.join(root, e.name))
+    }
+  }
+  return out
+}
+
+interface ReasoningStep {
+  n: number
+  thought: string
+  toolName: string | null
+  toolArgs: string | null
+  /** null when the tool reports no exit code — not every tool has one. */
+  ok: boolean | null
+  observation: string | null
+}
+
+const clipTo = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s)
+
+/** One session, paired into steps. */
+function readSession(file: string, cap: number) {
+  let meta: Record<string, unknown> = {}
+  try {
+    meta = JSON.parse(
+      fs.readFileSync(path.join(path.dirname(file), 'meta.json'), 'utf8'),
+    )
+  } catch {
+    /* a session with no meta still has its messages */
+  }
+  const rows: Record<string, unknown>[] = []
+  try {
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      if (!line.trim()) continue
+      try {
+        rows.push(JSON.parse(line))
+      } catch {
+        /* a half-written last line: the run was packaged mid-flight */
+      }
+    }
+  } catch {
+    return null
+  }
+  if (!rows.length) return null
+
+  const task = rows.find((r) => r.role === 'user')?.content
+  const steps: ReasoningStep[] = []
+  let n = 0
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    if (r.role !== 'assistant') continue
+    const thought = String(r.content ?? '').trim()
+    const call = (r.tool_calls as Record<string, any>[] | undefined)?.[0]
+    // A turn with neither thought nor tool call is Vibe's own bookkeeping.
+    if (!thought && !call) continue
+    // The answer to this call, if the next line is one.
+    const answer = rows[i + 1]?.role === 'tool' ? rows[i + 1] : null
+    const output = (answer?.tool_result as Record<string, any> | null)?.output
+    const code = output?.exit_code ?? output?.returncode
+    steps.push({
+      n: ++n,
+      thought: clipTo(thought, 420),
+      toolName: call?.function?.name ?? null,
+      toolArgs: call?.function?.arguments
+        ? clipTo(String(call.function.arguments), 180)
+        : null,
+      ok: typeof code === 'number' ? code === 0 : null,
+      observation: answer?.content
+        ? clipTo(String(answer.content).replace(/\s+/g, ' ').trim(), 200)
+        : null,
+    })
+  }
+  if (!steps.length) return null
+  return {
+    id: path.basename(path.dirname(file)),
+    agent: String(meta.username ?? ''),
+    startedAt: String(meta.start_time ?? ''),
+    endedAt: String(meta.end_time ?? ''),
+    task: task ? clipTo(String(task).replace(/\s+/g, ' ').trim(), 160) : null,
+    total: steps.length,
+    // Oldest steps first; the tail is what a card has room for.
+    steps: steps.slice(-cap),
+  }
+}
+
+/**
+ * THE CODE AN ATTEMPT ACTUALLY CHANGED, as lines removed and added.
+ *
+ * Vibe's `edit` tool records `old_string` and `new_string`, and both carry
+ * enough unchanged context around the change to be unambiguous in the file —
+ * which means rendering them raw shows mostly identical text twice. So the
+ * common leading and trailing LINES are stripped and what is left is the
+ * change itself.
+ *
+ * `write_file` has no `old_string`: nothing was removed, so it is all
+ * additions.
+ */
+function lineDiff(
+  oldText: string,
+  newText: string,
+): { removed: string[]; added: string[] } {
+  const o = oldText.split('\n')
+  const n = newText.split('\n')
+  let head = 0
+  while (head < o.length && head < n.length && o[head] === n[head]) head++
+  let tail = 0
+  while (
+    tail < o.length - head &&
+    tail < n.length - head &&
+    o[o.length - 1 - tail] === n[n.length - 1 - tail]
+  ) {
+    tail++
+  }
+  const cut = (xs: string[]) =>
+    xs
+      .slice(head, xs.length - tail)
+      .filter((l) => l.trim().length > 0)
+      .slice(0, 5)
+      .map((l) => clipTo(l.replace(/\t/g, '  '), 110))
+  return { removed: cut(o), added: cut(n) }
+}
+
+interface CodeEdit {
+  step: number
+  file: string
+  tool: string
+  removed: string[]
+  added: string[]
+}
+
+/** One graded attempt and the code it submitted. See `/api/verification`. */
+interface GradedAttempt {
+  agent: string
+  arm: string
+  attempt: number
+  passed: number | null
+  exitCode: number | null
+  signature: string | null
+  brokeSyntax: boolean
+  v1Left: number | null
+  parseOk: number | null
+  parseTotal: number | null
+  seconds: number | null
+  createMs: number | null
+  turns: number | null
+  edits: CodeEdit[]
+}
+
+/** Every edit an agent made in one session, in order. */
+function readEdits(file: string, cap: number): CodeEdit[] {
+  let rows: Record<string, any>[] = []
+  try {
+    rows = fs
+      .readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim())
+      .map((l) => {
+        try {
+          return JSON.parse(l)
+        } catch {
+          return null
+        }
+      })
+      .filter((r): r is Record<string, any> => r !== null)
+  } catch {
+    return []
+  }
+  const out: CodeEdit[] = []
+  let step = 0
+  for (const r of rows) {
+    if (r.role !== 'assistant') continue
+    step++
+    for (const call of (r.tool_calls ?? []) as Record<string, any>[]) {
+      const tool = call?.function?.name
+      if (tool !== 'edit' && tool !== 'write_file') continue
+      let args: Record<string, any> = {}
+      try {
+        args = JSON.parse(call.function.arguments || '{}')
+      } catch {
+        continue
+      }
+      const target = String(args.file_path ?? args.file ?? '')
+      const diff = lineDiff(
+        String(args.old_string ?? ''),
+        String(args.new_string ?? args.content ?? ''),
+      )
+      if (!diff.removed.length && !diff.added.length) continue
+      out.push({
+        step,
+        // The pod path is nine-tenths boilerplate: keep it from `repo/`.
+        file: target.replace(/^.*?\/repo\//, ''),
+        tool,
+        ...diff,
+      })
+    }
+  }
+  return out.slice(0, cap)
+}
+
+/**
+ * Which run a packaged session belongs to.
+ *
+ * BY WALL CLOCK, because nothing in either record names the other: the
+ * session's `meta.json` carries an absolute `start_time`, and a run id IS
+ * its start in unix seconds, so a session belongs to the run whose window
+ * contains it. Checked against all twelve sessions on disk — each falls
+ * inside exactly one run, three per agent per run, matching that run's
+ * three graded attempts per arm.
+ *
+ * The slack absorbs the gap between the orchestrator starting and the first
+ * session opening, and between the last session closing and the final event.
+ */
+const JOIN_SLACK_BEFORE = 180
+const JOIN_SLACK_AFTER = 300
+
+/**
+ * The code graph, read live out of Aura.
+ *
+ * This is the graph Cognee built during the run — `CodeSymbol` nodes with
+ * the relationships it extracted between them (`implements`, `calls`,
+ * `has_method`, `instantiates`), scoped by the `repo` property. An earlier
+ * version walked the fixture on disk and re-derived an import graph, which
+ * was a picture of the same codebase but not of the thing being claimed.
+ *
+ * Over the HTTP Query API rather than bolt, so the deck needs no driver:
+ * Aura serves `/db/<db>/query/v2` with basic auth. Credentials come out of
+ * the repo's own .env and never leave this process — the response carries
+ * nodes and edges and nothing else.
+ *
+ * BOUNDED IN JS, NOT IN CYPHER. The graph holds ~1,800 symbols and 685
+ * edges for x12sdk; 1,800 nodes is a grey cloud on a slide. So the read is
+ * whole and the cut is explicit: rank by degree, keep the top N, keep the
+ * edges between the survivors, and report both numbers so the card can say
+ * what it is showing out of what exists.
+ */
+function neo4jEnv(repoRoot: string) {
+  const out: Record<string, string> = {}
+  try {
+    for (const line of fs
+      .readFileSync(path.join(repoRoot, '.env'), 'utf8')
+      .split('\n')) {
+      const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
+      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '')
+    }
+  } catch {
+    /* no .env: the endpoint answers 503 and the card says so */
+  }
+  return out
+}
+
+async function cypher(
+  repoRoot: string,
+  statement: string,
+  parameters: Record<string, unknown> = {},
+): Promise<{ fields: string[]; values: unknown[][] }> {
+  const env = neo4jEnv(repoRoot)
+  const uri = env.NEO4J_URI ?? ''
+  // `[a-z+]` does not match the 4 in `neo4j+s`, so the scheme survived
+  // and DNS was asked to resolve a host called `neo4j+s`.
+  const host = uri.replace(/^[a-z0-9+.-]+:\/\//i, '').replace(/:\d+$/, '')
+  const db = env.NEO4J_DATABASE || 'neo4j'
+  if (!host || !env.NEO4J_PASSWORD) throw new Error('no Neo4j credentials')
+  const auth = Buffer.from(
+    `${env.NEO4J_USERNAME || 'neo4j'}:${env.NEO4J_PASSWORD}`,
+  ).toString('base64')
+  const r = await fetch(`https://${host}/db/${db}/query/v2`, {
+    method: 'POST',
+    headers: {
+      authorization: `Basic ${auth}`,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({ statement, parameters }),
+  })
+  const j = (await r.json()) as {
+    data?: { fields: string[]; values: unknown[][] }
+    errors?: { message: string }[]
+  }
+  if (!r.ok || !j.data)
+    throw new Error(j.errors?.[0]?.message ?? `HTTP ${r.status}`)
+  return j.data
+}
+
+/** `v4010/x12_837.../loops.Loop2420G` -> `loops.Loop2420G`. */
+const shortName = (n: string) => n.split('/').pop() || n
+
+async function liveCodeGraph(repoRoot: string, repo: string, keep: number) {
+  const data = await cypher(
+    repoRoot,
+    `MATCH (a:CodeSymbol)-[r]->(b:CodeSymbol)
+     WHERE a.repo = $repo AND b.repo = $repo AND a.name <> b.name
+     RETURN a.name AS a, type(r) AS t, b.name AS b`,
+    { repo },
+  )
+  const edges = data.values.map((v) => ({
+    source: String(v[0]),
+    type: String(v[1]),
+    target: String(v[2]),
+  }))
+
+  const deg = new Map<string, number>()
+  const inDeg = new Map<string, number>()
+  for (const e of edges) {
+    deg.set(e.source, (deg.get(e.source) ?? 0) + 1)
+    deg.set(e.target, (deg.get(e.target) ?? 0) + 1)
+    inDeg.set(e.target, (inDeg.get(e.target) ?? 0) + 1)
+  }
+  const ranked = [...deg.entries()].sort((x, y) => y[1] - x[1])
+  const kept = new Set(ranked.slice(0, keep).map(([id]) => id))
+  return {
+    source: 'neo4j',
+    repo,
+    totalNodes: deg.size,
+    totalEdges: edges.length,
+    nodes: [...kept].map((id) => ({
+      id,
+      label: shortName(id),
+      inDegree: inDeg.get(id) ?? 0,
+      degree: deg.get(id) ?? 0,
+    })),
+    edges: edges.filter((e) => kept.has(e.source) && kept.has(e.target)),
+  }
+}
 
 export function runsData(options: RunsDataOptions): Plugin {
   const { runsDir, repoRoot, debounceMs = 120 } = options
@@ -560,7 +1009,8 @@ export function runsData(options: RunsDataOptions): Plugin {
     } else {
       console.log(`[runs-data] serving ${runsDir}`)
     }
-    return (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    // Async: the code-graph route awaits a Cypher read over HTTPS.
+    return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
       const url = new URL(req.url ?? '/', 'http://localhost')
       const p = url.pathname
 
@@ -662,6 +1112,304 @@ export function runsData(options: RunsDataOptions): Plugin {
         }
       }
 
+      if (p === '/api/tokens') {
+        // WARM AGAINST COLD, per run, oldest first. Read straight off the
+        // `*-metrics.json` the harness already wrote — one file per run,
+        // one `ArmMetrics` per arm — so this endpoint only indexes. The
+        // arms are kept apart all the way to the card.
+        //
+        // NOT cross-run.md, which carries the same figures in a table. That
+        // file is append-only and has GAINED COLUMNS over the project's
+        // life: early rows put `arm` at index 4, later ones at index 7, so
+        // one parser reads 81 of its 142 rows as malformed. The JSON is
+        // keyed, and cannot drift that way.
+        //
+        // A run id is `<kind>-<unix seconds>`, so the numeric suffix is the
+        // chronological order. mtime would be wrong: a metrics file is
+        // rewritten when a run is re-graded.
+        const stamp = (id: string) => Number(/-(\d+)$/.exec(id)?.[1] ?? 0)
+        let files: string[] = []
+        try {
+          files = fs.readdirSync(runsDir).filter((n) => n.endsWith('-metrics.json'))
+        } catch {
+          return json(res, { runs: [], warm: null, cold: null }, 404)
+        }
+        const arm = (raw: Record<string, number> | undefined): ArmTokens =>
+          !raw
+            ? { ...NO_ARM }
+            : {
+                in: Number(raw.attempt_prompt_tokens) || 0,
+                out: Number(raw.attempt_completion_tokens) || 0,
+                // Kept apart from the attempt figures, because they answer
+                // different questions — see the header of CostSlide.tsx.
+                distilIn: Number(raw.distil_prompt_tokens) || 0,
+                distilOut: Number(raw.distil_completion_tokens) || 0,
+                attempts: Number(raw.attempts) || 0,
+                turns: Number(raw.turns) || 0,
+                seconds: Number(raw.attempt_seconds) || 0,
+                passed: Number(raw.tests_passed) || 0,
+              }
+        const runs: RunTokens[] = []
+        for (const name of files.sort(
+          (a, b) =>
+            stamp(a.replace(/-metrics\.json$/, '')) -
+            stamp(b.replace(/-metrics\.json$/, '')),
+        )) {
+          let doc: Record<string, unknown>
+          try {
+            doc = JSON.parse(fs.readFileSync(path.join(runsDir, name), 'utf8'))
+          } catch {
+            continue
+          }
+          const arms = (doc.arms ?? {}) as Record<string, Record<string, number>>
+          runs.push({
+            id: String(doc.run_id ?? name.replace(/-metrics\.json$/, '')),
+            warm: arm(arms.warm),
+            cold: arm(arms.cold),
+            runSeconds: Number(doc.run_seconds) || 0,
+            activeSeconds: activeSeconds(
+              arms.warm?.per_attempt as unknown as Record<string, number>[],
+              arms.cold?.per_attempt as unknown as Record<string, number>[],
+            ),
+            counts: doc.counts_toward_clearly_working !== false,
+          })
+        }
+        const totalFor = (side: 'warm' | 'cold'): ArmTokens => {
+          const out = { ...NO_ARM }
+          for (const r of runs) {
+            for (const k of Object.keys(out) as (keyof ArmTokens)[]) {
+              out[k] += r[side][k]
+            }
+          }
+          return out
+        }
+        return json(res, {
+          runs: runs.length,
+          perRun: runs,
+          warm: totalFor('warm'),
+          cold: totalFor('cold'),
+        })
+      }
+
+      if (p === '/api/reasoning') {
+        // THE NEWEST PACKAGED AGENT, and all of its attempts in order.
+        //
+        // One agent, not both: warm's and cold's sessions interleaved read
+        // as one confused agent changing its mind about whether it has a
+        // skill. The arm is named on the card.
+        const cap = Math.min(
+          200,
+          Math.max(10, Number(url.searchParams.get('cap') ?? 60)),
+        )
+        const found = findSessions(runsDir)
+          .map((f) => readSession(f, cap))
+          .filter((s): s is NonNullable<typeof s> => s !== null)
+          .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+        if (!found.length) {
+          return json(res, { agent: null, sessions: [] }, 404)
+        }
+        const newest = found[found.length - 1]
+        const mine = found.filter((s) => s.agent === newest.agent)
+        return json(res, {
+          agent: newest.agent,
+          // Up to four attempts: the card's ageing ramp keeps six groups and
+          // four is what fits on the glass at a readable size.
+          sessions: mine.slice(-4),
+          available: found.length,
+        })
+      }
+
+      if (p === '/api/attempts') {
+        // EVERY GRADED ATTEMPT OF ONE RUN, from the run's own package.
+        //
+        // `runs/packages/<id>/attempts.json` is one row per ATTEMPT_DONE with
+        // the memory write, the rewrite, any rejection and the ingest folded
+        // in — its MANIFEST says "derived from the jsonl; nothing new". So it
+        // is the same record, pre-joined, and it exists for a finished run
+        // whether or not anyone packaged the agents' transcripts.
+        //
+        // THAT DISTINCTION IS WHY THIS ENDPOINT EXISTS. `/api/verification`
+        // keys on packaged Vibe sessions, and swarm-1789998106's package has
+        // none — so the graded-attempts card rendered its empty state on the
+        // one run the deck is pinned to. This falls back to the event log, so
+        // a graded attempt is never invisible.
+        const id = (url.searchParams.get('run') ?? '').replace(/[^\w.-]/g, '')
+        if (!id) return json(res, { error: 'no run' }, 400)
+        const pkg = path.join(runsDir, 'packages', id)
+
+        let attempts: Record<string, unknown>[] = []
+        let source = 'event log'
+        try {
+          const raw = JSON.parse(
+            fs.readFileSync(path.join(pkg, 'attempts.json'), 'utf8'),
+          )
+          if (Array.isArray(raw) && raw.length) {
+            attempts = raw
+            source = 'packages/attempts.json'
+          }
+        } catch {
+          /* no package for this run: derive below */
+        }
+        if (!attempts.length) {
+          attempts = (readEvents(id) as Record<string, unknown>[]).filter(
+            (e) => e.type === 'ATTEMPT_DONE',
+          )
+        }
+
+        // Sandbox creation is on SANDBOX_CREATED, not on the attempt row.
+        const created = new Map<string, number[]>()
+        for (const e of readEvents(id) as Record<string, any>[]) {
+          if (e.type !== 'SANDBOX_CREATED') continue
+          const who = String(e.agent ?? e.swarm ?? '?')
+          created.set(who, [...(created.get(who) ?? []), Number(e.create_ms) || 0])
+        }
+
+        // The two windows, from the package's MANIFEST where it states them:
+        // attempts 1-9 are the equal-attempt comparison, 10-11 are warm
+        // alone. DEMO-NOTES.md is explicit that they must not be charted as
+        // one, so the split travels with the data rather than living in a
+        // constant in a component.
+        let windows: unknown = null
+        try {
+          windows =
+            JSON.parse(fs.readFileSync(path.join(pkg, 'MANIFEST.json'), 'utf8'))
+              .windows ?? null
+        } catch {
+          /* no manifest: the card shows one window */
+        }
+
+        const seen = new Map<string, number>()
+        const rows = attempts.map((a) => {
+          const agent = String(a.agent ?? a.swarm ?? '?')
+          const nth = seen.get(agent) ?? 0
+          seen.set(agent, nth + 1)
+          const tools = (a.tools ?? {}) as Record<string, number>
+          return {
+            agent,
+            arm: String(a.swarm ?? ''),
+            attempt: Number(a.attempt) || nth + 1,
+            t: Number(a.t) || 0,
+            passed: a.tests_passed ?? null,
+            exitCode: a.exit_code ?? null,
+            signature: (a.error_signature as string | null) ?? null,
+            brokeSyntax: a.broke_syntax === true,
+            v1Left: a.v1_remaining ?? null,
+            parseOk: a.parse_ok ?? null,
+            parseTotal: a.parse_total ?? null,
+            seconds: a.attempt_seconds ?? null,
+            turns: a.turns_used ?? null,
+            stop: (a.vibe_stop as string | null) ?? null,
+            createMs: created.get(agent)?.[nth] ?? null,
+            tools,
+            edits: (tools.edit ?? 0) + (tools.write_file ?? 0),
+            memoryChars: Number(a.memory_chars) || 0,
+            hookChars: Number(a.hook_chars) || 0,
+            procedureChars: Number(a.procedure_chars) || 0,
+          }
+        })
+        return json(res, { runId: id, source, windows, attempts: rows })
+      }
+
+      if (p === '/api/verification') {
+        // ONE RUN, ITS GRADED ATTEMPTS, AND THE CODE EACH ONE SUBMITTED.
+        //
+        // The verdicts come from the run's own event log — `exit_code` and
+        // `tests_passed` are pytest's, `create_ms` is the sandbox's. The
+        // code comes from the agent's packaged Vibe session for the same
+        // attempt. Two records, joined on wall clock; see JOIN_SLACK_BEFORE.
+        //
+        // The run is the NEWEST one that has packaged transcripts at all,
+        // because a verdict with no code beside it is the card this
+        // replaced.
+        const sessions = findSessions(runsDir)
+          .map((f) => {
+            let meta: Record<string, any> = {}
+            try {
+              meta = JSON.parse(
+                fs.readFileSync(path.join(path.dirname(f), 'meta.json'), 'utf8'),
+              )
+            } catch {
+              return null
+            }
+            const started = Date.parse(String(meta.start_time ?? ''))
+            if (!Number.isFinite(started)) return null
+            return { file: f, agent: String(meta.username ?? ''), started }
+          })
+          .filter((s): s is NonNullable<typeof s> => s !== null)
+          .sort((a, b) => a.started - b.started)
+
+        // Runs, newest first, so the first one with sessions wins.
+        const ids = listRuns()
+          .filter((r) => r.hasMetrics)
+          .map((r) => r.id)
+        let chosen: { id: string; mine: typeof sessions } | null = null
+        for (const id of ids) {
+          const start = Number(/-(\d+)$/.exec(id)?.[1] ?? 0) * 1000
+          if (!start) continue
+          const metrics = readMetrics(id) as Record<string, any> | null
+          const span = (Number(metrics?.run_seconds) || 0) * 1000
+          const mine = sessions.filter(
+            (s) =>
+              s.started >= start - JOIN_SLACK_BEFORE * 1000 &&
+              s.started <= start + span + JOIN_SLACK_AFTER * 1000,
+          )
+          if (mine.length) {
+            chosen = { id, mine }
+            break
+          }
+        }
+        if (!chosen) return json(res, { runId: null, attempts: [] }, 404)
+
+        // The k-th session an agent opened is its k-th attempt: the loop
+        // starts a fresh session per attempt and never resumes one (that is
+        // asserted in the harness, and `resumed` is false on every event).
+        const byAgent = new Map<string, string[]>()
+        for (const s of chosen.mine) {
+          const list = byAgent.get(s.agent) ?? []
+          list.push(s.file)
+          byAgent.set(s.agent, list)
+        }
+
+        const events = readEvents(chosen.id) as Record<string, any>[]
+        const sandbox = new Map<string, number[]>()
+        // Annotated, because `nth` counts what is already in this array and
+        // an inferred type would be defined in terms of itself (TS7022).
+        const attempts: GradedAttempt[] = []
+        for (const e of events) {
+          const agent = String(e.agent ?? e.swarm ?? '?')
+          if (e.type === 'SANDBOX_CREATED') {
+            const list = sandbox.get(agent) ?? []
+            list.push(Number(e.create_ms) || 0)
+            sandbox.set(agent, list)
+            continue
+          }
+          if (e.type !== 'ATTEMPT_DONE') continue
+          const nth = attempts.filter((a) => a.agent === agent).length
+          const file = byAgent.get(`agent-${agent}`)?.[nth]
+          attempts.push({
+            agent,
+            arm: String(e.swarm ?? ''),
+            attempt: Number(e.attempt) || nth + 1,
+            passed: e.tests_passed ?? null,
+            exitCode: e.exit_code ?? null,
+            signature: (e.error_signature as string | null) ?? null,
+            brokeSyntax: e.broke_syntax === true,
+            v1Left: e.v1_remaining ?? null,
+            parseOk: e.parse_ok ?? null,
+            parseTotal: e.parse_total ?? null,
+            seconds: e.attempt_seconds ?? null,
+            createMs: sandbox.get(agent)?.[nth] ?? null,
+            turns: e.turns_used ?? null,
+            edits: file ? readEdits(file, 24) : [],
+          })
+        }
+        return json(res, {
+          runId: chosen.id,
+          attempts,
+          sessions: chosen.mine.length,
+        })
+      }
+
       if (p === '/api/doc/cross-run') {
         try {
           return json(res, {
@@ -700,6 +1448,36 @@ export function runsData(options: RunsDataOptions): Plugin {
           return json(res, JSON.parse(raw))
         } catch {
           return json(res, { error: 'no such series' }, 404)
+        }
+      }
+
+      if (p === '/api/code-graph') {
+        // `repo` is the fixture's own name, which is what Cognee stamps on
+        // every code node. A run's `series.fixture` can read `rehearsal` on
+        // the live path, which is not a repo in the graph, so an unknown
+        // name falls back to the repo that has the most nodes and the reply
+        // says which one it used.
+        const asked = (url.searchParams.get('repo') ?? '').replace(/[^\w.-]/g, '')
+        const keep = Math.min(
+          260,
+          Math.max(20, Number(url.searchParams.get('keep') ?? 110)),
+        )
+        try {
+          let repo = asked
+          const repos = await cypher(
+            repoRoot,
+            `MATCH (s:CodeSymbol) WHERE s.repo IS NOT NULL
+             RETURN s.repo AS repo, count(*) AS n ORDER BY n DESC`,
+          )
+          const names = repos.values.map((v) => String(v[0]))
+          if (!names.includes(repo)) repo = names[0] ?? ''
+          if (!repo) return json(res, { error: 'no code graph in the graph' }, 404)
+          return json(res, {
+            asked,
+            ...(await liveCodeGraph(repoRoot, repo, keep)),
+          })
+        } catch (e) {
+          return json(res, { error: String((e as Error).message) }, 503)
         }
       }
 

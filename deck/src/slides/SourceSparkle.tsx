@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRunFeed } from '@/data/RunFeed'
 import { useGraphFeed } from '@/data/GraphFeed'
 import { NEO4J, alpha } from '@/lib/brand'
+import { pt } from '@/lib/type'
 
 /** What a region can be wired to. */
 export type Trigger =
@@ -188,7 +189,7 @@ export function RegionView({
         <span
           className="font-pixel"
           style={{
-            fontSize: 26,
+            fontSize: pt(26),
             color: lit ? NEO4J.marigold : NEO4J.lightPeriwinkle,
             fontWeight: lit ? 700 : 400,
           }}
@@ -197,14 +198,14 @@ export function RegionView({
         </span>
         <span
           className="font-pixel"
-          style={{ fontSize: 22, color: 'hsl(var(--muted))' }}
+          style={{ fontSize: pt(22), color: 'hsl(var(--muted))' }}
         >
           {region.file}:{region.from}
         </span>
       </div>
       <div
         className="font-pixel"
-        style={{ fontSize: 23, lineHeight: 1.3, marginTop: 4 }}
+        style={{ fontSize: pt(23), lineHeight: 1.3, marginTop: 4 }}
       >
         {lines.map(({ n, l }) => (
           <div key={n} style={{ whiteSpace: 'pre', overflow: 'hidden' }}>
@@ -222,7 +223,7 @@ export function RegionView({
       </div>
       <div
         className="font-pixel"
-        style={{ fontSize: 22, color: 'hsl(var(--muted))', marginTop: 4 }}
+        style={{ fontSize: pt(22), color: 'hsl(var(--muted))', marginTop: 4 }}
       >
         {region.note}
       </div>

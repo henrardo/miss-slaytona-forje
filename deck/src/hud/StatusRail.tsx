@@ -15,11 +15,15 @@ const DOT: Record<string, string> = {
 }
 
 /**
- * Live / Rehearsal, as a two-state segmented control.
+ * Live / Replay, as a two-state segmented control.
  *
  * Deliberately shows BOTH labels with one lit rather than one label that
  * toggles: on a projector, a button reading "LIVE" is ambiguous about whether
  * that is the current state or the thing it will do. The lit one is the state.
+ *
+ * REPLAY is the label; `rehearsal` is still the key, because the key IS the
+ * filename prefix `scripts/rehearse_loop.py` writes. Renaming it here would
+ * mean renaming the writer's output, so the rename stops at the glass.
  */
 function SourceSwitch({
   source,
@@ -34,8 +38,8 @@ function SourceSwitch({
     { key: 'swarm', label: 'LIVE', hint: 'follow the newest pod run (swarm-*)' },
     {
       key: 'rehearsal',
-      label: 'REHEARSAL',
-      hint: 'follow the newest local rehearsal (rehearsal-*)',
+      label: 'REPLAY',
+      hint: 'follow the newest local replay (rehearsal-*)',
     },
   ]
   return (
@@ -45,7 +49,7 @@ function SourceSwitch({
         border: `1px solid ${alpha(NEO4J.periwinkle, 0.5)}`,
         borderRadius: '0.4vh',
         overflow: 'hidden',
-        opacity: locked ? 0.4 : 1,
+        opacity: locked ? 0.65 : 1,
       }}
       title={
         locked
@@ -100,6 +104,18 @@ export function StatusRail({
 }: StatusRailProps) {
   const { connection, runId, events, metrics, runs, source } = useRunFeed()
   const counts = runCounts(metrics)
+  /**
+   * The arms are declared different, but the record does not say how.
+   *
+   * `package_run.py` rebuilding a summary from the event log cannot recover
+   * `known_differences`, so the field comes back empty on a run that was
+   * stopped before `RUN_END`. The harness itself printed the answer at
+   * launch — on swarm-1789998106, `['config_names', 'hook_files', 'tools']`.
+   */
+  const unrecorded =
+    !!metrics &&
+    metrics.arms_identical === false &&
+    !metrics.known_differences.length
 
   return (
     <div
@@ -130,20 +146,32 @@ export function StatusRail({
 
       {metrics ? (
         <>
-          <span>{metrics.model}</span>
-          <span>{metrics.gpu}</span>
-          <span>@{metrics.commit}</span>
+          {/* OMITTED WHEN BLANK, not rendered as an empty span. A summary
+              rebuilt from the event log after a run was stopped carries
+              `model: ""` and `commit: ""` — which drew a stray "@" on the
+              rail with nothing after it, and an invisible gap where the
+              model should be. An absent field says "not recorded" or says
+              nothing; it never mimics a value. */}
+          {metrics.model ? <span>{metrics.model}</span> : null}
+          {metrics.gpu ? <span>{metrics.gpu}</span> : null}
+          {metrics.commit ? <span>@{metrics.commit}</span> : null}
           {/* Loud on purpose. A run whose arms differed outside the treatment
-              is debugging material, and must never be presented as a result. */}
+              is debugging material, and must never be presented as a result.
+              THREE STATES, NOT TWO: `known_differences: []` on a run that
+              also says `arms_identical: false` is not a clean comparison, it
+              is a record that does not say what differed — and `[].every()`
+              is vacuously true, so it was being reported as ARMS OK. */}
           <span
             style={{
-              color: counts ? '#b6d4ae' : ALARM,
-              fontWeight: counts ? 400 : 700,
+              color: unrecorded ? NEO4J.marigold : counts ? '#b6d4ae' : ALARM,
+              fontWeight: counts && !unrecorded ? 400 : 700,
             }}
           >
-            {counts
-              ? 'ARMS OK'
-              : `CONFOUNDED: ${metrics.known_differences.join(', ')}`}
+            {unrecorded
+              ? 'ARM DIFFERENCES NOT RECORDED'
+              : counts
+                ? 'ARMS OK'
+                : `CONFOUNDED: ${metrics.known_differences.join(', ')}`}
           </span>
         </>
       ) : (
@@ -173,7 +201,7 @@ export function StatusRail({
           borderRadius: '0.4vh',
           background: resetEnabled ? 'hsl(232 100% 71% / 0.12)' : 'transparent',
           cursor: resetEnabled ? 'pointer' : 'default',
-          opacity: resetEnabled ? 1 : 0.45,
+          opacity: resetEnabled ? 1 : 0.8,
         }}
       >
         Reset

@@ -1,35 +1,6 @@
 #!/usr/bin/env python3
 """Both swarms, in parallel, against one shared model server: real Daytona
 sandboxes, real Cognee memory, a real self-hosted model via SGLang.
-
-The one difference between the arms is memory, and it has TWO HALVES.
-Warm agents get a `cognee` MCP block -- tools they may choose to call --
-and a CogneeMemory, which wraps each attempt in `cognee.agent_memory` and
-puts the procedure Cognee holds, plus whatever Cognee retrieved, in the
-attempt prompt. Cold agents are constructed with `mem=None` throughout and
-get neither, so they have zero contact with the graph: not gated reads,
-none. Anything else that touches one arm and not the other is a bug,
-latency included.
-
-The voluntary half alone is not enough for a small model, and this project
-has the evidence: 40 consecutive runs ended with zero agent-initiated
-memory calls while every check reported green. `--memory-mode` selects
-which halves are live, so "would it have gone and looked?" stays a
-question a run can ask rather than an assumption baked into the harness.
-
-The SCORE is not taken on the model's say-so: it is the verdict of an
-independent pytest run in a fresh Daytona sandbox, and it is what Cognee
-is handed as the skill run's success score.
-
-`--model` must emit tool calls under plain `tool_choice: "auto"` and must be
-able to end a turn with a text-only message. That is the one hard constraint
-on model choice; NOTES-hard-won.md explains what forcing it costs.
-
-Requires: DAYTONA_API_KEY, a reachable NEO4J_URI/NEO4J_PASSWORD, a snapshot
-built via scripts/build_snapshot.py, harness/.venv with mistral-vibe, and both
-id_fix_proxy instances up on WARM_PROXY_URL/COLD_PROXY_URL (two of them is how
-per-swarm token usage is measured at all -- Vibe never surfaces per-call usage
-outside its own process).
 """
 from __future__ import annotations
 

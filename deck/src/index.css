@@ -86,7 +86,15 @@
     --bg: 249 34% 7%;
     --surface: 249 34% 14%; /* #1a1730, Neo4j lavender-deep */
     --surface-2: 249 28% 19%;
-    --muted: 248 20% 32%;
+    /* 54%, not 32%. Measured: at 32% this was 1.80:1 on the card
+       surface, and it is the caption colour on most of the deck. The
+       floor is 3:1, and 56% is the lowest step that clears it on every
+       background a caption sits on, measured composited: the card surface
+       4.19, the diagram panels' #221f3e 3.84, and the worst case — the
+       identifier box on the model card, two translucent periwinkle layers
+       over the surface — 3.22. Hue and saturation are unchanged, so the
+       greys stay warm and violet-leaning. */
+    --muted: 248 20% 56%;
     --muted-fg: 250 30% 76%;
     --fg: 250 45% 98%;
     --border: 249 26% 30%;

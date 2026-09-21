@@ -12,6 +12,7 @@
  */
 import type { ReactNode } from 'react'
 import { alpha } from '@/lib/brand'
+import { pt, ptBox } from '@/lib/type'
 
 /**
  * Corner radius, in canonical units — so it scales with everything else. At
@@ -64,6 +65,13 @@ export interface SlideChromeProps {
   accent: string
   /** Short right-aligned label: brand, arm, or source. */
   badge?: ReactNode
+  /**
+   * The vendor's own mark, left of the title, for a card that IS a component
+   * of the stack. A URL into `public/brand` or an imported glyph — provenance
+   * for every asset is in `public/brand/SOURCES.md`. Sized off the type floor
+   * so it keeps step with the heading at any card size.
+   */
+  mark?: string
   /** Status line along the bottom edge. */
   footer?: ReactNode
   focused: boolean
@@ -86,6 +94,7 @@ export function SlideChrome({
   title,
   accent,
   badge,
+  mark,
   footer,
   focused,
   header = true,
@@ -104,21 +113,31 @@ export function SlideChrome({
         <header
           className="flex shrink-0 items-center justify-between px-10"
           style={{
-            height: 96,
+            height: ptBox(96, 2.4),
             background: `linear-gradient(90deg, ${alpha(accent, 0.13)}, transparent 65%)`,
             borderBottom: `4px solid ${alpha(accent, 0.4)}`,
           }}
         >
-          <h2
-            className="heading-solid truncate"
-            style={{ fontSize: 52, letterSpacing: '0.04em', color: accent }}
-          >
-            {title}
-          </h2>
+          <div className="flex min-w-0 items-center" style={{ gap: 18 }}>
+            {mark ? (
+              <img
+                src={mark}
+                alt=""
+                aria-hidden
+                style={{ height: pt(52), width: 'auto', flexShrink: 0 }}
+              />
+            ) : null}
+            <h2
+              className="heading-solid truncate"
+              style={{ fontSize: pt(52), letterSpacing: '0.04em', color: accent }}
+            >
+              {title}
+            </h2>
+          </div>
           {badge ? (
             <div
               className="font-pixel shrink-0 pl-8"
-              style={{ fontSize: 40, color: 'hsl(var(--muted-fg))' }}
+              style={{ fontSize: pt(40), color: 'hsl(var(--muted-fg))' }}
             >
               {badge}
             </div>
@@ -132,10 +151,14 @@ export function SlideChrome({
 
       {footer ? (
         <footer
-          className="font-pixel flex shrink-0 items-center gap-8 px-10"
+          className="font-pixel flex shrink-0 items-center gap-8 px-10 py-2"
           style={{
-            height: 72,
-            fontSize: 34,
+            // minHeight, not height. At 12pt a long footer wraps to two lines,
+            // and a fixed box clipped the second one — "…are not counted" cut
+            // in half along the bottom edge of the card. The body flexes, so
+            // the footer taking a second line costs content, not legibility.
+            minHeight: ptBox(72, 2.0),
+            fontSize: pt(34),
             color: 'hsl(var(--muted-fg))',
             borderTop: `2px solid ${alpha(accent, 0.27)}`,
           }}

@@ -11,6 +11,7 @@ import { Sprite } from '@/character/Sprite'
 import { noiseSprite } from '@/character/sprites'
 import { whimsyAt } from '@/lib/brand'
 import type { SlideProps } from './types'
+import { pt } from '@/lib/type'
 
 export function makeSlotSlide(index: number) {
   const accent = whimsyAt(index)
@@ -29,7 +30,11 @@ export function makeSlotSlide(index: number) {
           <Sprite sprite={sprite} pixel={30} />
           <div
             className="font-pixel"
-            style={{ fontSize: 54, color: 'hsl(var(--muted-fg))', maxWidth: 820 }}
+            style={{
+              fontSize: pt(54),
+              color: 'hsl(var(--muted-fg))',
+              maxWidth: 820,
+            }}
           >
             Reserved. The ring is laid out at full capacity so the geometry is
             settled before the content arrives.

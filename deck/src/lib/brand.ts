@@ -161,8 +161,20 @@ export const ADJACENT_HUE_PAIRS: [BrandKey, BrandKey][] = [['sglang', 'mistral']
  * so they are separated by HUE, not lightness — a badly calibrated projector
  * flattens lightness long before it flattens hue.
  *
- * Cyan (183°) against gold (41°) is ~140° apart and near-complementary. Warm
- * takes light baltic because it is the arm with the Neo4j graph.
+ * Cyan (183°) against gold (41°) is ~140° apart and near-complementary.
+ *
+ * WARM IS GOLD. It used to be cyan — "because it is the arm with the Neo4j
+ * graph" — and that reasoning is about the implementation, not about what the
+ * audience has been taught. By the time any chart appears they have seen the
+ * Warm card in a marigold frame, the Cold card in blue, and both counts on
+ * Tokens head to head in those two colours. A chart that then drew warm in
+ * cyan and cold in gold inverted the only colour key in the talk, on the one
+ * card where the lines cross: cold's surface count dives to 0 and rebounds to
+ * 365, and in gold that read as warm collapsing.
+ *
+ * The hue argument is untouched — still cyan against gold, still ~140° apart,
+ * still separated by hue rather than lightness because a badly calibrated
+ * projector flattens lightness first. Only the mapping moved.
  *
  * Deliberately NOT periwinkle for cold: periwinkle is the deck's chrome accent
  * and is all over the HUD, so an arm wearing it would read as "the default"
@@ -171,8 +183,8 @@ export const ADJACENT_HUE_PAIRS: [BrandKey, BrandKey][] = [['sglang', 'mistral']
  * one thing each, and nothing else may borrow them.
  */
 export const ARM_COLOR = {
-  warm: NEO4J.lightBaltic,
-  cold: NEO4J.marigold,
+  warm: NEO4J.marigold,
+  cold: NEO4J.lightBaltic,
 } as const
 
 /** Reserved for failure and confound warnings. Never decorative. */

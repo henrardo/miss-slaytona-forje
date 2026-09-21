@@ -30,4 +30,17 @@ export interface SlideDef {
    */
   bias: Bias
   Component: ComponentType<SlideProps>
+  /**
+   * A block of colour holding a ring slot open. Not a card: it cannot be
+   * staged, it is skipped by the walk and the digit keys, it leaves no ghost
+   * and it is hidden from assistive tech.
+   *
+   * The ring is the perimeter of a 6x6 grid, so it seats twenty or it is not
+   * a rectangle. When the deck has fewer than twenty things worth saying, the
+   * choice is a ragged frame, filler cards nobody will look at, or this.
+   * Corners are the right slots to give up: they are the two tiles furthest
+   * from the eye's path along any edge, and the only ones that belong to two
+   * edges at once.
+   */
+  decorative?: boolean
 }

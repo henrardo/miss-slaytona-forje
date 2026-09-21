@@ -20,6 +20,18 @@ components of the stack this deck describes.
 | `daytona-logotype-white.png` | `https://raw.githubusercontent.com/daytonaio/daytona/main/assets/images/Daytona-logotype-white.png` | no |
 | `daytona-logotype-black.png` | `.../Daytona-logotype-black.png` | no |
 
+## Not here
+
+**RunPod.** No asset in this repo, so the Cold and Warm flow charts draw a
+generic chip glyph for it rather than a lookalike. Drop `runpod-*.svg` in here
+and point the `runpod` node's `logo` at it.
+
+**Cognee.** Same: no asset here. The Warm chart draws a small node-and-edge
+graph in the node's own ink — its own mark, not Neo4j's, which belongs to the
+box next to it and would misattribute the graph store to the library that
+writes into it. Drop `cognee-*.svg` in here and point the `cognee` node's
+`logo` at it.
+
 ## Colour values
 
 In `src/lib/brand.ts`, each with its source on the line. Summary:

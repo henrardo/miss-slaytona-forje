@@ -1,10 +1,29 @@
 /**
  * The deck. One flat list — there is no nesting and no grouping.
  *
- * Index 0 is the home card: it is what the board holds on load, and what
- * `Home` / `Esc` / Reset return to. Every card owns the ring slot of the same
- * index, permanently — homes do not drift, so a digit key addresses a card and
- * a ring position at once.
+ * ── Sixteen cards in a frame that seats twenty ───────────────────────────
+ *
+ * The ring is the perimeter of a 6x6 grid, so it holds exactly twenty tiles
+ * or it stops being a rectangle. The deck has sixteen things worth saying.
+ * The four spare slots are the CORNERS, and they are held open by blocks of
+ * colour rather than by cards nobody would ever stage — see CornerBlock.tsx
+ * for why a corner is the right slot to give up.
+ *
+ * `CORNER_SLOTS` is derived from the ring's own fill order, not typed out:
+ * `computeHudLayout` lays the tiles top row, bottom row, right column, left
+ * column, so on a 6-wide ring the corners are 0 and 5 (top) and 6 and 11
+ * (bottom). Change the ring shape and the corners move with it.
+ *
+ * ── Order ────────────────────────────────────────────────────────────────
+ *
+ * `CARDS` is in TALK order, and the cards are seated into the non-corner
+ * slots in that order, so `ArrowRight` walks the deck as it is meant to be
+ * told: the setup, the result, how an attempt is graded, what the memory
+ * layer produced, then the machinery and the caveats.
+ *
+ * Homes are permanent: a card owns its ring slot for the whole talk. The
+ * digit keys address the Nth CARD, skipping the corners, so `1` is always
+ * the home card however the frame is filled.
  *
  * ── Bias ─────────────────────────────────────────────────────────────────
  *
@@ -16,37 +35,43 @@
  *   BIAS_WIDE   long lines that must not wrap — logs, tails, timelines
  *   BIAS_TALL   lists and tables that want rows more than columns
  *   BIAS_SQUARE grids, logo blocks, big single figures
- *
- * To add content: replace a `makeSlotSlide(n)` entry with a real component and
- * give it an honest bias. Nothing else changes.
  */
-import { ALARM, ARM_COLOR, BRANDS, NEO4J, whimsyAt } from '@/lib/brand'
-import { DECK_SIZE } from '@/lib/layout'
+import { BRANDS, NEO4J } from '@/lib/brand'
+import { DECK_SIZE, ringShape } from '@/lib/layout'
 import { BIAS_SQUARE, BIAS_TALL, BIAS_WIDE } from '@/lib/stage'
 import { TitleSlide } from './TitleSlide'
-import { StackSlide } from './StackSlide'
-import { FeedSlide } from './FeedSlide'
-import { ArmsSlide } from './ArmsSlide'
-import { TerminalSlide } from './TerminalSlide'
-import { CurveSlide } from './CurveSlide'
+import {
+  ClosenessSlide,
+  FilesParsingSlide,
+  WorkRemainingSlide,
+} from './MeasureSlide'
+import { WarmStackSlide } from './WarmStackSlide'
+import { RadixSlide } from './RadixSlide'
 import { DaytonaSlide } from './DaytonaSlide'
-import { AttemptsSlide } from './AttemptsSlide'
-import { GraphSlide } from './GraphSlide'
+import { TokenCostSlide } from './TokenCostSlide'
+import { CodeGraphSlide } from './CodeGraphSlide'
 import { ReasoningSlide } from './ReasoningSlide'
-import { OntologySlide } from './OntologySlide'
-import { SglangSlide } from './SglangSlide'
+import { ModelSlide } from './ModelSlide'
 import { VibeSlide } from './VibeSlide'
-import { DistillSlide } from './DistillSlide'
-import { SkillSlide } from './SkillSlide'
-import { SkillGrowthSlide } from './SkillGrowthSlide'
-import { CrossRunSlide } from './CrossRunSlide'
-import { CostSlide } from './CostSlide'
-import { ErrorsSlide } from './ErrorsSlide'
-import { ConfoundSlide } from './ConfoundSlide'
-import { makeSlotSlide } from './SlotSlide'
+import { ColdStackSlide } from './ColdStackSlide'
+import { TokensSlide } from './TokensSlide'
+import { DaytonaStackSlide } from './DaytonaStackSlide'
+import { RepoSlide } from './RepoSlide'
+import { makeCornerBlock } from './CornerBlock'
 import type { SlideDef } from './types'
 
-const REAL: SlideDef[] = [
+/**
+ * The cards, in talk order.
+ *
+ * Four were removed rather than reseated, because the deck was long and each
+ * of them was already said somewhere better: **Event tail** (the raw JSONL —
+ * Attempt anatomy is the same events, read), **Cross-run summary** (a table
+ * of past runs, when the talk is about the run happening now), **The stack**
+ * (superseded outright by Cold and Warm, which draw the same wiring with the
+ * arms' asymmetry visible) and **Does this run count?** (the confound audit,
+ * which belongs in the notes, not on a wall). They are in git.
+ */
+const CARDS: SlideDef[] = [
   {
     id: 'title',
     title: 'Miss Slaytona Fourje',
@@ -56,44 +81,38 @@ const REAL: SlideDef[] = [
     Component: TitleSlide,
   },
   {
-    id: 'terminal',
-    title: 'RunPod terminal',
-    accent: NEO4J.lightForest,
-    // Fixed-width transcript lines that must not wrap. The widest thing here.
+    // The card that says what the whole talk is running on. Everything after
+    // it assumes the reader has seen it.
+    id: 'cold-stack',
+    title: 'Cold',
+    // Periwinkle, not the cold arm's marigold: this card is the stack, not
+    // the series. See the note in ColdStackSlide.
+    accent: NEO4J.periwinkle,
+    // A left-to-right flow with a long return edge: it wants width.
     bias: BIAS_WIDE,
-    Component: TerminalSlide,
+    Component: ColdStackSlide,
   },
   {
-    id: 'curve',
-    title: 'Improvement curve',
-    accent: NEO4J.lightBaltic,
-    // A chart with axis labels and a caveat strip. Wants area, not a strip.
-    bias: BIAS_SQUARE,
-    Component: CurveSlide,
-  },
-  {
-    id: 'daytona',
-    title: 'Daytona verification',
-    accent: BRANDS.daytona.accent,
-    // Seven columns, one of them a long error signature.
-    bias: BIAS_WIDE,
-    Component: DaytonaSlide,
-  },
-  {
-    id: 'attempts',
-    title: 'Attempt anatomy',
+    // Warm immediately after cold, drawn by the same engine: the only honest
+    // way to show a treatment is to show the control beside it.
+    id: 'warm-stack',
+    title: 'Warm',
+    // Gold to cold's blue. The frame carries the arm; the diagram inside
+    // both cards stays periwinkle.
     accent: NEO4J.marigold,
-    // A growing list of events. Rows over columns.
-    bias: BIAS_TALL,
-    Component: AttemptsSlide,
+    bias: BIAS_WIDE,
+    Component: WarmStackSlide,
   },
   {
-    id: 'graph',
-    title: 'The memory graph',
-    accent: NEO4J.lightPeriwinkle,
-    // A force layout wants area in both axes, not a strip.
-    bias: BIAS_SQUARE,
-    Component: GraphSlide,
+    // Replaced the improvement curve, which was a chart nobody could read at
+    // a glance. This one animates its argument instead of plotting it.
+    id: 'radix',
+    title: 'RadixAttention',
+    accent: BRANDS.sglang.accent,
+    // Twelve stacked request bars folding into a tree: it wants width, and
+    // the bars must not be squeezed into a column.
+    bias: BIAS_WIDE,
+    Component: RadixSlide,
   },
   {
     id: 'reasoning',
@@ -104,132 +123,179 @@ const REAL: SlideDef[] = [
     Component: ReasoningSlide,
   },
   {
-    id: 'ontology',
-    title: 'The ontology of memory',
+    // Replaced "Attempt anatomy", a live list of RESTORED / REJECTED /
+    // ABORTED events — which is the event log read aloud, and the three
+    // cards after it already carry what those events mean. This says what
+    // an hour of H200 buys instead, which nothing in the deck said.
+    id: 'token-cost',
+    title: 'Token cost',
     accent: NEO4J.lightForest,
-    // A radial diagram. Square or nothing.
-    bias: BIAS_SQUARE,
-    Component: OntologySlide,
-  },
-  {
-    id: 'stack',
-    title: 'The stack',
-    accent: BRANDS.daytona.accent,
-    // Four logo panels in a 2x2 — squarest slot available, please.
-    bias: BIAS_SQUARE,
-    Component: StackSlide,
-  },
-  {
-    id: 'feed',
-    title: 'Event tail',
-    accent: NEO4J.lightPeriwinkle,
-    // The terminal case: fixed-width rows that must not wrap. Give it width
-    // over height every time.
+    // One division, set large. Width: the denominator is a nine-digit
+    // number and must not wrap under its own rule.
     bias: BIAS_WIDE,
-    Component: FeedSlide,
+    Component: TokenCostSlide,
   },
   {
-    id: 'arms',
-    title: 'Warm vs cold',
-    accent: ARM_COLOR.warm,
-    // Twelve rows, three columns. It wants rows far more than columns.
-    bias: BIAS_TALL,
-    Component: ArmsSlide,
-  },
-  {
-    id: 'sglang',
-    title: 'SGLang',
-    accent: BRANDS.sglang.accent,
-    // Three source excerpts stacked. Wants height, and lines must not wrap.
+    // Replaced "The distilled skill", which showed the procedure Cognee
+    // holds verbatim. The skill's content is shown on Warm and argued on
+    // Daytona; what nothing in the deck did was put the two agents' token
+    // counts side by side, which is the comparison the project exists to
+    // make. Read off every runs/*-metrics.json, arms kept apart.
+    id: 'tokens',
+    title: 'Tokens, head to head',
+    accent: NEO4J.marigold,
+    // Two figures facing each other over four paired bars: it wants width
+    // far more than height, or the bars lose the precision they exist for.
     bias: BIAS_WIDE,
-    Component: SglangSlide,
+    Component: TokensSlide,
+  },
+  {
+    // Replaced "What is in the way", a list of error signatures grouped by
+    // frequency — which said what the agents were tripping over without
+    // ever saying what they were working ON. Three questions, three
+    // panels: what the package is, what it does, and why it cannot ship
+    // until it is migrated.
+    id: 'repo',
+    title: 'The repo under test',
+    accent: NEO4J.hibiscus,
+    // Three panels, one of which is a wire-format string that must not
+    // wrap. Width, and plenty of it.
+    bias: BIAS_WIDE,
+    Component: RepoSlide,
+  },
+  {
+    // Replaced the ontology-of-memory card. One point — the exact model in
+    // this talk is one anyone can pull and run — made in three panels.
+    id: 'model',
+    title: 'Mistral Small 4',
+    accent: BRANDS.mistral.accent,
+    // Three panels side by side. It wants width, and squeezing them into a
+    // column would stack three headings above three fragments.
+    bias: BIAS_WIDE,
+    Component: ModelSlide,
   },
   {
     id: 'vibe',
-    title: 'Vibe',
+    title: 'Mistral Vibe',
     accent: NEO4J.periwinkle,
     bias: BIAS_WIDE,
     Component: VibeSlide,
   },
   {
-    id: 'distill',
-    title: 'AIP distillation',
-    accent: NEO4J.marigold,
-    // One row per distillation, growing.
-    bias: BIAS_TALL,
-    Component: DistillSlide,
+    // Replaced Skill growth. The companion to "Daytona verification": that
+    // card shows every grading live and states no limits, so this one
+    // carries the architecture and the numbers, and neither repeats the
+    // other. Placed after Vibe — the harness, then the thing that judges it.
+    id: 'daytona-stack',
+    title: 'Daytona',
+    accent: BRANDS.daytona.accent,
+    // A boundary diagram: two territories side by side. It needs width.
+    bias: BIAS_WIDE,
+    Component: DaytonaStackSlide,
   },
   {
-    id: 'skill',
-    title: 'The distilled skill',
-    accent: NEO4J.marigold,
-    // A page of YAML. It wants as much area as it can get.
-    bias: BIAS_SQUARE,
-    Component: SkillSlide,
+    // Replaced "The memory graph", a force layout of whatever Aura held.
+    // This is the sharper claim from the same graph: the codebase is nodes
+    // and edges, so querying it is a read rather than a summary.
+    id: 'code-graph',
+    title: 'The code graph',
+    accent: BRANDS.neo4j.accent,
+    // One wire across the card, and the route it does not take beneath it.
+    bias: BIAS_WIDE,
+    Component: CodeGraphSlide,
   },
   {
-    id: 'skill-growth',
-    title: 'Skill growth',
-    accent: NEO4J.marigold,
-    bias: BIAS_SQUARE,
-    Component: SkillGrowthSlide,
-  },
-  {
-    id: 'cross-run',
-    title: 'Cross-run summary',
+    // One of three measure cards. They replaced "The result" (all three
+    // measures crammed into one card, three y-axes and six lines in a third
+    // of a card each), "What warm was given" and "SGLang". Each now gets the
+    // whole board: two lines, the head-to-head end values, and the harness's
+    // own reference lines. See MeasureSlide.tsx.
+    id: 'work-remaining',
+    title: 'Surfaces left',
     accent: NEO4J.lightPeriwinkle,
-    // Eight columns of fixed-width numbers. Width over height.
+    // A line chart across the run. Width.
     bias: BIAS_WIDE,
-    Component: CrossRunSlide,
+    Component: WorkRemainingSlide,
   },
   {
-    id: 'cost',
-    title: 'What it cost',
-    accent: NEO4J.marigold,
-    // Two columns of bars, side by side.
-    bias: BIAS_SQUARE,
-    Component: CostSlide,
-  },
-  {
-    id: 'errors',
-    title: 'What is in the way',
-    accent: ALARM,
-    // Long error signatures that must not wrap.
-    bias: BIAS_WIDE,
-    Component: ErrorsSlide,
-  },
-  {
-    id: 'confound',
-    title: 'Does this run count?',
+    id: 'files-parsing',
+    title: 'Still compiles',
     accent: NEO4J.lightForest,
-    bias: BIAS_TALL,
-    Component: ConfoundSlide,
+    bias: BIAS_WIDE,
+    Component: FilesParsingSlide,
+  },
+  {
+    id: 'closeness',
+    title: 'Distance to the answer',
+    accent: NEO4J.lightBaltic,
+    bias: BIAS_WIDE,
+    Component: ClosenessSlide,
+  },
+  {
+    id: 'daytona',
+    title: 'Daytona verification',
+    accent: BRANDS.daytona.accent,
+    // Seven columns, one of them a long error signature.
+    bias: BIAS_WIDE,
+    Component: DaytonaSlide,
   },
 ]
 
-const ROTATION = [BIAS_WIDE, BIAS_SQUARE, BIAS_TALL]
+/**
+ * The four corner slots, derived from the ring's fill order in
+ * `computeHudLayout`: top row left to right, then the bottom row, then the
+ * columns. So the corners are the ends of those first two runs.
+ */
+const { cols } = ringShape(DECK_SIZE)
+export const CORNER_SLOTS = [0, cols - 1, cols, cols * 2 - 1]
 
-const SLOTS: SlideDef[] = Array.from(
-  { length: DECK_SIZE - REAL.length },
-  (_, i) => {
-    const n = i + REAL.length
-    return {
-      id: `slot-${n}`,
-      title: `Slot ${String(n).padStart(2, '0')}`,
-      accent: whimsyAt(n),
-      // Placeholders rotate so the packer has something to chew on before the
-      // real cards exist. Replace with an honest bias when the card is built.
-      bias: ROTATION[n % ROTATION.length],
-      Component: makeSlotSlide(n),
+/**
+ * Twenty slots: cards in talk order, corners held open by colour.
+ *
+ * This is why the title now sits in slot 1 rather than slot 0 — slot 0 is the
+ * top-left corner, and the frame's corners are no longer cards. Everything
+ * that followed her moved along with her.
+ */
+export const SLIDES: SlideDef[] = (() => {
+  const out: SlideDef[] = []
+  const queue = [...CARDS]
+  for (let slot = 0; slot < DECK_SIZE; slot++) {
+    if (CORNER_SLOTS.includes(slot)) {
+      out.push({
+        id: `corner-${slot}`,
+        title: '',
+        accent: NEO4J.periwinkle,
+        bias: BIAS_SQUARE,
+        Component: makeCornerBlock(CORNER_SLOTS.indexOf(slot)),
+        decorative: true,
+      })
+      continue
     }
-  },
+    const card = queue.shift()
+    if (card) out.push(card)
+  }
+  if (import.meta.env.DEV && queue.length) {
+    console.warn(
+      `[registry] ${queue.length} card(s) have no slot: ${queue
+        .map((c) => c.id)
+        .join(', ')}. The ring seats ${DECK_SIZE} and ` +
+        `${CORNER_SLOTS.length} of those are corners.`,
+    )
+  }
+  return out
+})()
+
+/** Every index that is a real card, in talk order. The walk and the digits. */
+export const CARD_SLOTS = SLIDES.map((s, i) => (s.decorative ? -1 : i)).filter(
+  (i) => i >= 0,
 )
 
-export const SLIDES: SlideDef[] = [...REAL, ...SLOTS]
+/** What the board holds on load, and what Home / Esc / Reset return to. */
+export const HOME_SLOT = CARD_SLOTS[0]
 
 if (import.meta.env.DEV && SLIDES.length !== DECK_SIZE) {
   console.warn(
-    `[registry] ${SLIDES.length} cards but the ring seats ${DECK_SIZE}. ` +
+    `[registry] ${SLIDES.length} tiles but the ring seats ${DECK_SIZE}. ` +
       `${SLIDES.length > DECK_SIZE ? 'The surplus has no home and will never render.' : 'A ring slot will be empty.'}`,
   )
 }

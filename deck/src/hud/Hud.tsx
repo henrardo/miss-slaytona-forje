@@ -51,7 +51,7 @@ import {
   type Rect,
 } from '@/lib/layout'
 import { MAX_ON_STAGE, packStage, type Slot } from '@/lib/stage'
-import { SLIDES } from '@/slides/registry'
+import { CARD_SLOTS, HOME_SLOT, SLIDES } from '@/slides/registry'
 import type { Source } from '@/data/RunFeed'
 import { useViewport } from './useViewport'
 import { StatusRail } from './StatusRail'
@@ -59,22 +59,33 @@ import { StageContainer, STAGE_RADIUS } from './StageContainer'
 import { Racetrack } from './Racetrack'
 import { RaceProvider } from './RaceMode'
 import { Ghost } from './Ghost'
+import { MIN_TYPE_PX } from '@/lib/type'
 
 const MORPH_MS = 760
 const MORPH = `${MORPH_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
 
-/** The board opens holding the home card. */
-const OPENING: number[] = [0]
+/**
+ * The board opens holding the home card.
+ *
+ * Not slot 0 any more: slot 0 is a corner of the frame and holds a block of
+ * colour, so the home card is the first slot that holds a CARD. Everything
+ * here indexes SLIDES, which includes the corners, and every traversal goes
+ * through CARD_SLOTS so the corners are never landed on.
+ */
+const OPENING: number[] = [HOME_SLOT]
 
 /**
  * How much of the stage the race takes, as a fraction of its shorter side.
  *
  * This is the whole of "the middle card shrinks a little": the ring does not
  * move, the stage gives up a band on all four sides, and the racers lap it.
- * 7% of the shorter side is ~96px at 4K, which fits two lanes of Mistral M at
- * a size that still reads from the back of a room.
+ *
+ * 8%, not 7%. Two Ms have to fit ACROSS the band on its vertical stretches,
+ * and the M is 1.4 as wide as it is tall — at 7% with the old token size the
+ * pair spanned 1.12 of the band, so they could not both fit and warm sat on
+ * top of cold every time they were level. See TOKEN and LANES in Racetrack.
  */
-const RACE_BAND = 0.07
+const RACE_BAND = 0.08
 
 export interface HudProps {
   onSource: (s: Source) => void
@@ -141,6 +152,9 @@ export function Hud({ onSource, sourceLocked }: HudProps) {
   /** Send a card to the board, or home again if it is already there. */
   const toggle = useCallback(
     (i: number) => {
+      // Belt and braces: the corner blocks have no click target and the walk
+      // skips them, but nothing else should be able to stage one either.
+      if (slides[i]?.decorative) return
       const prev = staged
       let next = prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
       // A fifth card evicts the oldest rather than being refused. Refusing a
@@ -149,7 +163,7 @@ export function Hud({ onSource, sourceLocked }: HudProps) {
       beginMorph(new Set([...prev, ...next]))
       setStaged(next)
     },
-    [staged, beginMorph],
+    [staged, slides, beginMorph],
   )
 
   /** Replace the board with exactly one card — the linear-talk motion. */
@@ -195,29 +209,36 @@ export function Hud({ onSource, sourceLocked }: HudProps) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const n = slides.length
-      const current = staged[staged.length - 1] ?? 0
+      // The walk steps through CARDS, not through slots: four of the twenty
+      // slots are corner blocks, and a walk that stopped on one would put an
+      // empty rectangle on the board in front of an audience.
+      const n = CARD_SLOTS.length
+      const current = staged[staged.length - 1] ?? HOME_SLOT
+      const here = CARD_SLOTS.indexOf(current)
+      const step = (d: number) => CARD_SLOTS[((here < 0 ? 0 : here) + d + n) % n]
       if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
         e.preventDefault()
-        only((current + 1) % n)
+        only(step(1))
       } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
         e.preventDefault()
-        only((current - 1 + n) % n)
+        only(step(-1))
       } else if (e.key === 'Home' || e.key === 'Escape') {
-        only(0)
+        only(HOME_SLOT)
       } else if (e.key === 'f') {
         if (document.fullscreenElement) void document.exitFullscreen()
         else void document.documentElement.requestFullscreen()
       } else if (/^[0-9]$/.test(e.key)) {
-        // Homes are permanent, so a digit addresses a card and a ring
-        // position at once. It toggles rather than replaces.
-        const index = e.key === '0' ? 9 : Number(e.key) - 1
-        if (index < n) toggle(index)
+        // A digit addresses the Nth CARD in talk order — `1` is always the
+        // home card. It no longer doubles as a ring position, because the
+        // ring now has slots that are not cards. It toggles rather than
+        // replaces.
+        const nth = e.key === '0' ? 9 : Number(e.key) - 1
+        if (nth < n) toggle(CARD_SLOTS[nth])
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [slides.length, staged, only, toggle])
+  }, [staged, only, toggle])
 
   return (
     <RaceProvider value={race}>
@@ -269,27 +290,44 @@ export function Hud({ onSource, sourceLocked }: HudProps) {
           const canvas = canvasFor(rect)
           const { Component } = slide
           const moving = morphing && movers.current.has(i)
+          // A corner block is scenery: no click target, no keyboard stop, no
+          // accessible name. It is a rectangle of colour holding the frame
+          // square, and offering to stage it would be offering nothing.
+          const solid = slide.decorative === true
+          const press = solid ? undefined : () => toggle(i)
 
           return (
             <div
               key={slide.id}
-              role="button"
-              tabIndex={0}
-              aria-label={`${slide.title}${onStage ? ' (on the board)' : ''}`}
-              aria-pressed={onStage}
-              onClick={() => toggle(i)}
+              role={solid ? 'presentation' : 'button'}
+              aria-hidden={solid || undefined}
+              tabIndex={solid ? -1 : 0}
+              aria-label={
+                solid
+                  ? undefined
+                  : `${slide.title}${onStage ? ' (on the board)' : ''}`
+              }
+              aria-pressed={solid ? undefined : onStage}
+              onClick={press}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') toggle(i)
+                if (!solid && e.key === 'Enter') toggle(i)
               }}
               className="absolute left-0 top-0 origin-top-left outline-none"
               style={{
                 ['--slide-scale' as string]: String(scale),
+                // The canonical size that lands at 12pt once this card's
+                // transform is applied. Cards floor every font size against
+                // it — see lib/type.ts. Zero at home: a 276x155 tile holds
+                // about seven words at 12pt, so tiles stay textures.
+                ['--type-floor' as string]: onStage
+                  ? `${MIN_TYPE_PX / scale}px`
+                  : '0px',
                 width: canvas.w,
                 height: canvas.h,
                 transform: `translate(${rect.x}px, ${rect.y}px) scale(${scale})`,
                 transition: resettling ? 'none' : `transform ${MORPH}`,
                 zIndex: onStage ? 40 : 10,
-                cursor: 'pointer',
+                cursor: solid ? 'default' : 'pointer',
                 willChange: moving ? 'transform' : undefined,
                 contain: 'layout',
               }}

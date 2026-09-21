@@ -32,6 +32,9 @@ export type Connection = 'connecting' | 'live' | 'down'
  * same loop locally against a scripted model. The cards do not know the
  * difference and must not: this narrows which file the collector tails, and
  * nothing else.
+ *
+ * The rail labels `rehearsal` REPLAY, and it is the default view. The key
+ * keeps its name because it is the filename prefix the writer emits.
  */
 export type Source = 'swarm' | 'rehearsal'
 

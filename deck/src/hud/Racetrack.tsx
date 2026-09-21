@@ -83,14 +83,24 @@ const FINISH_T = 0.985
  * Token height as a fraction of the band, and where the two lane centrelines
  * sit across it.
  *
- * These are coupled and the constraint is the moment both arms are on the same
- * split — at the start, and any time they are level. Lane separation is
- * `(0.74 - 0.26) * band = 0.48 band`; a token is `0.40 band`. That leaves a
- * visible gap between them rather than one M sitting on top of the other,
- * which is exactly what 0.46 / 0.29-0.71 did.
+ * THE BINDING CONSTRAINT IS THE TOKEN'S WIDTH, NOT ITS HEIGHT. The M is 1.4
+ * as wide as it is tall, and on the left and right stretches of the lap the
+ * lanes are separated ACROSS that width. The first tuning compared lane
+ * separation (0.48 band) against token HEIGHT (0.40) and looked fine; the real
+ * comparison is against width, 0.56 — wider than the separation, so the two Ms
+ * overlapped by 0.08 band every time they were level, and worse, `2 x 0.56 =
+ * 1.12` band meant they could not both fit across the track at all. It only
+ * became obvious once they lapped continuously and met constantly.
+ *
+ *   separation  (0.76 - 0.24) = 0.52 band
+ *   token width  1.4 * 0.30   = 0.42 band
+ *   clearance                   0.10 band, and 0.03 spare at each edge
+ *
+ * The band grew to 8% of the stage to pay for the smaller token — see
+ * RACE_BAND in hud/Hud.tsx.
  */
-const TOKEN = 0.4
-const LANES = { cold: 0.26, warm: 0.74 }
+const TOKEN = 0.3
+const LANES = { cold: 0.24, warm: 0.76 }
 
 /**
  * ── The lap is the journey left; the speed is how close they are ─────────

@@ -23,6 +23,7 @@ import { SlideChrome } from '@/hud/SlideChrome'
 import { useRunFeed } from '@/data/RunFeed'
 import { ALARM, NEO4J, alpha } from '@/lib/brand'
 import type { SlideProps } from './types'
+import { pt } from '@/lib/type'
 
 /** Quiet for this long and the card starts replaying instead. */
 const IDLE_MS = 20_000
@@ -134,7 +135,7 @@ export function TerminalSlide({ onStage }: SlideProps) {
       {lines.length === 0 ? (
         <div
           className="font-pixel flex h-full items-center justify-center"
-          style={{ fontSize: 56, color: 'hsl(var(--muted-fg))' }}
+          style={{ fontSize: pt(56), color: 'hsl(var(--muted-fg))' }}
         >
           no .log in runs/ yet
         </div>
@@ -142,7 +143,7 @@ export function TerminalSlide({ onStage }: SlideProps) {
         <div
           ref={box}
           className="font-pixel h-full overflow-hidden"
-          style={{ fontSize: 30, lineHeight: 1.32 }}
+          style={{ fontSize: pt(30), lineHeight: 1.32 }}
         >
           {tail.map((line, i) => {
             const { colour, bold } = colourFor(line)

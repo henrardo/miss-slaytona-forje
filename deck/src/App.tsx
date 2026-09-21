@@ -4,30 +4,46 @@ import { GraphFeedProvider } from '@/data/GraphFeed'
 import { Hud } from '@/hud/Hud'
 
 /**
- * Live or rehearsal.
+ * THE DEMO RUN IS WHAT THE DECK OPENS ON. Nothing else is safe.
  *
- * Two views, identical cards. LIVE follows the newest `swarm-*` run — the pod.
- * REHEARSAL follows the newest `rehearsal-*` — `scripts/rehearse_loop.py`
- * driving the same loop locally against a scripted model, which is the pass
- * being coded during the talk. The switch lives in the bottom rail and changes
- * exactly one thing: which file the collector tails.
+ * Every card that reads per-attempt data — the three measures, Daytona
+ * verification, Tokens head to head — needs a run that actually migrated
+ * something. A bare URL used to follow the newest `rehearsal-*`, and a
+ * rehearsal is `scripts/rehearse_loop.py` driving the loop against a SCRIPTED
+ * model: it writes `VALUE = 2` into one file, so its v1-surface count is 0 on
+ * every attempt and its chart document has no closeness panel at all. The
+ * cards were correct and the run was a plumbing test, which on a projector is
+ * indistinguishable from a broken deck. It read as "nothing" twice.
+ *
+ * So the pin has a default. `?run=` still overrides it — that is the same
+ * mechanism, with a value — and `?run=newest` opts back into following
+ * whichever run is freshest, which is what you want while a pod run is in
+ * flight and being watched.
  */
+const DEFAULT_RUN = 'swarm-1789998106'
+
+/** `?run=newest` (or `latest`) follows the newest run of the chosen kind. */
+const FOLLOW_NEWEST = new Set(['newest', 'latest', 'live'])
+
 export default function App() {
-  // `?run=<id>` pins a specific run and overrides the switch — for rehearsing
-  // against a finished one. Without it the deck follows whatever is newest of
-  // the chosen kind and re-latches when a fresh run starts, so it can be on
-  // the projector before launch.
   const params = new URLSearchParams(window.location.search)
-  const pinned = params.get('run')
-  const [source, setSource] = useState<Source>(
-    params.get('source') === 'rehearsal' ? 'rehearsal' : 'swarm',
+  const asked = params.get('run')
+  const pinned =
+    asked && FOLLOW_NEWEST.has(asked.toLowerCase()) ? null : (asked ?? DEFAULT_RUN)
+
+  // The switch only decides which kind "newest" means, so it matters only
+  // when nothing is pinned. `?source=live` / `swarm` picks the pod's runs,
+  // anything else leaves it on replay.
+  const source = params.get('source')
+  const [kind, setKind] = useState<Source>(
+    source === 'swarm' || source === 'live' ? 'swarm' : 'rehearsal',
   )
 
   return (
-    <RunFeedProvider run={pinned ?? undefined} source={source}>
+    <RunFeedProvider run={pinned ?? undefined} source={kind}>
       {/* Inside RunFeed: the graph is scoped to whichever run is followed. */}
       <GraphFeedProvider>
-        <Hud onSource={setSource} sourceLocked={!!pinned} />
+        <Hud onSource={setKind} sourceLocked={!!pinned} />
       </GraphFeedProvider>
     </RunFeedProvider>
   )

@@ -23,6 +23,7 @@
 import { useMemo } from 'react'
 import { ARM_COLOR, NEO4J, alpha } from '@/lib/brand'
 import type { PanelSeries, SeriesPanel } from '@/lib/types'
+import { pt } from '@/lib/type'
 
 /** Plot box inset, in canonical units. Room for tick labels and the axis. */
 const PAD = { left: 130, right: 40, top: 20, bottom: 78 }
@@ -94,6 +95,22 @@ export function PanelChart({ panel, width, height }: PanelChartProps) {
   }
 
   const ticksY = [yMin, yMin + (yMax - yMin) / 2, yMax]
+  /**
+   * Enough decimals to tell the three ticks apart.
+   *
+   * `Math.round` printed a 0..1 axis as 0, 1, 1 — two identical labels at
+   * different heights, which reads as a broken chart rather than as a
+   * rounding choice. Only visible once the type was legible.
+   */
+  const dpY = Math.max(
+    0,
+    Math.min(3, Math.ceil(-Math.log10(Math.max(1e-9, (yMax - yMin) / 2))) + 1),
+  )
+  const labelY = (t: number) =>
+    t.toLocaleString('en-GB', {
+      minimumFractionDigits: dpY,
+      maximumFractionDigits: dpY,
+    })
   const ticksX =
     xMax - xMin <= 8
       ? Array.from({ length: Math.round(xMax - xMin) + 1 }, (_, i) => xMin + i)
@@ -123,11 +140,11 @@ export function PanelChart({ panel, width, height }: PanelChartProps) {
             x={PAD.left - 16}
             y={Y(t) + 12}
             textAnchor="end"
-            fontSize={30}
+            style={{ fontSize: pt(30) }}
             fill="hsl(var(--muted-fg))"
             fontFamily="'VT323', monospace"
           >
-            {Math.round(t).toLocaleString('en-GB')}
+            {labelY(t)}
           </text>
         </g>
       ))}
@@ -137,7 +154,7 @@ export function PanelChart({ panel, width, height }: PanelChartProps) {
           x={X(t)}
           y={height - PAD.bottom + 40}
           textAnchor="middle"
-          fontSize={30}
+          style={{ fontSize: pt(30) }}
           fill="hsl(var(--muted-fg))"
           fontFamily="'VT323', monospace"
         >
@@ -164,7 +181,7 @@ export function PanelChart({ panel, width, height }: PanelChartProps) {
                 x={width - PAD.right}
                 y={Y(a.y as number) - 12}
                 textAnchor="end"
-                fontSize={28}
+                style={{ fontSize: pt(28) }}
                 fill={NEO4J.marigold}
                 fontFamily="'VT323', monospace"
               >
@@ -226,7 +243,7 @@ export function PanelChart({ panel, width, height }: PanelChartProps) {
           x={width / 2}
           y={height / 2}
           textAnchor="middle"
-          fontSize={40}
+          style={{ fontSize: pt(40) }}
           fill="hsl(var(--muted-fg))"
           fontFamily="'VT323', monospace"
         >
@@ -239,7 +256,7 @@ export function PanelChart({ panel, width, height }: PanelChartProps) {
         x={PAD.left + (width - PAD.left - PAD.right) / 2}
         y={height - 10}
         textAnchor="middle"
-        fontSize={30}
+        style={{ fontSize: pt(30) }}
         fill="hsl(var(--muted-fg))"
         fontFamily="'VT323', monospace"
       >
@@ -250,7 +267,7 @@ export function PanelChart({ panel, width, height }: PanelChartProps) {
         y={34}
         transform="rotate(-90)"
         textAnchor="middle"
-        fontSize={30}
+        style={{ fontSize: pt(30) }}
         fill="hsl(var(--muted-fg))"
         fontFamily="'VT323', monospace"
       >
@@ -263,7 +280,10 @@ export function PanelChart({ panel, width, height }: PanelChartProps) {
 /** The legend, and the caveat. Rule 3: the caveat ships with the panel. */
 export function PanelLegend({ panel }: { panel: SeriesPanel }) {
   return (
-    <div className="font-pixel flex items-center gap-8" style={{ fontSize: 30 }}>
+    <div
+      className="font-pixel flex items-center gap-8"
+      style={{ fontSize: pt(30) }}
+    >
       {panel.series
         .filter((s) => s.points.some((p) => p.y != null))
         .map((s, i) => (
