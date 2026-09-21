@@ -15,7 +15,19 @@
 target_version: "pydantic>=2.0,<3.0"
 package_path: x12sdk
 tests_path: tests
-test_command: "python -m pytest tests -q"
+# `--continue-on-collection-errors`, because without it this suite does not
+# test anything on most attempts. Every one of the 261 tests imports the
+# package, so ONE unimportable module aborts collection for all of them:
+# pytest prints "Interrupted: 3 errors during collection" and runs zero
+# tests. 70% of graded attempts scored exactly 0 that way, including trees
+# where 60 of 65 modules were migrated and fine.
+#
+# With the flag, the modules that do import are collected and run, and the
+# count becomes a measurement of the migration instead of a report on the
+# worst file in the tree. Success is unchanged -- a collection error still
+# makes the exit code non-zero, so a green suite still means every test
+# passed and every module imported.
+test_command: "python -m pytest tests -q --continue-on-collection-errors"
 # The denominator for the skill's success score. Cognee wants a
 # proportion in [0.0, 1.0]; tests_passed alone is a count and 56 means
 # nothing without it. 261 is measured by running the answer key -- see

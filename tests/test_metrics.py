@@ -473,3 +473,47 @@ def test_closeness_matches_both_path_spellings() -> None:
         done = {f"{prefix}{k}": v for k, v in answer.items()}
         assert surfaces.closeness(tree, base, answer, within="pkg") == 0.0, prefix
         assert surfaces.closeness(done, base, answer, within="pkg") == 1.0, prefix
+
+
+def test_the_suite_is_run_so_that_it_actually_tests() -> None:
+    """One unimportable module must not zero the whole suite.
+
+    Every test in these fixtures imports the package, so without
+    `--continue-on-collection-errors` a single syntax error anywhere
+    aborts collection for all of them and pytest runs NOTHING: it prints
+    "Interrupted: N errors during collection" and the grader records 0
+    passing. 70% of graded attempts scored exactly 0 that way, including
+    trees where 60 of 65 modules were migrated and importable -- so the
+    number was a report on the worst file in the tree rather than a
+    measurement of the migration.
+
+    Verified directly on a two-module tree: without the flag 0 tests ran
+    and pytest reported "Interrupted: 1 error during collection"; with
+    it, 3 passed and the broken module was reported as one error.
+
+    Success is unchanged. A collection error still makes the exit code
+    non-zero, so a green suite still means every test passed AND every
+    module imported.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    # BY PATH, not through load_manifest: that resolves MSF_FIXTURE_DIR, so
+    # the assertion would silently check whichever fixture happened to be
+    # selected. Every fixture's command needs the flag.
+    root = Path(__file__).resolve().parent.parent
+    manifests = sorted(root.glob("fixtures/*/manifest.yaml"))
+    manifests.append(root / "fixture" / "manifest.yaml")
+    checked = 0
+    for path in manifests:
+        if not path.exists():
+            continue
+        command = (yaml.safe_load(path.read_text()) or {}).get("test_command")
+        if not command:
+            continue
+        checked += 1
+        assert "--continue-on-collection-errors" in command, (
+            f"{path}: one bad file would zero the whole suite")
+        assert command.startswith("python -m pytest"), path
+    assert checked >= 2, f"only {checked} manifest(s) declared a test_command"
