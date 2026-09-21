@@ -145,3 +145,5 @@ Append-only. A run counts toward "clearly working" only when `counts` is `yes`: 
 | swarm-1789945391 | 1x NVIDIA H200, 143771 MiB | 4.59 | 753 | 0.96 | None | 421 | warm | 60 | 3 | no | 14,221,992/41,157 | 0/0 | 307 | 542 | 44 | 3 (0 w/ reasoning) | yes |
 | swarm-1789946200 | 1x NVIDIA H200, 143771 MiB | 4.59 | 710 | 0.91 | None | 421 | cold | 0 | 3 | no | 8,573,178/31,127 | 0/0 | 230 | 466 | 0 | 0 (reasoning UNCOUNTED) | yes |
 | swarm-1789946200 | 1x NVIDIA H200, 143771 MiB | 4.59 | 710 | 0.91 | None | 421 | warm | 0 | 3 | no | 7,037,120/26,133 | 0/0 | 206 | 448 | 38 | 3 (0 w/ reasoning) | yes |
+| swarm-1789981020 | 1x NVIDIA H200, 143771 MiB | 4.59 | 1413 | 1.80 | None | 421 | cold | 57 | 5 | no | 11,792,071/39,685 | 0/0 | 343 | 652 | 0 | 0 (reasoning UNCOUNTED) | yes |
+| swarm-1789981020 | 1x NVIDIA H200, 143771 MiB | 4.59 | 1413 | 1.80 | None | 421 | warm | 61 | 5 | no | 12,388,463/44,877 | 0/0 | 329 | 748 | 357 | 5 (0 w/ reasoning) | yes |

@@ -1516,135 +1516,6 @@ def _snapshot(repo_dir: Path) -> dict[str, str]:
     return out
 
 
-def source_tree(workspace) -> dict[str, str]:
-    """path -> SOURCE TEXT, for observed_fix's diff.
-
-    Not `workspace.snapshot()`, which is documented as "path -> sha256, for
-    the 'did anything change' check" and was being passed here anyway. The
-    effect, measured on Aura on 2026-09-20: every trace summary in the graph
-    -- the one field whose job is to tell another agent what edit fixed an
-    error -- held a diff of hashes.
-
-        --- x12sdk/models.py
-        +++ x12sdk/models.py
-        @@ -1 +1 @@
-        -6c8ad5c43b1c9b19261919460f6a005fea8f2dc312a500d8b5216a278992b894
-        +8b733746a82d85f7e886c3fed9cbf64f915df1909f71ac3e5ffb416b8d340778
-
-    It recorded WHICH files changed and nothing about WHAT changed. Reads
-    the same cached tree `snapshot()` did, so this costs no extra round
-    trip; `/repo/` is stripped because `collect_file_contents` keys for the
-    grader's upload path, and a diff header should name the file.
-    """
-    return {path.removeprefix("/repo/"): data.decode("utf-8", "replace")
-            for path, data in workspace.collect_file_contents().items()}
-
-
-def observed_fix(
-    before: dict[str, str],
-    after: dict[str, str],
-    *,
-    prior_error: str | None,
-    next_error: str | None,
-    suite_passed: bool,
-    tests_delta: int = 0,
-    max_lines: int = 90,
-) -> str | None:
-    """What this edit actually did to the suite, in words, plus the edit.
-
-    Returned as text for TraceOutcome.summary, so it is what another agent
-    reads when reasoning memory surfaces this trace. Nothing here is the
-    model's claim: the orchestrator ran the suite itself, before and after,
-    and diffed the tree itself.
-
-    HAND-ROLLED STANDIN -- the wording is this harness's, not
-    neo4j-agent-memory's. It matters more than it looks. An earlier revision
-    emitted "stopped occurring after this change (verified by an independent
-    test run)" for *every* attempt that produced a diff, whether or not
-    anything had improved. Run 25 therefore recorded warm-2's
-
-        -from pydantic import BaseModel, EmailStr, root_validator, validator
-        +from pydantic import Model, EmailStr, root_validator, validator
-
-    as verified -- a hallucinated symbol that immediately raised
-    `ImportError: cannot import name 'Model' from 'pydantic'`. Shared memory
-    propagates whatever the summary asserts, so an overclaiming summary
-    teaches every other warm agent the wrong thing. The three cases below are
-    kept distinct and are stated no more strongly than the evidence supports;
-    "this changed nothing, do not repeat it" is as useful to retrieve as a
-    fix, and is the honest reading far more often."""
-    diff_lines: list[str] = []
-    for name in sorted(set(before) | set(after)):
-        chunk = list(
-            difflib.unified_diff(
-                before.get(name, "").splitlines(),
-                after.get(name, "").splitlines(),
-                fromfile=name, tofile=name, lineterm="", n=1,
-            )
-        )
-        diff_lines.extend(chunk)
-    if not diff_lines:
-        return None
-    if len(diff_lines) > max_lines:
-        diff_lines = diff_lines[:max_lines] + [f"... ({len(diff_lines) - max_lines} more lines)"]
-
-    diff = "\n".join(diff_lines)
-
-    if suite_passed:
-        return f"This change made the full test suite pass:\n{diff}"
-
-    if prior_error is None:
-        # Attempt 1: there was no prior error to clear, so the only honest
-        # statement is where the suite stands now.
-        return (
-            f"After this change the suite failed with:\n{next_error or 'an unknown error'}\n"
-            f"{diff}"
-        )
-
-    if next_error and next_error != prior_error:
-        # The diff is the whole tree's change for this attempt, so when an
-        # attempt edits several files it contains BOTH the edit that cleared
-        # `prior_error` and whichever edit caused `next_error`. Presenting that
-        # as one undifferentiated "the change" invites a reader to copy all of
-        # it. Observed in run 32's best trace: the same summary held the
-        # correct `from pydantic_settings import BaseSettings as Settings` and
-        # a wrong `EmailStr(email).validate()` that raised
-        # `TypeError: EmailStr() takes no arguments`. The orchestrator cannot
-        # tell which hunk did which -- it only ran the suite before and after --
-        # so it says exactly that rather than implying the whole diff is good.
-        return (
-            f"This error:\n{prior_error}\n\n"
-            "stopped occurring after the change below, but the suite then failed with:\n"
-            f"{next_error}\n\n"
-            "So this is partial progress, not a complete fix. Part of the diff below "
-            "fixed the first error and part of it caused the second, and which is "
-            "which was not determined -- do not copy it wholesale:\n"
-            f"{diff}"
-        )
-
-    if tests_delta > 0:
-        # The error signature is unchanged but MORE TESTS PASS, and the two
-        # facts are independent: the first failure can stay identical while a
-        # later test starts passing. Saying only "did NOT help" here put the
-        # summary in direct contradiction with the trace's own success flag --
-        # migrate_codebase() sets `resolved = success or advanced`, and
-        # `advanced` keys on exactly this delta. Observed in the graph:
-        # attempt 7 stored with success=True under a summary reading "This
-        # change did NOT help". Retrieval ranks on the flag and a reader reads
-        # the text, so the two disagreeing is worse than either being wrong.
-        return (
-            f"The suite still fails with the same first error:\n{prior_error}\n\n"
-            f"But {tests_delta} more test(s) pass than before, so this change "
-            f"did help -- it just did not get past that error:\n{diff}"
-        )
-
-    return (
-        f"This change did NOT help. The suite still fails with the same error, "
-        f"and no additional tests pass:\n"
-        f"{prior_error}\n\nDo not repeat this change:\n{diff}"
-    )
-
-
 def hook_activity(workspace) -> dict[str, Any]:
     """What the `post_tool` hook did during this attempt, from its journal.
 
@@ -1669,21 +1540,6 @@ def hook_activity(workspace) -> dict[str, Any]:
         "hook_last_error": str((failed[-1].get("error") or ""))[:200]
                            if failed else "",
     }
-
-
-def hook_sentence(activity: dict[str, Any]) -> str:
-    """The same counts as one line for the outcome document: it is the only
-    record of what the agent ran for itself, and a later attempt reads it."""
-    if not activity or not activity.get("hook_commands"):
-        return ""
-    line = (f"This attempt ran {activity['hook_commands']} command(s) of its "
-            f"own; {activity['hook_failures']} failed.")
-    if activity.get("hook_last_error"):
-        line += f" The last one failed with: {activity['hook_last_error']}"
-    if activity.get("hook_chars"):
-        line += (f" It was handed {activity['hook_chars']} characters of "
-                 f"memory at those failures.")
-    return line
 
 
 def _attempt_headline(*, helped: bool, success: bool, advanced: bool,
@@ -1821,9 +1677,9 @@ class Workspace(Protocol):
     named here and nothing else changes. This exists because the alternative
     was a SECOND copy of migrate_codebase for the remote case, which had
     already started drifting: its own cruder `tests_passed` and
-    `error_signature`, no `observed_fix` outcome text, no `add_message`, no
-    trace keyed on the error signature -- a different graph, built a different
-    way, from a parallel implementation of a function that already worked.
+    `error_signature`, no trace keyed on the error signature -- a different
+    graph, built a different way, from a parallel implementation of a
+    function that already worked.
     """
 
     async def run_vibe(self, task: str, *, timeout_s: float, resume: bool,
@@ -2096,7 +1952,6 @@ async def migrate_codebase(
         usage_before = usage_probe() if usage_probe else {}
         off_clock += time.monotonic() - probe_started
 
-        before_snapshot = source_tree(workspace)
         turns_before = workspace.assistant_turns_total()
         tools_before = workspace.tool_calls_total()
 
@@ -2717,59 +2572,39 @@ async def migrate_codebase(
         # applied to the memory calls that are awaited inline.
         try:
             if mem is not None:
-                # WHAT THIS ATTEMPT DID, AND WHETHER IT HELPED, INTO THE
-                # GRAPH. The one write that makes the next attempt better
-                # than a cold one, and the one that was missing.
-                #
-                # Everything in it is the grader's: an independent pytest
-                # run in a fresh sandbox before and after, and a diff the
-                # harness took itself off the tree. `observed_fix` states
-                # it no more strongly than the evidence supports -- an
-                # earlier revision said "verified" for every attempt that
-                # produced a diff, and taught every warm agent a
-                # hallucinated `from pydantic import Model`.
-                #
-                # `helped` is what decides which node set it lands in, and
-                # the node set is what lets the next attempt's prompt say
-                # "repeat this" over one block and "do not" over the other.
-                # A rejected attempt (shim, gutted validator) never counts
-                # as helping, whatever pytest said.
                 write_started = time.monotonic()
                 written: dict[str, Any] = {}
                 write_seconds = 0.0
                 helped = bool(success or advanced)
-                evidence = observed_fix(
-                    before_snapshot, source_tree(workspace),
-                    prior_error=last_signature,
-                    next_error=signature,
-                    suite_passed=bool(success),
-                    tests_delta=passed - last_passed,
-                ) or "The tree is unchanged: this attempt edited nothing."
-                # WHAT THE AGENT DID FOR ITSELF, from the `post_tool` hook's
-                # journal. One line, ahead of the diff: it is the only record
-                # of whether the agent ran anything of its own and whether the
-                # deterministic read fired, and without it "the hook is
-                # registered" and "the hook did something" look identical.
-                hook = hook_sentence(hook_activity_seen)
-                if hook:
-                    evidence = f"{hook}\n\n{evidence}"
+                # WHAT THE GRADER CONCLUDED, and nothing else. One
+                # SkillRunEntry: `success_score` from the independent suite
+                # and `feedback` from whether it moved. Cognee turns those
+                # into the procedure.
+                #
+                # The harness used to write a prose document per attempt
+                # into its own WORKED/DID-NOT-WORK node sets as well --
+                # verdict, metrics and the diff, in the harness's words.
+                # Over five pod attempts that became three near-identical
+                # "DID NOT WORK, same gutted file" documents saturating a
+                # 2,500-character block, one of them 1,139 characters of
+                # nothing because the attempt made no edits at all. It told
+                # warm louder and louder that it had failed and never what
+                # to do. Gone: the score is the signal.
                 try:
                     written = await mem.record(
                         attempt=attempt,
-                        helped=helped,
-                        headline=_attempt_headline(
-                            helped=helped, success=bool(success),
-                            advanced=advanced, rejected=rejected,
-                            passed=passed, last_passed=last_passed),
-                        evidence=evidence,
                         tests_passed=passed,
                         tests_total=tests_total,
                         closeness=closeness,
-                        v1_remaining=surfaces.count(file_contents,
-                                                    within=package_path),
+                        helped=helped,
+                        # For the proposal to read, not for a later prompt:
+                        # what the grader saw, in one line.
+                        summary=_attempt_headline(
+                            helped=helped, success=bool(success),
+                            advanced=advanced, rejected=rejected,
+                            passed=passed, last_passed=last_passed)
+                        + (f" {' '.join(notes)}" if rejected else ""),
                         error_signature=signature,
-                        rejected_because=(
-                            "\n".join(notes) if rejected else ""),
                         latency_ms=int(attempt_seconds * 1000),
                     )
                     write_seconds = time.monotonic() - write_started
@@ -2778,12 +2613,10 @@ async def migrate_codebase(
                         error_kind=(signature or trace_task)[:60],
                         on=("pass" if success else
                             "progress" if advanced else "no-progress"),
-                        node_set=written.get("node_set"),
-                        chars=written.get("document_chars"),
-                        **hook_activity_seen,
                         score=written.get("score"),
                         applied=written.get("applied"),
                         procedure_chars=written.get("procedure_chars"),
+                        **hook_activity_seen,
                     )
                 except Exception as exc:
                     # Loud. A deterministic half that writes nothing leaves
@@ -2793,7 +2626,7 @@ async def migrate_codebase(
                           f"{attempt} in memory: {exc!r}")
                     await emit("MEMORY_WRITE", attempt=attempt,
                                error_kind=(signature or trace_task)[:60],
-                               on="failed", node_set=None, chars=0)
+                               on="failed")
                 off_clock += time.monotonic() - write_started
 
                 # SESSION TRACES -> THE GRAPH, which is what `improve` is

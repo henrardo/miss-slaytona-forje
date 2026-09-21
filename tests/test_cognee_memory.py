@@ -70,16 +70,6 @@ def test_every_injected_block_is_capped() -> None:
     assert len(C._cap("a" * 9000, 100)) <= 110
 
 
-def test_node_sets_carry_the_fixture_name() -> None:
-    """MEASURED 2026-09-21: a recall told to read only `msf-probe` returned a
-    sentinel written only to `msf-probe-other`. Datasets scope writes, not
-    reads; NODE SETS scope reads. So the fixture name has to be in the node
-    set or one codebase's lessons reach another's prompt."""
-    worked, failed = C.node_sets("x12sdk")
-    assert worked == "x12sdk-worked" and failed == "x12sdk-failed"
-    assert C.node_sets("oapi") != C.node_sets("x12sdk")
-
-
 # --- 2. the fake ----------------------------------------------------------
 
 
@@ -93,7 +83,10 @@ class _FakeCognee(types.ModuleType):
         self.improve_calls: list[tuple] = []
         self.remembered: list[tuple[Any, dict]] = []
         self.pipelines: list[dict] = []
-        self.store: dict[str, list[str]] = {}
+        self.recalls: list[dict] = []
+        # What `improve`/`distill_sessions` left in the graph for a later
+        # recall to find. Set by a test; the harness no longer writes here.
+        self.graph: list[str] = []
 
     def agent_memory(self, **kwargs):
         self.agent_memory_calls.append(kwargs)
@@ -106,17 +99,17 @@ class _FakeCognee(types.ModuleType):
 
     async def remember(self, data, dataset_name=None, **kwargs):
         self.remembered.append((data, dict(kwargs, dataset_name=dataset_name)))
-        for name in (kwargs.get("node_set") or []):
-            self.store.setdefault(name, []).append(str(data))
         return types.SimpleNamespace(items=[], items_processed=1)
 
-    async def recall(self, query, *, datasets=None, node_name=None,
-                     query_type=None, only_context=False, top_k=15, **kw):
-        out = []
-        for name in (node_name or []):
-            for text in self.store.get(name, []):
-                out.append(types.SimpleNamespace(source="graph", text=text))
-        # A cold node set answers with a warming-up marker, not [].
+    async def recall(self, query, *, datasets=None, query_type=None,
+                     only_context=False, top_k=15, **kw):
+        self.recalls.append(dict(query=query, datasets=datasets,
+                                 query_type=query_type,
+                                 only_context=only_context, top_k=top_k,
+                                 **kw))
+        out = [types.SimpleNamespace(source="graph", text=t)
+               for t in self.graph]
+        # A cold dataset answers with a warming-up marker, not [].
         return out or [types.SimpleNamespace(
             source="system", status="memory_warming_up",
             text="Memory is still warming up.")]
@@ -208,89 +201,31 @@ def test_our_writes_do_not_fire_background_improves(fake_cognee) -> None:
     import inspect
 
     src = inspect.getsource(C)
-    assert src.count("self_improvement=False") >= 3, (
+    assert src.count("self_improvement=False") >= 2, (
         "every remember() call site must opt out; the harness owns the "
         "bridge, at a point in the loop it controls")
     assert "wait_for_background_tasks" in src
 
 
-# --- 4. the outcome document ----------------------------------------------
+# --- 4. the one write -------------------------------------------------
 
 
-def test_the_outcome_document_carries_the_verdict_and_the_diff() -> None:
-    """The one write that makes the next attempt better than a cold one.
+def test_the_only_write_is_the_graded_run(fake_cognee, monkeypatch) -> None:
+    """`success_score` and `feedback` ARE the information.
 
-    Before this existed the graph held "attempt 3: vibe exited 0 after 12
-    assistant turn(s)" and nothing else about the attempt, so nothing
-    downstream -- distillation, recall, the skill rewrite -- had anything
-    about Pydantic to work from."""
-    doc = C.outcome_document(
-        fixture="x12sdk", attempt=2, agent="warm-0", helped=True,
-        headline="More of the suite passes than before this attempt.",
-        evidence="--- a/x12sdk/models.py\n+++ b/x12sdk/models.py\n"
-                 "-    @validator('npi')\n+    @field_validator('npi')",
-        tests_passed=60, tests_total=261, closeness=0.0401, v1_remaining=295,
-        error_signature="E   PydanticUserError: `regex` is removed")
-    assert doc.startswith("WORKED")
-    assert "x12sdk attempt 2 by warm-0" in doc
-    assert "60/261 tests passing" in doc
-    assert "295 pydantic v1 surfaces left" in doc
-    assert "closeness to the reference migration 0.0401" in doc
-    assert "E   PydanticUserError: `regex` is removed" in doc
-    assert "+    @field_validator('npi')" in doc, "the diff IS the content"
+    The harness used to write a prose document per attempt as well -- its own
+    verdict, metrics and diff, filed into WORKED and DID-NOT-WORK node sets
+    it invented. Over five pod attempts that became three near-identical
+    "DID NOT WORK, same gutted file" documents saturating a 2,500-character
+    block, one of them 1,139 characters of nothing because the attempt made
+    no edits. It told warm louder and louder that it had failed and never
+    what to do.
 
-
-def test_a_failed_attempt_says_so_in_its_first_line() -> None:
-    """The first line is what ranks in retrieval and what a reader skims."""
-    doc = C.outcome_document(
-        fixture="x12sdk", attempt=3, agent="warm-0", helped=False,
-        headline="The suite is no better than before this attempt.",
-        evidence="-import pydantic\n+import pydantic.v1 as pydantic",
-        tests_passed=0, tests_total=261, closeness=-1.97, v1_remaining=300,
-        error_signature="E   IndentationError",
-        rejected_because="MIGRATION NOT COMPLETE: pydantic.v1 shim")
-    assert doc.startswith("DID NOT WORK")
-    assert "MIGRATION NOT COMPLETE" in doc
-
-
-def test_the_document_is_bounded() -> None:
-    """A 3,000-line diff in the graph is a chunk boundary problem, not a
-    lesson."""
-    doc = C.outcome_document(
-        fixture="x12sdk", attempt=1, agent="warm-0", helped=True,
-        headline="h", evidence="x" * 100_000, tests_passed=1, tests_total=2,
-        closeness=0.5, v1_remaining=1, error_signature=None, max_chars=3000)
-    assert len(doc) <= 3000
-
-
-def test_record_attempt_files_it_under_the_verdict_the_grader_gave(
-        fake_cognee, monkeypatch) -> None:
-    """`helped` decides the node set, and the node set is what lets the next
-    prompt say "repeat this" over one block and "do not" over the other."""
-    monkeypatch.setattr(C, "current_procedure", _async_value("1. do it"))
-
-    async def go(helped):
-        return await C.record_attempt(
-            fixture="x12sdk", attempt=1, agent="warm-0", helped=helped,
-            headline="h", evidence="d", tests_passed=1, tests_total=2,
-            closeness=0.1, v1_remaining=3, error_signature="E   boom",
-            dataset="ds", session_id="s", improve_skill=False)
-
-    out = asyncio.run(go(True))
-    assert out["node_set"] == "x12sdk-worked"
-    out = asyncio.run(go(False))
-    assert out["node_set"] == "x12sdk-failed"
-    assert set(fake_cognee.store) == {"x12sdk-worked", "x12sdk-failed"}
-    assert all(kw["dataset_name"] == "ds"
-               for _, kw in fake_cognee.remembered)
-
-
-def test_the_graded_run_also_goes_in_as_a_skill_run(fake_cognee,
-                                                    monkeypatch) -> None:
-    """Cognee's own self-improving-skill loop: a SkillRunEntry with a low
-    score drafts a proposal, and applying it rewrites the procedure in
-    place. `skill_improvement` must ride ON the entry -- sent alone it is
-    rejected -- and `selected_skill_id` wants the skill's NAME, not its id.
+    Cognee's own loop is the channel: a SkillRunEntry with a low score
+    drafts a skill-improvement proposal, `improve_skill` applies it, and the
+    rewritten procedure is what a later attempt reads. `skill_improvement`
+    must ride ON the entry -- sent alone it is rejected -- and
+    `selected_skill_id` wants the skill's NAME, not its id.
     """
     entries = types.ModuleType("cognee.memory.entries")
 
@@ -304,66 +239,94 @@ def test_the_graded_run_also_goes_in_as_a_skill_run(fake_cognee,
     monkeypatch.setattr(C, "_apply_improvement", _async_value(None))
 
     asyncio.run(C.record_attempt(
-        fixture="x12sdk", attempt=1, agent="warm-0", helped=False,
-        headline="h", evidence="d", tests_passed=0, tests_total=261,
-        closeness=0.02, v1_remaining=300, error_signature="E   boom",
-        dataset="ds", session_id="s"))
+        attempt=1, fixture="x12sdk", tests_passed=0, tests_total=261,
+        closeness=0.02, helped=False, summary="the suite is no better",
+        error_signature="E   boom", dataset="ds", session_id="s"))
 
-    entry, kwargs = fake_cognee.remembered[-1]
+    assert len(fake_cognee.remembered) == 1, (
+        "one write, not two: no document of ours goes in beside it")
+    entry, kwargs = fake_cognee.remembered[0]
     assert isinstance(entry, SkillRunEntry)
     assert entry.selected_skill_id == C.SKILL_NAME
     assert entry.success_score == pytest.approx(0.02)
-    assert entry.feedback == -1.0, "a failed attempt is negative feedback"
+    assert entry.feedback == -1.0
     assert kwargs["skill_improvement"]["skill_name"] == C.SKILL_NAME
     assert kwargs["session_id"] == "s"
-    # The outcome document itself is the result summary, so the proposal is
-    # drafted against what actually happened rather than against a count.
-    assert "DID NOT WORK" in entry.result_summary
+    assert kwargs["self_improvement"] is False
+    assert not kwargs.get("node_set"), "no node sets of ours"
 
 
-def test_no_distill_keeps_the_outcome_memory(fake_cognee, monkeypatch) -> None:
-    """`--no-distill` freezes the PROCEDURE. It used to freeze the memory
-    too, which made "hold the skill constant" and "turn memory off" the same
-    flag."""
+def test_feedback_keys_on_closeness_not_the_test_count(fake_cognee,
+                                                       monkeypatch) -> None:
+    """MEASURED ON THE POD, 2026-09-21, and it cost a round of a $4.59/hr run.
+
+    Warm's first attempt went 0 -> 0 tests while taking closeness from the
+    untouched checkout's 0.0 to +0.0092 -- its best result, and better than
+    cold's -0.049. `feedback` went in as -1.0, so `improve_skill` was taught
+    that warm's best work was its worst. `tests_passed` has two effective
+    values on these fixtures; the score already knew that and the sign did
+    not."""
+    entries = types.ModuleType("cognee.memory.entries")
+    entries.SkillRunEntry = lambda **kw: types.SimpleNamespace(**kw)
+    monkeypatch.setitem(sys.modules, "cognee.memory.entries", entries)
+    monkeypatch.setattr(C, "current_procedure", _async_value("1. do it"))
+    monkeypatch.setattr(C, "_apply_improvement", _async_value(None))
+
+    async def go(helped):
+        return await C.record_attempt(
+            attempt=1, fixture="x12sdk", tests_passed=0, tests_total=261,
+            closeness=0.0092, helped=helped, summary="s", dataset="ds")
+
+    asyncio.run(go(True))
+    assert fake_cognee.remembered[-1][0].feedback == 1.0
+    asyncio.run(go(False))
+    assert fake_cognee.remembered[-1][0].feedback == -1.0
+
+
+def test_no_distill_writes_nothing_at_all(fake_cognee, monkeypatch) -> None:
+    """`--no-distill` freezes the procedure. With the document layer gone
+    there is nothing else to write, so it is a true off switch."""
     monkeypatch.setattr(C, "current_procedure", _async_value("1. do it"))
     out = asyncio.run(C.record_attempt(
-        fixture="x12sdk", attempt=1, agent="warm-0", helped=True,
-        headline="h", evidence="d", tests_passed=1, tests_total=2,
-        closeness=0.1, v1_remaining=3, error_signature=None,
-        dataset="ds", improve_skill=False))
+        attempt=1, fixture="x12sdk", tests_passed=1, tests_total=2,
+        closeness=0.1, helped=True, summary="s", dataset="ds",
+        improve_skill=False))
     assert out["applied"] is False
-    assert fake_cognee.store["x12sdk-worked"], "the document was still written"
-    assert not any(kw.get("skill_improvement")
-                   for _, kw in fake_cognee.remembered)
+    assert fake_cognee.remembered == []
 
 
 # --- 5. the read ----------------------------------------------------------
 
 
-def test_the_brief_labels_the_two_halves_and_scopes_each_to_its_node_set(
-        fake_cognee) -> None:
-    """The labels are the treatment. `distill_sessions` writes lessons and
-    `recall` ranks documents, but neither tells a model which of two
-    retrieved paragraphs is the one to copy and which is the one to avoid.
-    The node set does, because the grader decided it."""
-    fake_cognee.store["x12sdk-worked"] = ["WORKED: field_validator landed."]
-    fake_cognee.store["x12sdk-failed"] = ["DID NOT WORK: the v1 shim."]
-    fake_cognee.store["oapi-worked"] = ["WORKED: a DIFFERENT codebase."]
+def test_the_brief_is_the_code_graph_and_one_plain_recall(
+        fake_cognee, monkeypatch) -> None:
+    """Two blocks, neither of them this harness's opinion: the code graph as
+    SearchType.CODE reports it, and ONE recall against the failure this
+    attempt is working on -- no node-set filter, no WORKED/DID-NOT-WORK
+    labels of ours. What comes back is whatever `improve`'s
+    `distill_sessions` stage put in the graph."""
+    fake_cognee.graph = ["Replace the removed regex field constraint with "
+                         "the supported pattern constraint."]
+    monkeypatch.setattr(C, "code_brief", _async_value("13 module(s): v4010"))
+    monkeypatch.setattr(C, "code_insights", _async_value(""))
 
-    mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", mode="hybrid")
-    brief = asyncio.run(mem.brief("E   PydanticUserError"))
+    mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", mode="hybrid",
+                         code_dataset="ds-code", code_repo="x12sdk")
+    brief = asyncio.run(mem.brief("E   PydanticUserError: regex is removed"))
 
-    assert C.BRIEF_WORKED in brief and C.BRIEF_FAILED in brief
-    assert "field_validator landed" in brief
-    assert "the v1 shim" in brief
-    assert "Do not repeat these." in brief
-    assert brief.index(C.BRIEF_WORKED) < brief.index(C.BRIEF_FAILED)
-    assert "a DIFFERENT codebase" not in brief, (
-        "another fixture's node set must not reach this prompt")
+    assert C.BRIEF_CODE in brief and C.BRIEF_MEMORY in brief
+    assert "13 module(s): v4010" in brief
+    assert "pattern constraint" in brief
+    # Ranked against the failure, read as stored, deterministically.
+    call = fake_cognee.recalls[-1]
+    assert call["query"] == "E   PydanticUserError: regex is removed"
+    assert call["datasets"] == ["ds"]
+    assert call["only_context"] is True
+    assert "node_name" not in call, "no node-set filter of ours"
 
 
 def test_the_brief_drops_the_warming_up_marker(fake_cognee) -> None:
-    """A cold node set answers recall with a `source="system"` marker, not an
+    """A cold dataset answers recall with a `source="system"` marker, not an
     empty list. Rendered, it reads to the model as a memory that says
     "Memory is still warming up" -- which is worse than no block."""
     mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", mode="hybrid")
@@ -382,18 +345,18 @@ def test_a_graph_that_cannot_be_read_costs_the_memory_not_the_attempt(
 
 
 def test_the_brief_is_empty_unless_the_mode_injects(fake_cognee) -> None:
-    fake_cognee.store["x12sdk-worked"] = ["WORKED: something."]
+    fake_cognee.graph = ["a distilled lesson"]
     for mode in ("mcp", "off"):
         mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", mode=mode)
         assert asyncio.run(mem.brief("q")) == ""
     mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", mode="deterministic")
-    assert "WORKED: something." in asyncio.run(mem.brief("q"))
+    assert "a distilled lesson" in asyncio.run(mem.brief("q"))
 
 
 def test_the_brief_counts_what_it_handed_over(fake_cognee) -> None:
     """Counted here so the run can report warm's injected context without the
     attempt loop keeping a second tally that can disagree."""
-    fake_cognee.store["x12sdk-worked"] = ["x" * 40]
+    fake_cognee.graph = ["x" * 40]
     mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", mode="hybrid")
     asyncio.run(mem.brief("q"))
     asyncio.run(mem.brief("q"))
@@ -553,12 +516,10 @@ def test_warms_prompt_carries_the_procedure_and_the_brief() -> None:
     warm = attempt_prompt(
         "E   ImportError: BaseSettings", "pydantic-v2-migration",
         procedure="1. Move BaseSettings to pydantic_settings.",
-        memory=f"### {C.BRIEF_WORKED}\nWORKED: field_validator landed.\n\n"
-               f"### {C.BRIEF_FAILED}\nDID NOT WORK: the v1 shim.",
+        memory=f"### {C.BRIEF_MEMORY}\nReplace regex with pattern.",
         mcp_tools=True)
     assert "1. Move BaseSettings to pydantic_settings." in warm
-    assert "WORKED: field_validator landed." in warm
-    assert "DID NOT WORK: the v1 shim." in warm
+    assert "Replace regex with pattern." in warm
     assert "cognee_recall" in warm
     # THE TASK COMES FIRST. It once came after a retrieved-memory block, and
     # warm-1 spent three attempts reporting on the memory instead of
@@ -660,38 +621,30 @@ def _run_loop(mem, *, attempts=2, verdicts=None):
     return result, events, ws
 
 
-def test_attempt_two_reads_back_what_attempt_one_wrote(
-        fake_cognee, monkeypatch) -> None:
-    """THE PROPERTY THE WHOLE PROJECT TURNS ON, at harness level: whatever
-    the grader concluded about attempt 1 is in attempt 2's prompt, under the
-    heading that says whether to repeat it.
-
-    Not a claim about the model. A claim that the loop closes -- which it did
-    not, for the whole first pass of the Cognee migration."""
+def test_the_loop_reports_the_signal_it_sent(fake_cognee,
+                                            monkeypatch) -> None:
+    """One MEMORY_WRITE per attempt, carrying the score Cognee was given and
+    whether it applied a rewrite. That event is the only place a run records
+    what warm's memory was told, and a run where it is absent is warm running
+    as cold with extra latency."""
     monkeypatch.setattr(C, "current_procedure", _async_value("1. Move it."))
     monkeypatch.setattr(C, "_apply_improvement", _async_value(None))
     entries = types.ModuleType("cognee.memory.entries")
     entries.SkillRunEntry = lambda **kw: types.SimpleNamespace(**kw)
     monkeypatch.setitem(sys.modules, "cognee.memory.entries", entries)
+    fake_cognee.graph = ["a distilled lesson about field_validator"]
 
     mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", label="warm-0",
                          session_id="run:warm-0", mode="hybrid")
     result, events, ws = _run_loop(mem)
 
     assert result.attempts == 2
-    # Attempt 1 knew nothing; attempt 2 was handed attempt 1's verdict.
-    assert "Your memory of this codebase" not in ws.prompts[0]
-    assert "Your memory of this codebase" in ws.prompts[1]
-    # Attempt 1 moved the suite 2 -> 6 passing, so the grader filed it under
-    # WORKED, and attempt 2's prompt says to repeat it.
     written = [kw for name, kw in events if name == "MEMORY_WRITE"]
-    assert [w["node_set"] for w in written[:1]] == ["x12sdk-worked"]
-    assert C.BRIEF_WORKED in ws.prompts[1]
-    # ...and what it repeats is the diff the harness took itself.
-    assert "field_validator" in ws.prompts[1]
-    # The error the suite reached is in there too, which is what the recall
-    # was ranked against.
-    assert "PydanticUserError" in ws.prompts[1] or "ImportError" in ws.prompts[1]
+    assert len(written) == 2
+    assert all(w.get("score") is not None for w in written)
+    # Attempt 2 was handed what the graph holds, under Cognee's own heading.
+    assert C.BRIEF_MEMORY in ws.prompts[1]
+    assert "a distilled lesson about field_validator" in ws.prompts[1]
 
 
 def test_progress_is_judged_on_closeness_not_the_test_count(
@@ -700,39 +653,32 @@ def test_progress_is_judged_on_closeness_not_the_test_count(
 
     Warm's first attempt went 0 -> 0 tests while taking closeness from the
     untouched checkout's 0.0 to +0.0092 and leaving all 65 files parsing --
-    its best result, and better than cold's -0.049. It was filed under
-    `<fixture>-failed`, which is the block the NEXT attempt is told not to
-    repeat, and `SkillRunEntry.feedback` went in as -1.0. The loop was
-    teaching warm that its best work was its worst.
-
-    The score already keyed on closeness; the LABEL still keyed on
-    `tests_passed`, which has two effective values on these fixtures. Same
-    fault, one layer along."""
+    its best result, and better than cold's -0.049. It was recorded as a
+    failure, so `improve_skill` was taught that warm's best work was its
+    worst. The score already keyed on closeness; the SIGN still keyed on
+    `tests_passed`, which has two effective values on these fixtures."""
     monkeypatch.setattr(C, "current_procedure", _async_value("1. Move it."))
     monkeypatch.setattr(C, "_apply_improvement", _async_value(None))
     entries = types.ModuleType("cognee.memory.entries")
     entries.SkillRunEntry = lambda **kw: types.SimpleNamespace(**kw)
     monkeypatch.setitem(sys.modules, "cognee.memory.entries", entries)
-    # A tree that moves toward the reference while passing no more tests.
     monkeypatch.setattr(vibe_agent, "_closeness",
                         lambda contents, package: 0.0092)
 
     mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", label="warm-0",
                          session_id="run:warm-0", mode="hybrid")
-    _, events, ws = _run_loop(mem, attempts=1, verdicts=[
+    _, events, _ = _run_loop(mem, attempts=1, verdicts=[
         (1, "E   TypeError: field_validator() got an unexpected keyword "
             "argument 'allow_reuse'\n=== 261 failed in 1.0s ==="),
     ])
     written = [kw for name, kw in events if name == "MEMORY_WRITE"]
-    assert written and written[0]["node_set"] == "x12sdk-worked", (
+    assert written and written[0]["on"] == "progress", (
         "an attempt that moved closeness off the untouched checkout is "
         "verified progress, whatever the step function says")
-    # ...and the skill is taught the same way.
-    entry = fake_cognee.remembered[-1][0]
-    assert entry.feedback == 1.0
+    assert fake_cognee.remembered[-1][0].feedback == 1.0
 
 
-def test_damage_is_filed_under_failed_even_though_it_edited(
+def test_damage_is_recorded_as_damage_even_though_it_edited(
         fake_cognee, monkeypatch) -> None:
     """The other side of the same switch: cold's first pod attempt left a
     SyntaxError and scored -0.049. Below the untouched checkout is not
@@ -751,32 +697,8 @@ def test_damage_is_filed_under_failed_even_though_it_edited(
         (1, "E   SyntaxError: invalid syntax\n=== 261 failed in 1.0s ==="),
     ])
     written = [kw for name, kw in events if name == "MEMORY_WRITE"]
-    assert written and written[0]["node_set"] == "x12sdk-failed"
+    assert written and written[0]["on"] == "no-progress"
     assert fake_cognee.remembered[-1][0].feedback == -1.0
-
-
-def test_a_regression_is_filed_under_failed(fake_cognee, monkeypatch) -> None:
-    """An attempt that leaves the suite no better is verified waste, and the
-    next attempt is told not to repeat it. This is the half that cannot come
-    from the agent: it requires two independent test runs."""
-    monkeypatch.setattr(C, "current_procedure", _async_value("1. Move it."))
-    monkeypatch.setattr(C, "_apply_improvement", _async_value(None))
-    entries = types.ModuleType("cognee.memory.entries")
-    entries.SkillRunEntry = lambda **kw: types.SimpleNamespace(**kw)
-    monkeypatch.setitem(sys.modules, "cognee.memory.entries", entries)
-
-    mem = C.CogneeMemory(dataset="ds", fixture="x12sdk", label="warm-0",
-                         session_id="run:warm-0", mode="hybrid")
-    # No test ever passes, and the first failure never changes: the tree
-    # moved and the suite did not.
-    _, events, ws = _run_loop(mem, verdicts=[
-        (1, "E   ImportError: BaseSettings\n=== 10 failed in 1.0s ==="),
-        (1, "E   ImportError: BaseSettings\n=== 10 failed in 1.0s ==="),
-    ])
-    written = [kw for name, kw in events if name == "MEMORY_WRITE"]
-    assert written and written[0]["node_set"] == "x12sdk-failed"
-    assert C.BRIEF_FAILED in ws.prompts[1]
-    assert "Do not repeat these." in ws.prompts[1]
 
 
 def test_the_warm_loop_bridges_its_session_every_attempt(
@@ -800,7 +722,6 @@ def test_the_warm_loop_bridges_its_session_every_attempt(
     assert all(kw["steps"] == 3 for kw in ingested)
     done = [kw for name, kw in events if name == "ATTEMPT_DONE"]
     assert all(kw["procedure_chars"] > 0 for kw in done)
-    assert done[-1]["memory_chars"] > 0
 
 
 def test_the_cold_loop_touches_cognee_not_at_all(fake_cognee) -> None:

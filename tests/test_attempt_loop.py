@@ -502,44 +502,6 @@ def test_agents_get_a_private_home_not_the_operators() -> None:
 # --- 7. a trace's summary must not contradict its own success flag --------
 
 
-def test_summary_and_success_flag_agree_when_more_tests_pass() -> None:
-    """`resolved = success or advanced`, and `advanced` keys on the
-    tests-passed delta. So a summary that keys only on the error signature can
-    disagree with the flag stored beside it.
-
-    It did. In the graph: attempt 7 stored with success=True under a summary
-    reading "This change did NOT help. The suite still fails with the same
-    error" -- while tests_passed had gone 2 -> 3. Retrieval ranks on the flag;
-    a reader reads the text. The two disagreeing is worse than either being
-    wrong on its own."""
-    from orchestrator.vibe_agent import observed_fix
-
-    before = {"a.py": "x = 1\n"}
-    after = {"a.py": "x = 2\n"}
-
-    helped = observed_fix(
-        before, after,
-        prior_error="AttributeError: boom",
-        next_error="AttributeError: boom",
-        suite_passed=False,
-        tests_delta=1,
-    )
-    assert helped is not None
-    assert "did NOT help" not in helped
-    assert "1 more test(s) pass" in helped
-
-    stuck = observed_fix(
-        before, after,
-        prior_error="AttributeError: boom",
-        next_error="AttributeError: boom",
-        suite_passed=False,
-        tests_delta=0,
-    )
-    assert stuck is not None
-    assert "did NOT help" in stuck
-    assert "no additional tests pass" in stuck
-
-
 def test_the_attempt_budget_hands_out_exactly_n() -> None:
     from orchestrator.vibe_agent import AttemptBudget
 
@@ -594,63 +556,6 @@ def test_a_retry_cannot_hand_the_agent_a_fresh_allowance() -> None:
     assert first_entry == [True, True]
     assert second_entry == [True, False], (
         "the retry got more than the experiment's remaining attempts")
-
-
-def test_the_trace_summary_diffs_source_and_not_hashes() -> None:
-    """The 2026-09-20 defect, and why the test above could not catch it.
-
-    `observed_fix` was always tested by handing it source text directly, so
-    it passed while the CALLER handed it `workspace.snapshot()` -- documented
-    as "path -> sha256, for the 'did anything change' check". Every trace
-    summary in the graph therefore held a diff of hashes:
-
-        --- x12sdk/models.py
-        @@ -1 +1 @@
-        -6c8ad5c43b1c9b19261919460f6a005fea8f2dc312a500d8b5216a278992b894
-        +8b733746a82d85f7e886c3fed9cbf64f915df1909f71ac3e5ffb416b8d340778
-
-    which records WHICH file changed and nothing about WHAT changed -- in the
-    one field whose job is to tell another agent what edit fixed an error.
-
-    So this test goes through `source_tree`, the seam that was wrong."""
-    import hashlib
-
-    from orchestrator.vibe_agent import observed_fix, source_tree
-
-    class _Workspace:
-        """Both views of the same tree, exactly as AgentWorkspace offers."""
-
-        def __init__(self, body: str) -> None:
-            self.body = body
-
-        def collect_file_contents(self) -> dict[str, bytes]:
-            return {"/repo/pkg/models.py": self.body.encode()}
-
-        def snapshot(self) -> dict[str, str]:
-            return {"pkg/models.py":
-                    hashlib.sha256(self.body.encode()).hexdigest()}
-
-    before = source_tree(_Workspace("class A(BaseModel):\n    class Config:\n        pass\n"))
-    after = source_tree(_Workspace("class A(BaseModel):\n    model_config = ConfigDict()\n"))
-
-    # The /repo/ prefix is the grader's upload path, not part of the file's
-    # name in a diff header.
-    assert list(before) == ["pkg/models.py"], before
-
-    summary = observed_fix(
-        before, after,
-        prior_error="PydanticUserError: class Config is removed",
-        next_error=None, suite_passed=True, tests_delta=5,
-    )
-    assert summary is not None
-    assert "model_config = ConfigDict()" in summary, summary
-    assert "class Config:" in summary, summary
-    # A sha256 is 64 hex characters; no line of the diff should be one.
-    for line in summary.splitlines():
-        stripped = line.lstrip("+- ").strip()
-        assert not (len(stripped) == 64
-                    and all(c in "0123456789abcdef" for c in stripped)), (
-            f"the summary still contains a bare hash: {line}")
 
 
 def test_neo4j_settings_have_no_silent_default() -> None:

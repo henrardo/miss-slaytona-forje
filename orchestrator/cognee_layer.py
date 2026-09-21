@@ -111,12 +111,6 @@ async def assert_ready() -> dict[str, Any]:
     return {"apoc_procedures": apoc, "nodes": counts[0]["n"] if counts else 0}
 
 
-def node_sets(fixture: str) -> tuple[str, str]:
-    """The two node sets one fixture's attempts write into. Node sets are the
-    read-scoping boundary, so the fixture name has to be in them."""
-    return f"{fixture}-worked", f"{fixture}-failed"
-
-
 # ---- the code graph --------------------------------------------------
 
 
@@ -405,75 +399,37 @@ def score_from_verdict(*, tests_passed: int, tests_total: int,
     return max(0.0, min(1.0, float(closeness)))
 
 
-def outcome_document(*, fixture: str, attempt: int, agent: str,
-                     helped: bool, headline: str, evidence: str,
-                     tests_passed: int, tests_total: int,
-                     closeness: float | None, v1_remaining: int,
-                     error_signature: str | None, rejected_because: str = "",
-                     max_chars: int = 3000) -> str:
-    """The one document per attempt that carries what the agent actually did.
-
-    Everything here is the GRADER's, not the model's: an independent pytest run
-    in a fresh sandbox, and a diff of the tree the harness took itself. Written
-    as prose with the diff inline, because that is what a later attempt reads
-    back and what `distill_sessions` draws its lesson from. Before this existed
-    the graph held `"attempt 3: vibe exited 0 after 12 assistant turn(s)"` and
-    distillation had nothing about Pydantic to distil.
-    """
-    verdict = "WORKED" if helped else "DID NOT WORK"
-    head = [
-        f"{verdict} -- {fixture} attempt {attempt} by {agent}.",
-        headline.strip(),
-        (f"Graded independently: {tests_passed}/{tests_total} tests passing, "
-         f"{v1_remaining} pydantic v1 surfaces left in the package"
-         + (f", closeness to the reference migration {closeness:.4f}"
-            if closeness is not None else "") + "."),
-    ]
-    if error_signature:
-        head.append(f"First failure after this attempt: {error_signature}")
-    if rejected_because:
-        head.append(rejected_because.strip())
-    body = "\n".join(h for h in head if h)
-    room = max_chars - len(body) - 2
-    if evidence.strip() and room > 200:
-        body += "\n\n" + _cap(evidence.strip(), room)
-    return body
-
-
-async def record_attempt(*, fixture: str, attempt: int, agent: str,
-                         helped: bool, headline: str, evidence: str,
+async def record_attempt(*, attempt: int, fixture: str,
                          tests_passed: int, tests_total: int,
-                         closeness: float | None, v1_remaining: int,
-                         error_signature: str | None,
-                         rejected_because: str = "",
+                         closeness: float | None,
+                         helped: bool,
+                         summary: str,
+                         error_signature: str | None = None,
                          latency_ms: int = 0,
                          dataset: str = DEFAULT_DATASET,
                          session_id: str | None = None,
                          improve_skill: bool = True,
                          score_threshold: float = 0.9,
                          max_runs: int = 5) -> dict[str, Any]:
-    """Two writes, both Cognee's own: the outcome document into the worked or
-    failed node set, and the graded run as a SkillRunEntry that drafts -- and
-    then applies -- a rewrite of the procedure."""
-    import cognee
+    """ONE WRITE, and it is Cognee's: the graded attempt as a SkillRunEntry.
 
-    worked_set, failed_set = node_sets(fixture)
-    document = outcome_document(
-        fixture=fixture, attempt=attempt, agent=agent, helped=helped,
-        headline=headline, evidence=evidence, tests_passed=tests_passed,
-        tests_total=tests_total, closeness=closeness,
-        v1_remaining=v1_remaining, error_signature=error_signature,
-        rejected_because=rejected_because)
-    await cognee.remember(document, dataset_name=dataset,
-                          node_set=[worked_set if helped else failed_set],
-                          self_improvement=False)
+    `success_score` and `feedback` ARE the information. Cognee drafts a
+    skill-improvement proposal from the runs that scored badly and
+    `improve_skill` applies it, rewriting the procedure in place -- so what a
+    later attempt reads is what Cognee concluded, not what this harness wrote
+    down about it.
+
+    The harness owns exactly one thing here and must: the SCORE. It comes
+    from an independent pytest run in a fresh Daytona sandbox that no agent
+    has touched, which is the only reason any of this is measurement rather
+    than self-report.
+    """
+    import cognee
 
     score = score_from_verdict(tests_passed=tests_passed,
                                tests_total=tests_total, closeness=closeness)
     if not improve_skill:
-        return {"score": score, "document_chars": len(document),
-                "node_set": worked_set if helped else failed_set,
-                "proposal_id": None, "applied": False,
+        return {"score": score, "proposal_id": None, "applied": False,
                 "procedure_chars": len(await current_procedure(
                     dataset=dataset) or "")}
 
@@ -483,7 +439,7 @@ async def record_attempt(*, fixture: str, attempt: int, agent: str,
         # Wants the skill's NAME, not its id.
         selected_skill_id=SKILL_NAME,
         task_text=f"attempt {attempt}: migrate {fixture} to Pydantic v2",
-        result_summary=document[:2000],
+        result_summary=summary[:2000],
         success_score=score,
         feedback=1.0 if helped else -1.0,
         error_message=(error_signature or "")[:500],
@@ -500,9 +456,8 @@ async def record_attempt(*, fixture: str, attempt: int, agent: str,
     if proposal_id:
         await _apply_improvement(proposal_id, dataset=dataset)
     procedure = await current_procedure(dataset=dataset) or ""
-    return {"score": score, "document_chars": len(document),
-            "node_set": worked_set if helped else failed_set,
-            "proposal_id": proposal_id, "applied": bool(proposal_id),
+    return {"score": score, "proposal_id": proposal_id,
+            "applied": bool(proposal_id),
             "procedure_chars": len(procedure)}
 
 
@@ -533,15 +488,26 @@ async def _apply_improvement(proposal_id: str, *,
 # ---- reads -----------------------------------------------------------
 
 
-async def recall_node_set(*, dataset: str, node_set: str, query: str,
-                          top_k: int = 8,
-                          limit: int = MAX_BLOCK_CHARS) -> str:
-    """The stored documents in one node set, ranked against `query`.
+async def recalled(*, dataset: str, query: str, top_k: int = 8,
+                   limit: int = MAX_BLOCK_CHARS) -> str:
+    """What Cognee has to say about `query`, as Cognee says it.
 
-    CHUNKS + only_context returns the text as stored, with no model in the way
-    and no reshuffling between attempts. Never fatal: this runs inside the
-    attempt body, so an unreachable graph must cost the memory and not the
-    attempt.
+    One `recall`, no node-set filter and no labels of ours. What comes back
+    is whatever Cognee put in the graph: the `session_learnings` its
+    `distill_sessions` stage wrote, the agent traces `improve` bridged, and
+    the chunks of anything else in the dataset.
+
+    CHUNKS + only_context returns the stored text with no model in the way
+    and no reshuffling between attempts; GRAPH_SUMMARY_COMPLETION, which the
+    decorator uses, re-summarises the subgraph per call and came back
+    291/329/239 characters over one unchanged graph.
+
+    Never fatal: this runs inside the attempt body, so an unreachable graph
+    must cost the memory and not the attempt.
+
+    NOTE, measured: `datasets=` does not scope a recall -- content written to
+    another dataset comes back too. That is Cognee's behaviour and this reads
+    it as it is.
     """
     try:
         import cognee
@@ -549,11 +515,10 @@ async def recall_node_set(*, dataset: str, node_set: str, query: str,
 
         entries = await cognee.recall(
             query or "pydantic v1 to v2 migration", datasets=[dataset],
-            node_name=[node_set], query_type=SearchType.CHUNKS,
-            only_context=True, top_k=top_k)
+            query_type=SearchType.CHUNKS, only_context=True, top_k=top_k)
     except Exception as exc:
-        print(f"  recall({node_set}) could not read the graph ({exc!r}); "
-              f"this attempt runs without that block")
+        print(f"  recall() could not read the graph ({exc!r}); this attempt "
+              f"runs without it")
         return ""
     seen: list[str] = []
     for entry in entries or []:
@@ -705,9 +670,8 @@ def _cap(text: str, limit: int) -> str:
 # GPU has been paid for.
 READ_TIMEOUT_S = 120.0          # inside the attempt; costs the agent's clock
 WRITE_TIMEOUT_S = 420.0         # off the clock, but bounded all the same
-BRIEF_WORKED = "What WORKED on earlier attempts at this codebase"
-BRIEF_FAILED = "What DID NOT WORK on earlier attempts at this codebase"
 BRIEF_CODE = "This codebase, from its code graph"
+BRIEF_MEMORY = "What Cognee remembers about earlier attempts at it"
 
 
 @dataclass
@@ -747,22 +711,23 @@ class CogneeMemory:
                               READ_TIMEOUT_S, "procedure()", "") or ""
 
     async def brief(self, query: str) -> str:
-        """What this attempt is handed as memory, with the two halves labelled.
+        """What this attempt is handed as memory.
 
-        The labels are the point. `distill_sessions` writes lessons and
-        `recall` ranks documents, but neither says which of two retrieved
-        paragraphs is the one to copy and which is the one to avoid. The node
-        set does, because the grader decided it.
+        Two blocks, and neither is this harness's opinion: the code graph as
+        `SearchType.CODE` reports it, and one `recall` against the failure
+        this attempt is working on.
+
+        There used to be a third and a fourth -- a document per graded
+        attempt that the harness wrote, split into WORKED and DID NOT WORK
+        node sets. They are gone. `success_score` and `feedback` on the
+        SkillRunEntry are the information; Cognee turns them into the
+        procedure, and the procedure is what a later attempt reads.
         """
         if not uses_injection(self.mode):
             return ""
-        worked_set, failed_set = node_sets(self.fixture)
-        worked = await _bounded(
-            recall_node_set(dataset=self.dataset, node_set=worked_set,
-                            query=query), READ_TIMEOUT_S, "brief/worked", "")
-        failed = await _bounded(
-            recall_node_set(dataset=self.dataset, node_set=failed_set,
-                            query=query), READ_TIMEOUT_S, "brief/failed", "")
+        memory = await _bounded(
+            recalled(dataset=self.dataset, query=query),
+            READ_TIMEOUT_S, "recall", "")
         code = ""
         if self.code_dataset and self.code_repo:
             try:
@@ -781,10 +746,8 @@ class CogneeMemory:
         blocks = []
         if code:
             blocks.append(f"### {BRIEF_CODE}\n{code}")
-        if worked:
-            blocks.append(f"### {BRIEF_WORKED}\n{worked}")
-        if failed:
-            blocks.append(f"### {BRIEF_FAILED}\nDo not repeat these.\n{failed}")
+        if memory:
+            blocks.append(f"### {BRIEF_MEMORY}\n{memory}")
         block = "\n\n".join(blocks)
         if block:
             self.reads += 1
@@ -803,8 +766,8 @@ class CogneeMemory:
         if self.mode == "off":
             return {}
         return await _bounded(
-            record_attempt(fixture=self.fixture, agent=self.label,
-                           dataset=self.dataset, session_id=self.session_id,
+            record_attempt(fixture=self.fixture, dataset=self.dataset,
+                           session_id=self.session_id,
                            improve_skill=self.distil, **kwargs),
             WRITE_TIMEOUT_S, "record()", {})
 

@@ -393,52 +393,55 @@ stays shaded pixel art and re-running the extractor updates both racers at once.
 A constant hue *rotation* would not do — the flame spans amber to dark red, and
 rotating the dark end lands it in green.
 
-**The racers run, and progress is SPEED.** Position-as-progress was the first
-model and it does not survive the data: five graded attempts across a 15-second
-rehearsal is five small hops and then stillness, and on x12sdk, where the suite
-never moves, it was two Ms sitting on the start line for a whole talk. A
-racetrack whose racers do not go round is a diagram.
+**The racers run, and both the lap and the speed come from `closeness`.**
+That is the harness's own measure of how far along the v1 → v2 path a tree is:
+`0.0` is the untouched checkout, `1.0` is the human's merged PR, and *negative*
+means the attempt moved away from the answer. It is what the harness itself now
+judges progress on — `moved = closeness > prior` in `vibe_agent.py`, where
+`prior` is the previous attempt's closeness.
 
-So both arms lap the board continuously while the run is going, and the one
-making more of the measure laps faster. The gap, and the **lap counts on the
-track**, are the race; an arm that converges stops at the line. A stalled arm
-still circles slowly, which is true — it is still burning GPU on attempts that
-are not landing. Lap times run from 26s to 9s.
+| | from | meaning |
+|---|---|---|
+| **track length** | `1 − closeness(previous attempt)` | the journey still to run from where that arm last stood |
+| **speed** | `closeness(latest attempt)`, in closeness-units per second | how close it has got |
 
-Speed is driven by each arm's progress **relative to the leader's**, not by its
-absolute share. On the run above, warm cleared 60 of 364 surfaces and cold 8:
-as absolute shares those are lap times of 23.2s and 25.6s, a difference nobody
-in a room can see, for a run where one arm did seven times the work. Against
-the leader they become 9s and 23.8s. The caption prints the raw counts — `warm
-60 · cold 8 of 364 seen` — so the pace never has to be taken on trust.
+```
+laps/second = closeness_now / (1 − closeness_prev)
+```
+
+There is no display constant in that: one closeness-unit is one second. On the
+run going while this was written, warm scored `+0.054` against a lap of `0.942`
+— 17s a lap — and cold `+0.084` against `0.925`, 11s a lap. Verified against a
+hand-computed case: `c=+0.050` after `0.100` gives exactly the 18s/lap the
+track printed.
+
+**Negative closeness runs backwards**, because that is what it means. An
+attempt that scored `−0.4267` did not fail to progress; it took the tree
+further from the answer than the untouched checkout, and a racer that reverses
+says that better than any caption. Lap counts go negative with it, and the
+track prints `net −2`.
+
+Two clamps, both stated on the track: a lap is never shorter than 6s (a
+near-finished arm would blur) nor longer than 45s (at `closeness 0.001` a lap
+would take twenty minutes, which on stage is indistinguishable from the racer
+being broken — the fault this whole thing exists to fix). The raw closeness is
+printed either way, so a crawl is never mistaken for progress.
+
+**A fixture with no answer key reports no closeness at all** — `_closeness`
+returns `None`, and the harness's own chart document omits the panel rather
+than drawing zeroes. oapi, which the rehearsal loop runs, is one of those. On
+those runs the race falls back to tests passing (or v1 surfaces, if the fixture
+counts them) paced against the leader, and the track says
+`no closeness on this fixture` in those words.
 
 The motion is integrated per frame and written straight to the two elements'
-transforms. **None of it goes through React**: sixty state updates a second
-would re-render the track, both lane paths and the caption sixty times a
-second, next to a force simulation, a canvas sprite and twenty live cards. The
-only state is the lap count, which changes once a lap.
-
-**Which number the measure is** is decided from the fixture's own data:
-
-| the measure | when | denominator |
-|---|---|---|
-| share of best `tests_passed` | the suite moves — oapi goes 5 → 9 → 33 | lowest to best reported in the run |
-| `v1_remaining` surfaces cleared | the fixture reports surfaces — x12sdk | the most anyone was still carrying |
-
-`tests_passed` is the measure this project trusts, and on x12sdk it does not
-move: the harness's own note records **70% of 77 graded attempts scoring exactly
-0**, because 0 means both "has not migrated it yet" and "broke the package". A
-race run on that number is two Ms crawling in step for a whole talk. Surfaces
-are counted off the source and are defined even when the tree does not parse.
-
-The surfaces denominator is labelled `of 364 seen`, never `of 383`: the
-untouched count is never emitted, because the first graded attempt has already
-edited the tree. On that measure an arm can lead *because* it broke the
-package, so a racer whose latest attempt does not fully parse is **haloed in
-the alarm colour** and the caption says `cold 64/65 files parse`.
-
-**Only `FILE_DONE` with `success` puts a racer on the line** and stops it,
-because converging is the oracle's call and nothing else.
+transforms. **None of it goes through React** — and nothing else may write
+those transforms. The element's JSX set one too, at the position each arm's
+progress earned it, and the two writers fought: every re-render (the replay
+clock ticks 4×/s, a live run's index lands 1×/s) snapped both tokens back to a
+fixed anchor and the frame loop crawled away again. On screen that is two Ms
+twitching near two points, with apparent speed decided by whose anchor was
+further round. The only React state is the lap count, which changes once a lap.
 
 **Live, or a replay.** A run still being written is tracked as it lands, and
 the racers' speeds change as attempts are graded. A *finished* run arrives as
@@ -456,9 +459,12 @@ twenty-five seconds: measured on a live x12sdk run, the log went quiet for 3½
 minutes between two graded attempts, and at 25s the deck called it finished and
 replayed a race that was still being run.
 
-Racers leave from just *after* the start line and finish just *before* it. On a
-closed lap t=0 and t=1 are the same point, so without that a racer who converged
-would park exactly where one who had not started sits.
+**Only `FILE_DONE` with `success` stops a racer**, on the line, because
+converging is the oracle's call and nothing else. A finisher parks at
+`FINISH_T`, just *before* the line, so it cannot be confused with a racer that
+never started — on a closed lap `t=0` and `t=1` are the same point. A *running*
+racer uses the whole lap, `0..1`: confining it to `START_T..FINISH_T` left a 3%
+gap it hopped across once a lap, measured at ~104px.
 
 Under `prefers-reduced-motion` nobody laps: each racer holds the position its
 progress earns it, which still says who is ahead.

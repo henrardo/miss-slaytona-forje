@@ -593,11 +593,9 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
                 if r.status == 200:
                     break
     check("cognee's REST API answers the hook's endpoint",
-          not assert_hook_can_read(api_url, dataset=DATASET,
-                                   node_set=C.node_sets(FIXTURE)[1]),
+          not assert_hook_can_read(api_url, dataset=DATASET),
           api_url)
-    spaces["warm-0"].enable_hook(api_url=api_url, dataset=DATASET,
-                                 node_sets=C.node_sets(FIXTURE))
+    spaces["warm-0"].enable_hook(api_url=api_url, dataset=DATASET)
     warm_home = spaces["warm-0"].home
     check("warm got a hooks.toml where Vibe looks for it",
           spaces["warm-0"].host.run_as(

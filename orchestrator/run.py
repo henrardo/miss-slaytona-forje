@@ -665,8 +665,8 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         # nowhere in cold's. The thing that was only supposed to load a
         # model was handing warm part of the answer.
         try:
-            await C.recall_node_set(
-                dataset=dataset, node_set="warmup-nothing-is-here",
+            await C.recalled(
+                dataset=dataset,
                 query="Priya Raman met Tomas Nowak in Lisbon on Tuesday to "
                       "discuss the quarterly logistics review at Acme "
                       "Freight.")

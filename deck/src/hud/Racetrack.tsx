@@ -13,40 +13,26 @@
  * and re-running the extractor updates both racers at once. Inlined rather than
  * loaded through `<img>`, which is also what lets the fills be rewritten at all.
  *
- * ── What the position means ──────────────────────────────────────────────
+ * ── What the racing means ────────────────────────────────────────────────
  *
- * Distance around the lap is progress, and WHICH NUMBER THAT IS depends on the
- * fixture — decided from the fixture's own data, and printed on the track.
+ * The lap is the journey each arm has left, and the speed is how close it has
+ * got: both are `closeness`, and the arithmetic is under CLOSENESS_PER_SECOND
+ * below. Nothing here interpolates, smooths or invents — every number on the
+ * track came out of an `ATTEMPT_DONE` line.
  *
- *   TESTS PASSED, the measure this project trusts (`tests_passed()` in
- *   orchestrator/vibe_agent.py: an error signature changing is not progress).
- *   Used when the suite actually moves, as it does on oapi: 5 -> 9 -> 33.
- *   No test TOTAL is ever emitted, so the lap is scaled between the lowest
- *   anyone reported and the best anyone reached.
+ * A racer whose latest attempt left files not parsing is haloed in the alarm
+ * colour, and the track says how many still compile. Closeness can be earned
+ * by an edit that does not compile, and a race that shows that as winning is
+ * a lie.
  *
- *   V1 SURFACES CLEARED, when the fixture reports them. On x12sdk the suite
- *   does not move — the harness's own note records 70% of 77 graded attempts
- *   scoring exactly 0, because 0 means both "has not migrated it yet" and
- *   "broke the package". A lap made of that is two Ms parked on the line for a
- *   whole talk. Surfaces are counted off the source, are defined even when the
- *   tree does not parse, and come with a real denominator: the untouched
- *   checkout, 383 of them.
+ * ONLY `FILE_DONE` with `success` stops a racer, on the line, because
+ * converging is the oracle's call and nothing else.
  *
- * On the surfaces lap an arm can lead BECAUSE it broke the package, so a racer
- * whose tree no longer parses is haloed in the alarm colour and the track says
- * how many of its files still compile.
- *
- * A leader is held at LEAD_CAP, short of the line. ONLY `FILE_DONE` with
- * `success` puts a racer on the line, because converging is the oracle's call
- * and nothing else. Without that cap the leader would sit pinned at the finish
- * from the first attempt onward, which is not a race and is not true.
- *
- * On the tests lap the denominator is the best result IN THE RUN BEING SHOWN.
- * Replaying a finished run that is known up front, so the ends of the lap stay
- * put and a racer only ever moves forwards. Live it can only be the best so
- * far — so when one arm sets a new record the lap lengthens for both and the
- * other loses ground relative to it. That is what a relative measure means,
- * and it is true: the leader really did pull away.
+ * FIXTURES WITHOUT AN ANSWER KEY report no closeness at all — `_closeness`
+ * returns None, and the harness's own chart document omits the panel rather
+ * than drawing zeroes. oapi, which the rehearsal loop runs, is one of them. On
+ * those the race falls back to tests passing (or v1 surfaces, if the fixture
+ * counts them) paced against the leader, and the track says so in those words.
  *
  * ── Live, or a replay ────────────────────────────────────────────────────
  *
@@ -107,24 +93,44 @@ const TOKEN = 0.4
 const LANES = { cold: 0.26, warm: 0.74 }
 
 /**
- * Seconds per lap, from no progress to all of it.
+ * ── The lap is the journey left; the speed is how close they are ─────────
  *
- * THE RACERS RUN. Position-as-progress was the first model and it does not
- * survive contact with the data: five graded attempts across a 15-second
- * rehearsal is five small hops and then stillness, and on x12sdk, where the
- * suite never moves, it was two Ms sitting on the start line for a whole talk.
- * A racetrack whose racers do not go round is a diagram.
+ * Both come from `closeness`, the harness's own measure of how far along the
+ * v1 -> v2 path a tree is: 0.0 is the untouched checkout, 1.0 is the human's
+ * merged PR, and negative means the attempt moved AWAY from the answer. It is
+ * what the harness itself now judges progress on (`moved = closeness > prior`
+ * in vibe_agent.py), where `prior` is the previous attempt's closeness.
  *
- * So progress is SPEED, not position. Both arms lap the board while the run is
- * going; the one making more of the measure laps faster and pulls away, and
- * the gap between them — and the lap counts on the track — is the race. An arm
- * that has converged stops at the line, because it is done.
+ *   TRACK LENGTH  `1 - closeness of the previous attempt` — the journey still
+ *                 to run as of where that arm last stood. An arm that was
+ *                 nearly there has a short lap and whips round it; one still
+ *                 at the start line has the whole distance to cover.
  *
- * A stalled arm still circles, slowly, which is true: it is still burning GPU
- * on attempts that are not landing. It is the LEAD that means progress.
+ *   SPEED         `closeness of the latest attempt`, in closeness-units per
+ *                 second. Closer to the answer, faster.
+ *
+ *   laps/second = closeness_now / (1 - closeness_prev)
+ *
+ * On the run going as this was written that is warm 0.054 over a lap of 0.942
+ * — 17s a lap — against cold 0.084 over 0.925, 11s a lap. No display constant
+ * in either number: one closeness-unit is one second, and the arithmetic is
+ * the whole model.
+ *
+ * NEGATIVE CLOSENESS RUNS BACKWARDS, because that is what it means. Warm's
+ * second attempt in `swarm-1789980175` scored -0.4267: it did not fail to
+ * progress, it took the tree further from the answer than the untouched
+ * checkout, and a racer that reverses says so better than any caption.
  */
-const LAP_SLOW_S = 26
-const LAP_FAST_S = 9
+const CLOSENESS_PER_SECOND = 1
+/** The shortest a lap may get, so a near-finished arm does not blur. */
+const LAP_FAST_S = 6
+/**
+ * And the slowest. An arm at closeness 0.001 would take twenty minutes a lap,
+ * which on stage is indistinguishable from the racer being broken — the fault
+ * this whole thing exists to fix. It crawls instead, and its closeness is
+ * printed on the track so the crawl is never mistaken for progress.
+ */
+const LAP_SLOW_S = 45
 
 const MOVE = '1100ms cubic-bezier(0.22, 1, 0.36, 1)'
 
@@ -187,15 +193,23 @@ export interface RacerState {
   /** This arm's progress, 0..1, on whichever measure the race is using. */
   share: number
   /**
-   * Pace, 0..1: this arm's progress as a fraction of the LEADER's.
+   * Closeness of this arm's latest graded attempt, and of the one before it.
+   * `now` is null until it has been graded once; `prev` falls back to 0.0,
+   * the untouched checkout, which is the same floor the harness judges the
+   * first attempt against.
+   */
+  closeness: { now: number | null; prev: number }
+  /** Seconds to complete one lap. Negative when the arm is going backwards. */
+  lapSeconds: number
+  /**
+   * Fallback pace, 0..1, used only when the fixture reports no closeness:
+   * this arm's progress as a fraction of the LEADER's.
    *
    * Absolute share is the wrong thing to drive speed with. On x12sdk warm
    * cleared 60 of 364 surfaces and cold 8 — shares of 0.16 and 0.02, which as
-   * lap times are 23.2s and 25.6s, a difference nobody in a room can see, for
-   * a run where one arm did seven times the work of the other. Against the
-   * leader those become 1.0 and 0.13, and warm laps the board nearly three
-   * times as fast, which is what the numbers actually say. The caption prints
-   * the raw counts, so the relative pace never has to be taken on trust.
+   * lap times are a difference nobody in a room can see, for a run where one
+   * arm did seven times the work of the other. Against the leader those
+   * become 1.0 and 0.13. The caption prints the raw counts either way.
    */
   pace: number
   /** Is this arm still in the race — run going, and it has not converged? */
@@ -212,8 +226,18 @@ export interface RacerState {
   t: number
 }
 
-/** Which number the lap is made of. Chosen from the data — see below. */
-export type Measure = { kind: 'tests' } | { kind: 'surfaces'; baseline: number }
+/**
+ * Which number the race is made of, in the order it is preferred.
+ *
+ * `closeness` is the model — see the note at the top. The other two exist
+ * because a fixture that ships NO REFERENCE ANSWER reports no closeness at
+ * all: `_closeness` returns None, and the harness's own chart document omits
+ * the panel rather than drawing zeroes. The rehearsal fixture (oapi) is one of
+ * those, so on REHEARSAL the race falls back to what that fixture does report,
+ * and the track says which number it is running on.
+ */
+export type Measure =
+  { kind: 'closeness' } | { kind: 'tests' } | { kind: 'surfaces'; baseline: number }
 
 /** What the track is showing, so it can say so. */
 export type RaceClock =
@@ -343,45 +367,37 @@ export function useRacers(armed: boolean): {
     let target = 0
     /** The untouched checkout's v1 surface count — the most anyone reported. */
     let baseline = 0
+    /** Does this fixture have an answer key at all? */
+    let hasCloseness = false
 
     for (const e of events as RunEvent[]) {
       const arm = e.swarm
       if (arm !== 'warm' && arm !== 'cold') continue
       if (e.type === 'ATTEMPT_DONE') {
         const passed = e.tests_passed ?? 0
-        // THE LAP IS SCALED TO THE WHOLE RUN BEING SHOWN, not to the prefix
-        // replayed so far. During a replay the ends of the lap are therefore
-        // fixed and nobody moves backwards; live, the run so far IS the whole
-        // run, so this is the same number it always was.
+        // The fallback scales are read from the WHOLE run being shown, not
+        // from the prefix replayed so far, so a replay's ends stay put.
         //
-        // The baseline is the LOWEST anyone reported, not the first. Usually
-        // the same number — the first graded attempt is generally the worst —
-        // but it cannot be swung by which arm happened to be graded first.
+        // The floor is the LOWEST anyone reported, not the first. Usually the
+        // same number — the first graded attempt is generally the worst — but
+        // it cannot be swung by which arm happened to be graded first.
         floor = floor === null ? passed : Math.min(floor, passed)
         target = Math.max(target, passed)
         baseline = Math.max(baseline, e.v1_remaining ?? 0)
+        if (typeof e.closeness === 'number') hasCloseness = true
       }
     }
 
-    // WHICH NUMBER THE LAP IS MADE OF, decided by the fixture's own data.
-    //
-    // `tests_passed` is the measure this project trusts, and on the oapi
-    // fixture it is the right one — the suite moves, 5 -> 9 -> 33. On x12sdk
-    // it does not: the harness's own note records 70% of 77 graded attempts
-    // scoring exactly 0, because 0 means both "has not migrated it yet" and
-    // "broke the package". A lap made of that number is two Ms parked on the
-    // line for a whole talk, which says nothing true about what the arms did.
-    //
-    // So when the fixture reports v1 surfaces left to migrate, the lap is
-    // SURFACES CLEARED — counted off the source, defined even when the tree
-    // does not parse, and with a real denominator (the untouched checkout).
-    // The choice is made from `v1_remaining`, which is a property of the
-    // fixture, not of how the run is going, so it cannot flip mid-race.
-    const measure: Measure =
-      baseline > 0 ? { kind: 'surfaces', baseline } : { kind: 'tests' }
+    const measure: Measure = hasCloseness
+      ? { kind: 'closeness' }
+      : baseline > 0
+        ? { kind: 'surfaces', baseline }
+        : { kind: 'tests' }
 
     const best: Record<Arm, number> = { warm: 0, cold: 0 }
     const cleared: Record<Arm, number> = { warm: 0, cold: 0 }
+    /** Every graded closeness so far, in order: the last two are the model. */
+    const close: Record<Arm, number[]> = { warm: [], cold: [] }
     const parse: Record<Arm, { ok: number; total: number } | null> = {
       warm: null,
       cold: null,
@@ -401,6 +417,10 @@ export function useRacers(armed: boolean): {
         if (typeof e.v1_remaining === 'number') {
           cleared[arm] = Math.max(cleared[arm], baseline - e.v1_remaining)
         }
+        // Closeness is kept LATEST, not best, and that is the point of it:
+        // it is where the tree stands now, and an attempt that made things
+        // worse has to be allowed to show as worse.
+        if (typeof e.closeness === 'number') close[arm].push(e.closeness)
         // Latest, not best: "does it compile RIGHT NOW" is the question.
         if (typeof e.parse_total === 'number' && typeof e.parse_ok === 'number') {
           parse[arm] = { ok: e.parse_ok, total: e.parse_total }
@@ -424,15 +444,45 @@ export function useRacers(armed: boolean): {
       )
     const leader = Math.max(shareOf('warm'), shareOf('cold'))
 
+    /** Seconds per lap, signed. The model, and then the two fallbacks. */
+    const lapSecondsFor = (arm: Arm, share: number): number => {
+      const c = close[arm]
+      let perSecond: number
+      if (measure.kind === 'closeness') {
+        const now = c.length ? c[c.length - 1] : null
+        if (now === null) return LAP_SLOW_S // not graded yet: a crawl
+        const prev = c.length > 1 ? c[c.length - 2] : 0
+        // Track length: the journey left as of the previous attempt.
+        const lapWork = Math.max(0.05, 1 - prev)
+        // Speed: how close this attempt got. Both in closeness units.
+        perSecond = (CLOSENESS_PER_SECOND * now) / lapWork
+      } else {
+        // No answer key for this fixture. Pace against the leader instead,
+        // which still ranks the arms; the caption names the number.
+        const pace = leader > 0 ? share / leader : 0
+        perSecond = pace / LAP_FAST_S
+      }
+      if (perSecond === 0) return LAP_SLOW_S
+      const secs = 1 / perSecond
+      const clamped = Math.min(LAP_SLOW_S, Math.max(LAP_FAST_S, Math.abs(secs)))
+      return secs < 0 ? -clamped : clamped
+    }
+
     const state = (arm: Arm): RacerState => {
       const share = shareOf(arm)
       // The oracle, and only the oracle, puts a racer on the line.
       const frac = done[arm] ? 1 : share * LEAD_CAP
+      const c = close[arm]
       return {
         arm,
         passed: best[arm],
         cleared: cleared[arm],
         share,
+        closeness: {
+          now: c.length ? c[c.length - 1] : null,
+          prev: c.length > 1 ? c[c.length - 2] : 0,
+        },
+        lapSeconds: lapSecondsFor(arm, share),
         pace: leader > 0 ? share / leader : 0,
         // A converged arm stops: it is parked at the line, not still lapping.
         running: !done[arm] && (play != null || growing),
@@ -479,24 +529,46 @@ export function useRacers(armed: boolean): {
 const mmss = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
-/** One line saying what the race means and where the numbers come from. */
+/**
+ * What the race says about itself: the standings, then the rule.
+ *
+ * TWO LINES, because one did not fit. The band is as wide as the stage — 1149
+ * canonical units on a 1920 viewport — and the single line this replaced
+ * measured 1553, so it hung off both ends of the track.
+ */
 function caption(
   c: RaceClock,
   warm: RacerState,
   cold: RacerState,
   laps: Record<Arm, number>,
-): string {
+): { top: string; sub: string } {
+  const signed = (n: number) => (n >= 0 ? '+' : '−') + Math.abs(n).toFixed(3)
+  /** One racer's numbers: what it scored, what that makes it, where it is. */
+  const line = (r: RacerState) => {
+    const rate = `${Math.round(Math.abs(r.lapSeconds))}s/lap${r.lapSeconds < 0 ? ' BACK' : ''}`
+    const score =
+      c.measure.kind === 'closeness'
+        ? r.closeness.now === null
+          ? 'ungraded'
+          : `c=${signed(r.closeness.now)}`
+        : c.measure.kind === 'surfaces'
+          ? `${r.cleared} cleared`
+          : `${r.passed} passing`
+    // `net`, because a racer that went backwards has a negative lap count and
+    // the sign is the point: it is behind where it started.
+    const net = laps[r.arm]
+    return `${r.arm} ${score} · ${rate} · net ${net < 0 ? '−' : ''}${Math.abs(net)}`
+  }
   const measure =
-    c.measure.kind === 'surfaces'
-      ? // "of 364 seen", not "of 383": the untouched count is never emitted,
-        // because the first graded attempt has already edited the tree. The
-        // raw counts are what make the pace checkable from the back of a room.
-        `speed = v1 surfaces cleared: warm ${warm.cleared} · cold ${cold.cleared}` +
-        ` of ${c.measure.baseline} seen`
-      : `speed = tests passing: warm ${warm.passed} · cold ${cold.passed}`
+    c.measure.kind === 'closeness'
+      ? 'lap = 1−closeness(prev) · speed = closeness(now)'
+      : c.measure.kind === 'surfaces'
+        ? // "of 364 seen", not "of 383": the untouched count is never emitted,
+          // because the first graded attempt has already edited the tree.
+          `no closeness on this fixture · v1 surfaces of ${c.measure.baseline} seen`
+        : 'no closeness on this fixture · tests passing, paced against the leader'
   const graded = c.graded === 0 ? 'no graded attempt yet' : `${c.graded} graded`
-  const score = `warm ${laps.warm} laps · cold ${laps.cold}`
-  // Clearing surfaces by breaking the package is not progress, and the race
+  // Closeness can be earned by an edit that does not compile, and the race
   // cannot tell the difference. Say it where it happens.
   const broken = [warm, cold]
     .filter((r) => r.parse && r.parse.ok < r.parse.total)
@@ -509,7 +581,10 @@ function caption(
       : c.mode === 'ready'
         ? 'finished run · Slay replays it'
         : 'live'
-  return [head, score, graded, measure, broken].filter(Boolean).join(' · ')
+  return {
+    top: [head, line(warm), line(cold)].join(' · '),
+    sub: [graded, measure, broken].filter(Boolean).join(' · '),
+  }
 }
 
 /**
@@ -523,10 +598,18 @@ function caption(
  * compositor is for. The only state is the lap COUNT, which changes once a lap
  * and is what the caption needs.
  *
- * Speed comes from `share`: a stalled arm still laps in LAP_SLOW_S, an arm
- * carrying the whole measure laps in LAP_FAST_S, and the ratio of the two is
- * how fast the leader pulls away. Distance resets when the race is armed, so
- * every press of Slay starts both arms on the line.
+ * AND THE TRANSFORM IS WRITTEN *ONLY* HERE. It was in the JSX too, at the
+ * position each arm's progress earned it, and the two writers fought: every
+ * re-render — the replay clock ticks four times a second, and a live run's
+ * index lands once a second — snapped both tokens back to a fixed spot, and
+ * the frame loop crawled away from it again. On screen that is two Ms
+ * twitching near two fixed points. Which one looked faster had nothing to do
+ * with either arm's progress; it was whichever had the further-round anchor.
+ * A ref written from one place, always, is the fix.
+ *
+ * Speed comes from `pace`: a stalled arm still laps in LAP_SLOW_S, the leader
+ * laps in LAP_FAST_S, and the ratio is how fast it pulls away. Distance resets
+ * when the race is armed, so every press of Slay starts both on the line.
  */
 function useLapping({
   warm,
@@ -555,6 +638,20 @@ function useLapping({
   const now = useRef({ warm, cold, ovals, origin, token })
   now.current = { warm, cold, ovals, origin, token }
 
+  /** The one place a token's transform is ever written. */
+  const place = (arm: Arm, at: number) => {
+    const s = now.current
+    const p = lapPoint(s.ovals[arm], at)
+    const el = refs[arm].current
+    if (el) {
+      el.style.transform =
+        `translate(${p.x - s.origin.x - s.token * 0.7}px, ` +
+        `${p.y - s.origin.y - s.token / 2}px)`
+    }
+  }
+
+  const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches
+
   useEffect(() => {
     if (!running) {
       dist.current = { warm: 0, cold: 0 }
@@ -563,7 +660,7 @@ function useLapping({
     }
     // Reduced motion: the racers hold the position their progress earns them,
     // which is the old behaviour and still says who is ahead.
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (still()) return
 
     let raf = 0
     let last = performance.now()
@@ -573,23 +670,15 @@ function useLapping({
       const s = now.current
       for (const arm of ['cold', 'warm'] as Arm[]) {
         const racer = s[arm]
-        if (racer.running) {
-          const lapS = LAP_SLOW_S + (LAP_FAST_S - LAP_SLOW_S) * racer.pace
-          dist.current[arm] += dt / lapS
-        }
-        // A converged arm parks on the line; everyone else is somewhere on
-        // their lap, offset past the start so a fresh racer is not sitting on
-        // the finisher's spot.
-        const at = racer.finished
-          ? FINISH_T
-          : START_T + (dist.current[arm] % 1) * (FINISH_T - START_T)
-        const p = lapPoint(s.ovals[arm], at)
-        const el = refs[arm].current
-        if (el) {
-          el.style.transform =
-            `translate(${p.x - s.origin.x - s.token * 0.7}px, ` +
-            `${p.y - s.origin.y - s.token / 2}px)`
-        }
+        // `lapSeconds` is signed: an arm whose latest attempt scored negative
+        // closeness took the tree further from the answer, and runs backwards.
+        if (racer.running) dist.current[arm] += dt / racer.lapSeconds
+        // A converged arm parks on the line. A running one uses the WHOLE lap,
+        // 0..1, deliberately: squeezing it into START_T..FINISH_T left a 3% gap
+        // at the line that the token hopped across once a lap — measured at
+        // ~104px. That inset exists to separate a finisher from a non-starter,
+        // and neither is a thing that is moving.
+        place(arm, racer.finished ? FINISH_T : dist.current[arm] % 1)
       }
       const counted = {
         warm: Math.floor(dist.current.warm),
@@ -604,6 +693,16 @@ function useLapping({
     return () => cancelAnimationFrame(raf)
     // Geometry is read through `now`, so a resize does not restart the race.
   }, [running])
+
+  // Parked, or reduced motion, or a resize while parked: place them from their
+  // progress. Deliberately on EVERY render rather than on a dependency list —
+  // it is two DOM writes, and the alternative is enumerating every value the
+  // geometry is derived from and being wrong once.
+  useEffect(() => {
+    if (running && !still()) return
+    place('cold', cold.t)
+    place('warm', warm.t)
+  })
 
   return { refs, laps }
 }
@@ -639,6 +738,8 @@ export function Racetrack({ outer, inner, radius, visible }: RacetrackProps) {
     token,
     running: visible,
   })
+
+  const says = caption(clock, warm, cold, laps)
 
   return (
     <div
@@ -689,38 +790,38 @@ export function Racetrack({ outer, inner, radius, visible }: RacetrackProps) {
           does not say whether it is live, replayed, or waiting for its first
           graded attempt is just an animation. */}
       <div
-        className="font-pixel absolute text-center"
+        className="font-pixel absolute flex flex-col items-center justify-center text-center"
         style={{
           left: 0,
           top: inner.y - outer.y - band,
           width: outer.w,
           height: band,
-          lineHeight: `${band}px`,
-          fontSize: Math.max(9, band * 0.34),
-          letterSpacing: '0.08em',
+          lineHeight: 1.15,
+          fontSize: Math.max(8, band * 0.29),
+          letterSpacing: '0.06em',
           color: alpha(NEO4J.cream, 0.5),
+          whiteSpace: 'nowrap',
         }}
       >
-        {caption(clock, warm, cold, laps)}
+        <span style={{ color: alpha(NEO4J.cream, 0.72) }}>{says.top}</span>
+        <span>{says.sub}</span>
       </div>
 
-      {racers.map(({ s, oval, art }) => {
-        const p = lapPoint(oval, s.t)
+      {racers.map(({ s, art }) => {
         return (
           <div
             key={s.arm}
             ref={refs[s.arm]}
             // Centred on the lane by half its own size; `left/top` stay fixed
             // and only the transform moves, so a lap is composited.
+            //
+            // NO `transform` HERE. `useLapping` owns it — see the note there
+            // for what happened when this element set one too.
             className="absolute left-0 top-0"
             style={{
               width: token * 1.4,
               height: token,
-              // Where it starts, and where it stays under reduced motion.
-              // While the race is on, `useLapping` writes this every frame and
-              // nothing here re-renders — see the note there.
-              transform: `translate(${p.x - outer.x - token * 0.7}px, ${p.y - outer.y - token / 2}px)`,
-              transition: s.running ? undefined : `transform ${MOVE}`,
+              transition: s.running ? 'none' : `transform ${MOVE}`,
               // A finisher keeps a hot halo, so "parked at the line" reads as
               // won rather than as stopped. A racer whose tree no longer
               // parses is haloed in the alarm colour instead: on the surfaces

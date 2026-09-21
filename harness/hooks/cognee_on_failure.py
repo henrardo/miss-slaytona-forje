@@ -29,11 +29,9 @@ Rules it must obey, because it runs inside the agent's clock:
     inferred.
 
 Environment, set per agent by the harness:
-    COGNEE_API               base URL of the Cognee REST API
-    COGNEE_DATASET           dataset to recall from
-    COGNEE_NODE_SET_FAILED   node set holding the attempts that did not work
-    COGNEE_NODE_SET_WORKED   node set holding the attempts that did
-    COGNEE_JOURNAL           path to append one JSON line per invocation
+    COGNEE_API      base URL of the Cognee REST API
+    COGNEE_DATASET  dataset to recall from
+    COGNEE_JOURNAL  path to append one JSON line per invocation
 """
 from __future__ import annotations
 
@@ -62,11 +60,10 @@ def journal(entry: dict) -> None:
         pass
 
 
-def recall(query: str, node_set: str) -> str:
+def recall(query: str) -> str:
     body = json.dumps({
         "query": query,
         "datasets": [os.environ.get("COGNEE_DATASET", "main_dataset")],
-        "nodeName": [node_set],
         "searchType": "CHUNKS",
         "onlyContext": True,
         "topK": 5,
@@ -104,30 +101,13 @@ def main() -> int:
     query = f"{command}\n{output}"[:QUERY_CHARS]
 
     started = time.monotonic()
-    blocks: list[str] = []
-    # FAILED FIRST: the block that says "do not repeat this" is the one worth
-    # the tokens when the agent has just repeated it. The label is carried
-    # alongside the node set rather than inferred from its name -- inferring
-    # it from a suffix mislabelled the failed block as WORKED the first time
-    # this ran.
-    for label, var in (("Earlier attempts that DID NOT WORK",
-                        "COGNEE_NODE_SET_FAILED"),
-                       ("Earlier attempts that WORKED",
-                        "COGNEE_NODE_SET_WORKED")):
-        node_set = os.environ.get(var)
-        if not node_set:
-            continue
-        try:
-            found = recall(query, node_set)
-        except (urllib.error.URLError, OSError, ValueError, KeyError):
-            # The agent must not pay for the graph being unreachable.
-            found = ""
-        if found:
-            blocks.append(f"{label} (graded by an independent test run):\n"
-                          f"{found}")
+    try:
+        text = recall(query)[:MAX_CHARS]
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        # The agent must not pay for the graph being unreachable.
+        text = ""
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
-    text = "\n\n".join(blocks)[:MAX_CHARS]
     journal({"tool": invocation.get("tool_name"), "status": status,
              "input": invocation.get("tool_input"),
              "error": output[:400], "recalled": len(text),

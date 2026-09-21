@@ -50,6 +50,13 @@ export interface RunEvent {
   parse_ok?: number | null
   parse_total?: number | null
   v1_remaining?: number | null
+  /**
+   * How far along the v1 -> v2 path this attempt got: 0.0 is the untouched
+   * checkout, 1.0 is the human's merged PR, and NEGATIVE means it moved away
+   * from the answer. `null` when the fixture ships no reference answer, which
+   * is different from zero — see `_closeness` in orchestrator/vibe_agent.py.
+   */
+  closeness?: number | null
   create_ms?: number | null
   steps?: number | null
   hits?: number | null
