@@ -208,6 +208,18 @@ VERDICT_RESERVE_S = 240.0
 # AgentWorkspace.recycle_control_master.
 MAX_CONSECUTIVE_ABORTS = 20
 ABORT_RECYCLE_EVERY = 5
+
+# HOW MANY PLAN-ONLY TURNS AN ATTEMPT IS RE-PROMPTED THROUGH. An attempt
+# that called neither `edit` nor `write_file` changed nothing, so grading
+# it spends a sandbox and ~40s of the shared clock to re-derive the
+# identical verdict and burns one of the attempts being counted. Measured
+# on runs 10 and 11: warm's a3 (28 turns) and cold's a2 (19 turns) each
+# audited the tree thoroughly, diagnosed the failure, and ended "Task
+# completed." without an edit.
+#
+# Two retries, then the attempt is graded anyway -- an agent that will not
+# edit must not eat the deadline, and the refusal belongs on the record.
+MAX_CONSECUTIVE_NOOPS = 2
 # How many times one attempt may be resumed after a truncated turn. Three is
 # enough for the observed failure (one bad turn, then the model carries on)
 # and small enough that a serving layer emitting nothing but unparseable
@@ -623,6 +635,7 @@ def _task_prompt(
     procedure: str | None = None,
     memory: str | None = None,
     verdict: str | None = None,
+    no_edits_last_turn: bool = False,
 ) -> str:
     """The user's request, and nothing else of ours.
 
@@ -835,6 +848,14 @@ def _task_prompt(
         base += ("\n\nNow make the edits. Work on the codebase itself rather "
                  "than on a plan or a report, and keep going until the suite "
                  "passes.")
+    # SAID ONLY TO AN AGENT THAT JUST DECLINED, and it is a measurement:
+    # zero `edit` and zero `write_file` calls in the turn that preceded
+    # this one. Re-prompting with a byte-identical prompt would invite the
+    # same plan-only turn -- and on runs 10 and 11 that turn was 19 to 28
+    # turns of audit, so the invitation is expensive.
+    if no_edits_last_turn:
+        base += ("\n\nYour previous turn made no edits to any file. Do not "
+                 "review or plan further. Change the code now.")
     # LAST, so it is the very first thing in the message. Vibe only treats a
     # prompt as a skill invocation when it STARTS with `/<name>`
     # (SkillManager.parse_skill_command: `stripped.startswith("/")`, then
@@ -882,6 +903,7 @@ def attempt_prompt(last_error: str | None, skill_name: str | None,
                    *, procedure: str | None = None,
                    memory: str | None = None,
                    verdict: str | None = None,
+                   no_edits_last_turn: bool = False,
                    mcp_tools: bool = False) -> str:
     """The prompt for one attempt. IDENTICAL BETWEEN THE ARMS except for
     warm's memory: the tools it is told it has, the procedure it wrote,
@@ -917,7 +939,8 @@ def attempt_prompt(last_error: str | None, skill_name: str | None,
     _ = skill_name
     return _task_prompt(last_error, memory_enabled=mcp_tools,
                         procedure=procedure, memory=memory,
-                        verdict=verdict)
+                        verdict=verdict,
+                        no_edits_last_turn=no_edits_last_turn)
 
 
 def _entry_text(entry: dict) -> str:
@@ -2075,6 +2098,8 @@ async def migrate_codebase(
     last_parse_ok: int | None = None
     # Reset by any attempt that reaches the model; see MAX_CONSECUTIVE_ABORTS.
     consecutive_aborts = 0
+    # Reset by any attempt that edits; see MAX_CONSECUTIVE_NOOPS.
+    consecutive_noops = 0
     # Zero, not None. The starting state is known, not unknown: pristine v1
     # under pydantic v2 dies at collection and passes 0 tests (verified
     # directly against the fixture). Seeding this as None made `advanced`
@@ -2237,6 +2262,7 @@ async def migrate_codebase(
                 procedure=procedure if mem is not None else None,
                 memory=retrieved or None,
                 verdict=last_verdict,
+                no_edits_last_turn=consecutive_noops > 0,
                 mcp_tools=bool(mem is not None and uses_mcp(mem.mode)),
             )
             _marks["task"] = task
@@ -2537,6 +2563,49 @@ async def migrate_codebase(
             break
 
         tools_used = workspace.tool_calls_total() - tools_before
+        # AN ATTEMPT THAT CHANGED NOTHING IS NOT AN ATTEMPT.
+        #
+        # Measured on run 11, cold attempt 2, off the transcript: it opened
+        # "Let me start by reviewing the codebase structure and
+        # understanding the current state", ran seventeen reads and greps,
+        # found that `_is_list_field` was missing, read the test that
+        # imports it -- and then emitted "Task completed." with no edit at
+        # all. It had diagnosed the bug and stopped. Warm's attempt 3 on
+        # run 10 did the same in 28 turns.
+        #
+        # The numbered list is the task as the operator wrote it, and its
+        # first step is "Review the entire codebase"; a model that
+        # finishes the review reads that as finishing the job. Moving the
+        # closing directive to the end of the prompt (verified present as
+        # the last line) did not stop it.
+        #
+        # ON THE TREE, not on the tool counts. Counting `edit` and
+        # `write_file` calls was the first version and it was wrong: cold
+        # has migrated whole files through `bash` heredocs, so a
+        # tool-count test would have re-prompted an agent that had just
+        # done the work. Byte-comparing the tree is exact and cannot
+        # care which tool did it.
+        #
+        # The harness declines to record it: grading a tree nobody touched
+        # spends a Daytona sandbox and ~40s of the shared clock to
+        # re-derive the identical verdict, and burns one of the attempts
+        # the experiment counts. Capped, because an agent that will not
+        # edit must not eat the deadline, and past the cap the attempt is
+        # graded so the refusal itself reaches the record.
+        unchanged = (last_tree is not None and file_contents == last_tree)
+        if unchanged and consecutive_noops < MAX_CONSECUTIVE_NOOPS:
+            consecutive_noops += 1
+            await emit(
+                "ATTEMPT_ABORTED",
+                attempt=attempt,
+                reason="attempt left the tree byte-identical",
+                consecutive=consecutive_noops,
+                turns_used=workspace.assistant_turns_total() - turns_before,
+                tools=dict(tools_used),
+            )
+            attempt -= 1
+            continue
+        consecutive_noops = 0
         # MEMORY_READ now reports the AGENT's retrieval, not the orchestrator's.
         # It fires once per attempt in which the agent called a read-side memory
         # tool itself, and does not fire at all when it did not -- which is the

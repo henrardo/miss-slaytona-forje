@@ -984,3 +984,56 @@ def test_recycling_the_master_is_an_ssh_exit_on_the_shared_path() -> None:
     # exist there too -- defined only on the host, the getattr missed and
     # the recovery never fired.
     assert hasattr(AgentWorkspace, "recycle_control_master")
+
+
+def test_an_attempt_that_edits_nothing_is_not_recorded() -> None:
+    """Grading a tree nobody touched is pure waste, and it burns an attempt.
+
+    Measured off the transcripts. Run 11 cold a2: it opened "Let me start
+    by reviewing the codebase structure", ran seventeen reads and greps,
+    found `_is_list_field` missing, read the test that imports it, then
+    emitted "Task completed." with no edit. Run 10 warm a3 did the same in
+    28 turns. Both were graded, both produced the identical verdict, and
+    both consumed one of the attempts the experiment counts.
+
+    The closing directive was verified present as the last line of the
+    prompt in both cases, so position alone does not fix this.
+    """
+    import inspect
+
+    from orchestrator.vibe_agent import MAX_CONSECUTIVE_NOOPS
+
+    assert MAX_CONSECUTIVE_NOOPS >= 1
+    src = inspect.getsource(vibe_agent.migrate_codebase)
+    # ON THE TREE, not on tool counts: cold has migrated whole files
+    # through `bash` heredocs, so counting `edit`/`write_file` calls would
+    # re-prompt an agent that had just done the work.
+    assert "file_contents == last_tree" in src
+    assert 'for name in ("edit", "write_file")' not in src
+    assert "consecutive_noops < MAX_CONSECUTIVE_NOOPS" in src
+    assert 'reason="attempt left the tree byte-identical"' in src
+    # Not counted, so the attempt number does not inflate...
+    noop = src[src.index('reason="attempt left the tree byte-identical"'):]
+    assert "attempt -= 1" in noop.split("consecutive_noops = 0")[0]
+    # ...and an attempt that does edit clears the counter.
+    assert "consecutive_noops = 0" in src
+    # Capped: past the cap it IS graded, so a refusal reaches the record
+    # rather than looping until the deadline.
+    assert "and consecutive_noops < MAX_CONSECUTIVE_NOOPS" in src
+
+
+def test_the_reprompt_differs_from_the_prompt_that_produced_nothing() -> None:
+    """Re-prompting byte-identically invites the same plan-only turn --
+    which cost 19 to 28 turns each time it happened."""
+    from orchestrator.vibe_agent import _task_prompt
+
+    same = _task_prompt("E: boom", memory_enabled=False, verdict="- 0 of 2")
+    after = _task_prompt("E: boom", memory_enabled=False, verdict="- 0 of 2",
+                         no_edits_last_turn=True)
+    assert after != same
+    assert after.startswith(same)
+    assert after.rstrip().endswith("Change the code now.")
+    assert "made no edits to any file" in after
+    # It is a measurement, not an accusation of laziness, and it is said
+    # only to an agent that just declined.
+    assert "made no edits" not in same
