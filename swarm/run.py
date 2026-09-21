@@ -357,7 +357,8 @@ def local_cognee_api(port: int):
             proc.kill()
 
 
-def assert_hook_can_read(api_url: str, *, dataset: str) -> list[str]:
+def assert_hook_can_read(api_url: str, *, dataset: str,
+                         node_set: str) -> list[str]:
     """Call the hook's own endpoint, with the hook's own payload.
 
     Not "the API answers /health". The failure this catches is the one every
@@ -366,8 +367,9 @@ def assert_hook_can_read(api_url: str, *, dataset: str) -> list[str]:
     silently appends nothing for the whole run and the log stays green.
     """
     body = json.dumps({"query": "pydantic v1 to v2 migration",
-                       "datasets": [dataset], "searchType": "CHUNKS",
-                       "onlyContext": True, "topK": 3}).encode()
+                       "datasets": [dataset], "nodeName": [node_set],
+                       "searchType": "CHUNKS", "onlyContext": True,
+                       "topK": 3}).encode()
     request = urllib.request.Request(
         f"{api_url}/api/v1/recall", data=body,
         headers={"Content-Type": "application/json"})
@@ -928,10 +930,12 @@ async def main_async(args, watch=None) -> int:
             # call either.
             hook_api = getattr(args, "hook_api_url", "")
             if args.hook and hook_api:
-                ws.enable_hook(api_url=hook_api, dataset=dataset)
+                ws.enable_hook(api_url=hook_api, dataset=dataset,
+                               node_set=C.node_set(FIXTURE_DIR.name))
                 problems = assert_hook_can_read(
                     f"http://127.0.0.1:{args.cognee_api_local_port}",
-                    dataset=dataset)
+                    dataset=dataset,
+                    node_set=C.node_set(FIXTURE_DIR.name))
                 if problems:
                     raise RuntimeError("; ".join(problems))
                 print(f"  {label} post_tool hook: registered on `bash`, "

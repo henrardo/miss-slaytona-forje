@@ -963,7 +963,8 @@ class AgentWorkspace:
         """
         return path
 
-    def enable_hook(self, *, api_url: str, dataset: str) -> None:
+    def enable_hook(self, *, api_url: str, dataset: str,
+                    node_set: str) -> None:
         """Register the deterministic read. Warm only.
 
         A Vibe `post_tool` hook on `bash`: when the agent's own command
@@ -993,6 +994,7 @@ class AgentWorkspace:
         self._hook_env = {
             "COGNEE_API": api_url,
             "COGNEE_DATASET": dataset,
+            "COGNEE_NODE_SET": node_set,
             "COGNEE_JOURNAL": self.agent_path(self.hook_journal),
         }
 

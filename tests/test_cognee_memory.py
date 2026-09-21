@@ -156,11 +156,15 @@ def test_the_wrapper_is_cognees_own_decorator_configured_per_attempt(
         return 0
 
     C.with_agent_memory(body, dataset="ds", session_id="ds:run:warm-0",
-                        agent_session_name="msf:warm-0")
+                        agent_session_name="msf:warm-0",
+                        node_set_name="msf-x12sdk")
     kwargs = fake_cognee.agent_memory_calls[-1]
     assert kwargs["dataset_name"] == "ds"
     assert kwargs["session_id"] == "ds:run:warm-0"
     assert kwargs["save_session_traces"] is True
+    # The bridged traces must land where the scoped read looks. Left at the
+    # default node set the write is unscoped and the read finds nothing.
+    assert kwargs["persist_session_trace_node_set_name"] == "msf-x12sdk"
 
 
 def test_the_decorator_does_not_retrieve(fake_cognee) -> None:
@@ -178,7 +182,8 @@ def test_the_decorator_does_not_retrieve(fake_cognee) -> None:
         return 0
 
     C.with_agent_memory(body, dataset="ds", session_id="s",
-                        agent_session_name="msf:warm-0")
+                        agent_session_name="msf:warm-0",
+                        node_set_name="msf-x12sdk")
     kwargs = fake_cognee.agent_memory_calls[-1]
     assert kwargs["with_memory"] is False
     assert kwargs["save_session_traces"] is True
@@ -298,13 +303,13 @@ def test_no_distill_writes_nothing_at_all(fake_cognee, monkeypatch) -> None:
 # --- 5. the read ----------------------------------------------------------
 
 
-def test_the_brief_is_the_code_graph_and_one_plain_recall(
+def test_the_brief_is_the_code_graph_and_one_recall(
         fake_cognee, monkeypatch) -> None:
     """Two blocks, neither of them this harness's opinion: the code graph as
     SearchType.CODE reports it, and ONE recall against the failure this
-    attempt is working on -- no node-set filter, no WORKED/DID-NOT-WORK
-    labels of ours. What comes back is whatever `improve`'s
-    `distill_sessions` stage put in the graph."""
+    attempt is working on. No WORKED/DID-NOT-WORK split and no documents of
+    ours -- what comes back is whatever `improve`'s `distill_sessions` stage
+    and the bridged traces put in the graph."""
     fake_cognee.graph = ["Replace the removed regex field constraint with "
                          "the supported pattern constraint."]
     monkeypatch.setattr(C, "code_brief", _async_value("13 module(s): v4010"))
@@ -322,7 +327,13 @@ def test_the_brief_is_the_code_graph_and_one_plain_recall(
     assert call["query"] == "E   PydanticUserError: regex is removed"
     assert call["datasets"] == ["ds"]
     assert call["only_context"] is True
-    assert "node_name" not in call, "no node-set filter of ours"
+    # SCOPED BY NODE SET, because `datasets` does not scope a recall.
+    # MEASURED on a live pod run with no filter: warm was handed
+    # `regex -> pattern`, where `BaseSettings` moved to and
+    # `allow_mutation -> frozen` out of two scratch datasets from local
+    # testing, and cleared 67 v1 surfaces on its first attempt because it
+    # had been given the answer.
+    assert call["node_name"] == [C.node_set("x12sdk")]
 
 
 def test_the_brief_drops_the_warming_up_marker(fake_cognee) -> None:

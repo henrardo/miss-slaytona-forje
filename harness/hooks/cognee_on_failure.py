@@ -29,9 +29,12 @@ Rules it must obey, because it runs inside the agent's clock:
     inferred.
 
 Environment, set per agent by the harness:
-    COGNEE_API      base URL of the Cognee REST API
-    COGNEE_DATASET  dataset to recall from
-    COGNEE_JOURNAL  path to append one JSON line per invocation
+    COGNEE_API       base URL of the Cognee REST API
+    COGNEE_DATASET   dataset to recall from
+    COGNEE_NODE_SET  node set to scope the recall to -- a recall does NOT
+                     honour the dataset, and without this the hook served
+                     another fixture's answers on a live pod run
+    COGNEE_JOURNAL   path to append one JSON line per invocation
 """
 from __future__ import annotations
 
@@ -64,6 +67,7 @@ def recall(query: str) -> str:
     body = json.dumps({
         "query": query,
         "datasets": [os.environ.get("COGNEE_DATASET", "main_dataset")],
+        "nodeName": [os.environ["COGNEE_NODE_SET"]],
         "searchType": "CHUNKS",
         "onlyContext": True,
         "topK": 5,

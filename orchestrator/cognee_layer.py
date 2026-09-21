@@ -111,6 +111,26 @@ async def assert_ready() -> dict[str, Any]:
     return {"apoc_procedures": apoc, "nodes": counts[0]["n"] if counts else 0}
 
 
+def node_set(fixture: str) -> str:
+    """The one node set a fixture's memory lives in.
+
+    SCOPING ONLY. There is no worked/failed split and no document of ours in
+    here -- `success_score` and `feedback` are the signal. This exists
+    because a Cognee `recall` does not honour the dataset it is given, and
+    node sets are the only thing that does.
+
+    MEASURED THREE TIMES, the third on a live pod run: with no node-set
+    filter, `recall(datasets=["msf-x12sdk"])` handed warm content from
+    `msf-probe` and `proof2-x12sdk` -- scratch datasets from local testing
+    that happened to contain `regex -> pattern`, where `BaseSettings` moved
+    to, and `allow_mutation -> frozen`. Warm cleared 67 v1 surfaces on its
+    first attempt because it had been given the answer. `--reset-memory`
+    does not help: it forgets one dataset and the other twenty-four stay
+    readable.
+    """
+    return f"msf-{fixture}"
+
+
 # ---- the code graph --------------------------------------------------
 
 
@@ -488,8 +508,8 @@ async def _apply_improvement(proposal_id: str, *,
 # ---- reads -----------------------------------------------------------
 
 
-async def recalled(*, dataset: str, query: str, top_k: int = 8,
-                   limit: int = MAX_BLOCK_CHARS) -> str:
+async def recalled(*, dataset: str, fixture: str, query: str,
+                   top_k: int = 8, limit: int = MAX_BLOCK_CHARS) -> str:
     """What Cognee has to say about `query`, as Cognee says it.
 
     One `recall`, no node-set filter and no labels of ours. What comes back
@@ -505,9 +525,9 @@ async def recalled(*, dataset: str, query: str, top_k: int = 8,
     Never fatal: this runs inside the attempt body, so an unreachable graph
     must cost the memory and not the attempt.
 
-    NOTE, measured: `datasets=` does not scope a recall -- content written to
-    another dataset comes back too. That is Cognee's behaviour and this reads
-    it as it is.
+    `node_name` IS THE SCOPE, not `datasets` -- see node_set(). Passing the
+    dataset alone put another fixture's answers in warm's prompt on a live
+    pod run.
     """
     try:
         import cognee
@@ -515,7 +535,8 @@ async def recalled(*, dataset: str, query: str, top_k: int = 8,
 
         entries = await cognee.recall(
             query or "pydantic v1 to v2 migration", datasets=[dataset],
-            query_type=SearchType.CHUNKS, only_context=True, top_k=top_k)
+            node_name=[node_set(fixture)], query_type=SearchType.CHUNKS,
+            only_context=True, top_k=top_k)
     except Exception as exc:
         print(f"  recall() could not read the graph ({exc!r}); this attempt "
               f"runs without it")
@@ -561,7 +582,8 @@ async def bridge(session_ids: list[str], *,
 
 def with_agent_memory(fn: Callable[..., Awaitable[Any]], *,
                       dataset: str, session_id: str,
-                      agent_session_name: str) -> Callable[..., Awaitable[Any]]:
+                      agent_session_name: str,
+                      node_set_name: str) -> Callable[..., Awaitable[Any]]:
     """Cognee's decorator around one attempt: it WRITES the trace.
 
     `with_memory=False` because the decorator's retrieval is hardwired to
@@ -577,6 +599,24 @@ def with_agent_memory(fn: Callable[..., Awaitable[Any]], *,
         with_memory=False,
         with_session_memory=True,
         save_session_traces=True,
+        # THE BRIDGE, AND WHERE IT LANDS. These two go together and neither
+        # works alone.
+        #
+        # `save_session_traces` writes to the SESSION CACHE, which only
+        # `with_session_memory` can see -- the docs are explicit that
+        # `persist_session_trace_after=N` is what memifies them into the
+        # permanent graph. Without it the scoped read came back empty over a
+        # clean graph: the traces existed and nothing but their own session
+        # could reach them.
+        #
+        # N=1, because an attempt is the unit -- the grader has just spoken,
+        # and a trace that waits for two more attempts is a trace the next
+        # attempt cannot read.
+        persist_session_trace_after=1,
+        # ...into the FIXTURE's node set, because that is what the read
+        # filters on. Left at the default (`agent_trace_feedbacks`) the write
+        # is unscoped and the scoped read finds nothing.
+        persist_session_trace_node_set_name=node_set_name,
     )(fn)
 
 
@@ -726,7 +766,7 @@ class CogneeMemory:
         if not uses_injection(self.mode):
             return ""
         memory = await _bounded(
-            recalled(dataset=self.dataset, query=query),
+            recalled(dataset=self.dataset, fixture=self.fixture, query=query),
             READ_TIMEOUT_S, "recall", "")
         code = ""
         if self.code_dataset and self.code_repo:
@@ -760,7 +800,8 @@ class CogneeMemory:
             return fn
         return with_agent_memory(
             fn, dataset=self.dataset, session_id=self.session_id,
-            agent_session_name=f"msf:{self.label}", **kwargs)
+            agent_session_name=f"msf:{self.label}",
+            node_set_name=node_set(self.fixture), **kwargs)
 
     async def record(self, **kwargs) -> dict[str, Any]:
         if self.mode == "off":

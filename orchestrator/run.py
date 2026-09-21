@@ -666,7 +666,7 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         # model was handing warm part of the answer.
         try:
             await C.recalled(
-                dataset=dataset,
+                dataset=dataset, fixture=FIXTURE_DIR.name,
                 query="Priya Raman met Tomas Nowak in Lisbon on Tuesday to "
                       "discuss the quarterly logistics review at Acme "
                       "Freight.")

@@ -116,6 +116,15 @@ async def main(args) -> int:
         for line in brief.splitlines():
             print(f"  | {line}")
 
+        # THROUGH THE DECORATOR, as the real loop does. Driving `record`
+        # alone tested a path no run takes: it is `agent_memory` that writes
+        # the trace, and the trace is what `improve` bridges and the read
+        # finds.
+        async def body(last_error=None, *, n=i, a=attempt):
+            return (f"attempt {n}: {a['summary']} "
+                    f"suite still fails with {a['error_signature']}")
+
+        await mem.wrap_attempt(body)(attempt["error_signature"])
         written = await mem.record(attempt=i, **attempt)
         print(f"  recorded: {written}")
         check(f"attempt {i}'s score reached Cognee",
