@@ -541,12 +541,27 @@ def test_warms_prompt_carries_the_procedure_and_the_brief() -> None:
 
 
 def test_the_prompt_says_where_the_two_halves_came_from() -> None:
-    """A model handed two contradictory paragraphs with no provenance has to
-    guess which to trust. The grader ran the real suite; say so."""
+    """A model handed two paragraphs with no provenance has to guess which
+    to trust -- and the header must not promise content that is absent.
+
+    It used to say "the WORKED section is verified progress; repeat it.
+    The DID NOT WORK section is verified waste; do something else". Those
+    were two node sets the harness wrote documents into, and they were
+    removed when `success_score` and `feedback` became the signal. The
+    sentence stayed. For four attempts of run 7 warm was told to find two
+    sections that did not exist, above three lines of harness telemetry.
+
+    The grader's own numbers do reach the prompt -- as the verdict block,
+    which `test_the_verdict_states_the_graders_numbers_and_adds_nothing`
+    pins. This block is the code graph and the attempt accounts, so this
+    is what it may claim to be.
+    """
     warm = attempt_prompt(None, None, memory="something a previous agent did")
-    assert "independent grader" in warm
-    assert "WORKED section is verified progress" in warm
-    assert "DID NOT WORK section is verified waste" in warm
+    assert "what earlier attempts on this same checkout did to it" in warm
+    assert "measured rather than claimed" in warm
+    for absent in ("WORKED section", "DID NOT WORK section"):
+        assert absent not in warm, (
+            f"the header promises a {absent!r} that no longer exists")
 
 
 # --- 8. the loop, end to end ----------------------------------------------
@@ -990,3 +1005,102 @@ def test_a_code_read_with_a_limit_stops_at_it(monkeypatch) -> None:
     got = asyncio.run(C._code_query("ds", {"operation": "query_facts",
                                            "limit": 600}, repo="r"))
     assert len(got) == 600
+
+
+# --- 10. what the trace actually stores -----------------------------------
+
+
+def test_the_trace_carries_the_migration_not_the_exit_code() -> None:
+    """The return value of the decorated body IS warm's memory.
+
+    `agent_memory` stores it as the trace's `method_return_value`,
+    `persist_session_trace_after=1` bridges that trace into the fixture's
+    node set, and the node set is the only thing `recall` can read.
+
+    It used to be `f"attempt {n}: vibe exited {code} after {turns}
+    assistant turn(s)"`. Run 7 measured what that does: warm's fourth
+    attempt was handed three lines reading "migrate_codebase.<locals>.
+    _attempt_turn succeeded. Output: attempt 2: vibe exited 0 after 131
+    assistant turn(s)" as its memory of the migration, with "succeeded"
+    on three attempts that had all failed. Warm went 323 -> 259 -> 259 ->
+    303 v1 surfaces; cold, with no memory, went 383 -> 48 -> 1.
+    """
+    from orchestrator.vibe_agent import _attempt_account
+
+    before = {
+        "x12sdk/v4010/segments.py": b"a: condecimal(gt=0)\nb: conint(ge=1)\n",
+        "x12sdk/models.py": b"from pydantic.fields import ModelField\n",
+        "x12sdk/parsing.py": b"x = m.schema()\n",
+    }
+    after = {
+        # Converted, in the answer key's own form.
+        "x12sdk/v4010/segments.py":
+            b"a: Annotated[Decimal, Field(gt=0)]\nb: Annotated[int, Field(ge=1)]\n",
+        # Untouched.
+        "x12sdk/models.py": b"from pydantic.fields import ModelField\n",
+        # Broken while being edited.
+        "x12sdk/parsing.py": b"x = m.model_json_schema(\n",
+    }
+    account = _attempt_account(
+        attempt=3, package_path="x12sdk", tree=after, prev_tree=before,
+        prev_v1=4, prev_parse_ok=3,
+        started_from="NameError: name 'conint' is not defined")
+
+    # The failure it started from, so the entry is retrievable against a
+    # later attempt hitting the same thing.
+    assert "NameError: name 'conint' is not defined" in account
+    # What changed, measured off the trees rather than reported by the
+    # model. models.py was not touched, so it must not be listed as
+    # changed -- though it does appear below as where a surface remains.
+    changed = next(line for line in account.splitlines()
+                   if line.startswith("Changed "))
+    assert "x12sdk/v4010/segments.py" in changed and "parsing.py" in changed
+    assert "models.py" not in changed, "unchanged file reported as work"
+    # How the surfaces moved, in both directions.
+    # 4 -> 2: the untouched models.py line matches both `pydantic.fields`
+    # and `ModelField`, so it counts twice. The account reports the
+    # measure as it is defined, not a tidier number.
+    assert "v1 surfaces 4 -> 2." in account
+    assert "Cleared: 2 x conint/constr/etc" in account
+    assert "1 x schema()/schema_json()" in account
+    # What is left, named.
+    assert "Still left: 2 x pydantic.fields/ModelField" in account
+    # And that the package is broken, which is the fact that decides what
+    # the next attempt must do first.
+    assert "2 of 3 source files parse (was 3) -- the package cannot be " \
+           "imported." in account
+    # None of the old telemetry.
+    for telemetry in ("vibe exited", "assistant turn", "Task completed"):
+        assert telemetry not in account, telemetry
+    assert len(account) <= 950, len(account)
+
+
+def test_the_account_reports_surfaces_it_put_back() -> None:
+    """An attempt that undoes an earlier one is the failure mode warm hit
+    on run 7 attempt 4, going 259 -> 303. Silence about that reads as no
+    change."""
+    from orchestrator.vibe_agent import _attempt_account
+
+    before = {"x12sdk/a.py": b"x: Annotated[int, Field(ge=1)]\n"}
+    after = {"x12sdk/a.py": b"x: conint(ge=1)\ny: conint(ge=2)\n"}
+    account = _attempt_account(
+        attempt=4, package_path="x12sdk", tree=after, prev_tree=before,
+        prev_v1=0, prev_parse_ok=1, started_from=None)
+    assert "REINTRODUCED: 2 x conint/constr/etc" in account
+    assert "v1 surfaces 0 -> 2." in account
+
+
+def test_the_first_attempt_reports_state_without_a_comparison() -> None:
+    """Attempt 1 has no predecessor. It must still say where the tree is."""
+    from orchestrator.vibe_agent import _attempt_account
+
+    account = _attempt_account(
+        attempt=1, package_path="x12sdk",
+        tree={"x12sdk/a.py": b"@validator\ndef f(): pass\n"},
+        prev_tree=None, prev_v1=None, prev_parse_ok=None, started_from=None)
+    assert "v1 surfaces remaining: 1." in account
+    # No comparison of any kind: no before-and-after arrow in the body, no
+    # claim about what changed. (The title says "v1 -> v2", which is the
+    # task, not a measurement.)
+    assert "surfaces 1 ->" not in account
+    assert "Cleared" not in account and "Changed" not in account

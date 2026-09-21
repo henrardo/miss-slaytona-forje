@@ -749,11 +749,16 @@ def _task_prompt(
         base += ("\n\nYour procedure for this task, as you last revised it:"
                  f"\n```\n{procedure.strip()}\n```")
     if memory:
+        # DESCRIBES WHAT THE BLOCK ACTUALLY IS. It used to promise "the
+        # WORKED section is verified progress; repeat it. The DID NOT WORK
+        # section is verified waste" -- two node sets that were removed
+        # when the harness's document layer came out. So warm was told to
+        # look for two sections that did not exist, above three lines of
+        # telemetry, for four attempts of run 7.
         base += ("\n\n## Your memory of this codebase\n\n"
-                 "Written by an independent grader that ran the real test "
-                 "suite before and after each earlier attempt. The WORKED "
-                 "section is verified progress; repeat it. The DID NOT WORK "
-                 "section is verified waste; do something else.\n\n"
+                 "Two things, both measured rather than claimed: what the "
+                 "code graph knows about this codebase, and what earlier "
+                 "attempts on this same checkout did to it.\n\n"
                  f"{memory.strip()}")
     # The one thing the agent genuinely cannot see for itself: the verdict from
     # a suite that ran somewhere else, in Daytona, after its turn ended. Stated
@@ -1280,6 +1285,109 @@ def _tool_results(lines: list[str]) -> dict[str, str]:
             content = content[:_MAX_OBSERVATION_CHARS] + " ...(truncated)"
         out[call_id] = content
     return out
+
+
+def _attempt_account(*, attempt: int, package_path: str | None,
+                     tree: dict[str, bytes],
+                     prev_tree: dict[str, bytes] | None,
+                     prev_v1: int | None, prev_parse_ok: int | None,
+                     started_from: str | None,
+                     limit: int = 950) -> str:
+    """What this attempt DID, measured off its tree. Cognee's only content.
+
+    THIS STRING IS WARM'S MEMORY. `agent_memory` stores the decorated
+    body's return value as the trace's `method_return_value`, that trace
+    is what `persist_session_trace_after=1` bridges into the fixture's
+    node set, and that node set is the only thing `recall` can read. So
+    whatever this returns IS what a later attempt is handed.
+
+    It used to return `f"attempt {n}: vibe exited {code} after {turns}
+    assistant turn(s)"`. Measured on run 7, warm's fourth attempt was
+    handed exactly this as its memory of the migration:
+
+        migrate_codebase.<locals>._attempt_turn succeeded. Output:
+        attempt 2: vibe exited 0 after 131 assistant turn(s); (no stop
+        event) last entry message: Task completed.
+
+    Three of those, one per prior attempt, and not a word about pydantic.
+    "succeeded" is the decorator's word for "returned without raising",
+    so every failed attempt read as a success. Warm went 323 -> 259 ->
+    259 -> 303 v1 surfaces on that diet while cold, with no memory at
+    all, went 383 -> 48 -> 1.
+
+    Everything here is measured, not claimed: which files changed, how
+    the surface counts moved, whether the tree still parses. The verdict
+    proper does not exist yet -- the suite runs in Daytona after this
+    returns -- so the failure the attempt STARTED from is named instead,
+    which is what makes the entry retrievable against a later failure.
+
+    Bounded well under Cognee's MAX_SERIALIZED_VALUE_LENGTH of 1,000,
+    because a truncated last line reads as content that stops mid-fact.
+    """
+    parse_ok, parse_total = surfaces.parses(tree, within=package_path)
+    v1_now = surfaces.count(tree, within=package_path)
+    lines = [f"Attempt {attempt} on the {package_path or 'package'} "
+             f"Pydantic v1 -> v2 migration."]
+    if started_from:
+        lines.append(f"Started from the suite failing with: "
+                     f"{started_from.strip()[:160]}")
+
+    if prev_tree is not None:
+        changed = sorted(path for path, blob in tree.items()
+                         if prev_tree.get(path) != blob)
+        if changed:
+            shown = ", ".join(changed[:4])
+            more = (f", and {len(changed) - 4} more"
+                    if len(changed) > 4 else "")
+            lines.append(f"Changed {len(changed)} file(s): {shown}{more}")
+        else:
+            lines.append("Changed no files.")
+
+    if prev_v1 is not None:
+        lines.append(f"v1 surfaces {prev_v1} -> {v1_now}.")
+        before = (surfaces.breakdown(prev_tree, within=package_path)
+                  if prev_tree is not None else {})
+        after = surfaces.breakdown(tree, within=package_path)
+        cleared = {k: before[k] - after.get(k, 0) for k in before
+                   if before[k] > after.get(k, 0)}
+        added = {k: after[k] - before.get(k, 0) for k in after
+                 if after[k] > before.get(k, 0)}
+        if cleared:
+            lines.append("Cleared: " + ", ".join(
+                f"{n} x {k}" for k, n in
+                sorted(cleared.items(), key=lambda kv: -kv[1])[:4]))
+        if added:
+            lines.append("REINTRODUCED: " + ", ".join(
+                f"{n} x {k}" for k, n in
+                sorted(added.items(), key=lambda kv: -kv[1])[:4]))
+    else:
+        lines.append(f"v1 surfaces remaining: {v1_now}.")
+
+    left = surfaces.as_work_list(tree, within=package_path,
+                                 max_surfaces=3, max_files=2)
+    if left:
+        lines.append("Still left: " + "; ".join(left))
+
+    parse_note = f"{parse_ok} of {parse_total} source files parse"
+    if prev_parse_ok is not None and prev_parse_ok != parse_ok:
+        parse_note += f" (was {prev_parse_ok})"
+    if parse_ok < parse_total:
+        parse_note += " -- the package cannot be imported"
+    lines.append(parse_note + ".")
+
+    return _cap_text("\n".join(lines), limit)
+
+
+def _cap_text(text: str, limit: int) -> str:
+    """Whole lines only, so the last fact is never half a fact."""
+    if len(text) <= limit:
+        return text
+    kept: list[str] = []
+    for line in text.splitlines():
+        if sum(len(item) + 1 for item in kept) + len(line) > limit:
+            break
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def _collect_file_contents(repo_dir: Path) -> dict[str, bytes]:
@@ -1884,6 +1992,12 @@ async def migrate_codebase(
     # NOT seeded, for the same reason `last_error` is not: on attempt 1 there
     # is no attempt of the agent's own to have measured.
     last_verdict: str | None = None
+    # THE PREVIOUS ATTEMPT'S TREE, kept so the account warm reads can say
+    # which files this attempt changed and which surfaces it cleared,
+    # measured rather than taken from the model's word for it. None on
+    # attempt 1, which reports its state without a comparison.
+    last_tree: dict[str, bytes] | None = None
+    last_parse_ok: int | None = None
     # Zero, not None. The starting state is known, not unknown: pristine v1
     # under pydantic v2 dies at collection and passes 0 tests (verified
     # directly against the fixture). Seeding this as None made `advanced`
@@ -2053,22 +2167,23 @@ async def migrate_codebase(
             code, output = await _drive_vibe(task, attempt=attempt)
             _marks["fn_ended"] = time.monotonic()
             _marks["result"] = (code, output)
-            # A SHORT RETURN VALUE, and it has to be one. The decorator
-            # stores this as the trace's `method_return_value`, Cognee
-            # truncates it at 1,000 characters (MAX_SERIALIZED_VALUE_
-            # LENGTH), and `improve`'s distillation stage reads exactly
-            # that field when there is no LLM summary. Returning the Vibe
-            # stream would put its first kilobyte -- JSON framing, a
-            # directory listing -- into the graph as this attempt's
-            # lesson, which is worse than storing nothing because it
-            # reads as content.
-            #
-            # The real result travels in `_marks`; the verdict is not here
-            # at all, because it does not exist yet. It reaches Cognee
-            # after the grader has spoken, as the SkillRun score.
-            return (f"attempt {attempt}: vibe exited {code} after "
-                    f"{workspace.assistant_turns_total() - turns_before} "
-                    f"assistant turn(s); {stop_reason(output)}")
+            # THE TREE, COLLECTED ONCE. After `fn_ended`, so the transfer
+            # is charged to off_clock rather than to the agent's thinking
+            # time, and stashed for the grader below so the attempt pays
+            # for exactly one collection either way.
+            tree = workspace.collect_file_contents()
+            _marks["tree"] = tree
+            # WHAT THIS ATTEMPT DID, and it is the whole of warm's
+            # memory: the decorator stores this return value as the
+            # trace's `method_return_value`, the trace bridges into the
+            # fixture's node set, and that node set is all `recall` can
+            # read. This used to return the exit code and a turn count,
+            # which is what warm was reading back instead of the
+            # migration. See `_attempt_account`.
+            return _attempt_account(
+                attempt=attempt, package_path=package_path, tree=tree,
+                prev_tree=last_tree, prev_v1=last_v1,
+                prev_parse_ok=last_parse_ok, started_from=last_signature)
 
         async def _drive_vibe(task: str, *, attempt: int) -> tuple[int, str]:
             # EVERY ATTEMPT STARTS A FRESH SESSION, IN BOTH ARMS.
@@ -2244,7 +2359,12 @@ async def migrate_codebase(
             # attempts per run across runs 44-47 while warm completed 8-10.
             # The hook pays one loopback round-trip per tool call instead, and
             # defers embedding to complete_trace's batch.
-            file_contents = workspace.collect_file_contents()
+            # ALREADY COLLECTED, inside the decorator, so the account warm
+            # reads and the tree the grader scores are the same bytes.
+            # Falls back for the paths that do not go through
+            # `_attempt_turn` (an aborted attempt, the local orchestrator).
+            file_contents = (_marks.pop("tree", None)
+                             or workspace.collect_file_contents())
             # THE TREE THIS ATTEMPT PRODUCED, handed out before it is
             # graded. Free: the grader needs it anyway, so nothing extra is
             # collected or transferred. Only the FINAL tree was ever kept,
@@ -2863,6 +2983,11 @@ async def migrate_codebase(
             # raising the bar to it would make the attempt that un-shims the
             # file and legitimately improves read as a regression.
             last_closeness = closeness
+        # UPDATED ON EVERY ATTEMPT, rejected or not, because these two are
+        # not a bar to beat -- they are what the next attempt's account
+        # compares against, and it has to describe what actually happened.
+        last_tree = file_contents
+        last_parse_ok = parse_ok
         last_error = _trim_error_for_prompt(_localize_sandbox_paths(result.output, vibe_cwd))
         # Every number the grader has, and no gloss on any of them. The v1
         # count carries its starting value because a bare "47 remaining"
