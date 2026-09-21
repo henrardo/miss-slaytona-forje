@@ -527,6 +527,34 @@ class AgentWorkspace:
     def repo_path(self) -> str:
         return f"{self.home}/{self.repo_name}"
 
+    # WHAT BELONGS IN AN AGENT'S HOME. Everything else at the top level is
+    # something the agent wrote there itself.
+    _HOME_KEEP = (".bashrc", ".bash_logout", ".profile", ".cache",
+                  ".vibe", ".vibe-distill", "distill", "venv")
+
+    def clear_stray_home_files(self) -> list[str]:
+        """Drop files the agent left in its home between attempts.
+
+        The checkout persists across attempts by design -- that is the
+        experiment. Notes the agent wrote itself do not, and one of them
+        cost run 5 three attempts: warm wrote `MIGRATION_SUMMARY.md`
+        opening "Successfully migrated the x12sdk codebase from Pydantic
+        v1 to Pydantic v2" with a row of ticks, while 47 v1 surfaces
+        remained and 202 of 261 tests failed. Attempts 4 and 5 read that
+        file back, believed it, and ended without an edit.
+
+        The repo is excluded by name, so nothing the grader scores is
+        touched. Returns what it removed, so the run can log it.
+        """
+        keep = " ".join(f"|{name}" for name in self._HOME_KEEP)
+        listing = self.host.run_as(
+            self.user,
+            f"cd {self.home} && for e in * .[!.]*; do "
+            f'case "$e" in .{keep}|{self.repo_name}) ;; '
+            f'*) test -e "$e" && echo "$e" && rm -rf -- "$e";; esac; done',
+            check=False).stdout
+        return [line for line in (listing or "").split() if line]
+
     def seed(self, tarball: bytes) -> None:
         """Put the repo in the agent's home, owned by the agent, and nothing
         else."""

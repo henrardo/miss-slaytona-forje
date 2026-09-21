@@ -729,3 +729,101 @@ def test_the_continuation_resumes_rather_than_restarting() -> None:
     head, _, tail = src.partition("ATTEMPT_CONTINUED")
     assert "resume=True" in tail.split("last_ended_cleanly")[0], (
         "the continuation must resume this attempt's own session")
+
+
+# --- 7. the grader's numbers, and the agent's own notes -------------------
+
+
+def test_the_verdict_states_the_graders_numbers_and_adds_nothing() -> None:
+    """Warm read past the tally and believed its own summary instead.
+
+    On run 5 attempt 3 warm wrote itself a MIGRATION_SUMMARY.md opening
+    "Successfully migrated the x12sdk codebase from Pydantic v1 to
+    Pydantic v2", with ticks, while 47 v1 surfaces remained and 202 of 261
+    tests failed. Attempts 4 and 5 read it back and ended "Task
+    completed." without an edit. The counts were already in the prompt --
+    in the tail of 8,000 characters of trimmed tracebacks.
+
+    So they go at the head of the failure block, and they stay bare: no
+    instruction rides along, because steering is what this prompt was
+    stripped of.
+    """
+    from orchestrator.vibe_agent import _task_prompt
+
+    verdict = ("- 59 of 261 tests passing\n"
+               "- 47 Pydantic v1 surfaces remaining in x12sdk\n"
+               "- 65 of 65 source files parse")
+    plain = _task_prompt("SomeError: boom", memory_enabled=False)
+    with_verdict = _task_prompt("SomeError: boom", memory_enabled=False,
+                                verdict=verdict)
+    assert with_verdict != plain
+    assert verdict in with_verdict
+    # Ahead of the output it was measured from, so it cannot be buried.
+    assert with_verdict.index(verdict) < with_verdict.index("SomeError: boom")
+    # And nothing of ours travels with it.
+    assert with_verdict == plain.replace(
+        "\n\nThe test suite still fails:",
+        f"\n\nThe independent grader measured your last attempt:\n{verdict}"
+        "\n\nThe test suite still fails:")
+
+
+def test_both_arms_get_the_verdict_in_the_same_place() -> None:
+    """It is the grader's own count, so it cannot be a warm-only block.
+    An unmeasured asymmetry in this prompt has invalidated a series
+    before."""
+    from orchestrator.vibe_agent import attempt_prompt
+
+    verdict = "- 1 of 2 tests passing"
+    warm = attempt_prompt("E: x", "skill", procedure="P", memory="M",
+                          verdict=verdict, mcp_tools=True)
+    cold = attempt_prompt("E: x", None, verdict=verdict)
+    assert verdict in warm and verdict in cold
+    assert cold.endswith(warm[warm.index(verdict):])
+
+
+def test_stray_home_files_go_and_the_checkout_stays(tmp_path: Path) -> None:
+    """Runs the real shell, because the risk is in the shell.
+
+    The checkout persisting across attempts IS the experiment, so a clear
+    that reached it would delete the work under test. Vibe's own state and
+    the agent's venv have to survive too, or the next attempt has no
+    agent to run.
+    """
+    import subprocess
+
+    from swarm.agent_workspace import AgentWorkspace, SwarmHost
+
+    home = tmp_path / "agent-warm-0"
+    for name in (".vibe/logs", "venv/bin", "repo/x12sdk", "distill"):
+        (home / name).mkdir(parents=True)
+    (home / ".bashrc").write_text("export X=1\n")
+    (home / "repo" / "x12sdk" / "models.py").write_text("class M: pass\n")
+    (home / ".vibe" / "logs" / "session.jsonl").write_text("{}\n")
+    (home / "MIGRATION_SUMMARY.md").write_text("Successfully migrated!\n")
+    (home / "test_migration.py").write_text("assert True\n")
+    (home / "notes.txt").write_text("scratch\n")
+
+    class LocalHost(SwarmHost):
+        def run_as(self, agent_user, command, **kw):
+            return subprocess.run(["bash", "-c", command], check=False,
+                                  capture_output=True, text=True)
+
+    class Local(AgentWorkspace):
+        @property
+        def home(self) -> str:
+            return str(home)
+
+    ws = Local(host=LocalHost(host="fake", port=22, identity=Path("/dev/null")),
+               label="warm-0", model="m", model_base_url="http://127.0.0.1:1",
+               repo_name="repo")
+    removed = ws.clear_stray_home_files()
+
+    assert sorted(removed) == ["MIGRATION_SUMMARY.md", "notes.txt",
+                               "test_migration.py"]
+    assert (home / "repo" / "x12sdk" / "models.py").read_text() == \
+        "class M: pass\n"
+    for kept in (".bashrc", ".vibe/logs/session.jsonl", "venv/bin", "distill"):
+        assert (home / kept).exists(), kept
+    assert not (home / "MIGRATION_SUMMARY.md").exists()
+    # Idempotent: a home with nothing stray in it reports nothing removed.
+    assert ws.clear_stray_home_files() == []

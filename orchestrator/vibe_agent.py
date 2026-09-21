@@ -607,6 +607,7 @@ def _task_prompt(
     *,
     procedure: str | None = None,
     memory: str | None = None,
+    verdict: str | None = None,
 ) -> str:
     """The user's request, and nothing else of ours.
 
@@ -748,6 +749,23 @@ def _task_prompt(
     # and not editorialised -- the advice that used to follow it ("keep going
     # until the suite passes", which errors mean to look something up) was us
     # steering, and the agent can read a traceback.
+    # THE THREE NUMBERS, ahead of the output they were measured from.
+    #
+    # The tally was already present, in the tail of the trimmed pytest
+    # output. Warm read past it: on attempt 3 it wrote itself a
+    # MIGRATION_SUMMARY.md opening "Successfully migrated the x12sdk
+    # codebase from Pydantic v1 to Pydantic v2" with a row of ticks, while
+    # 47 v1 surfaces remained and 202 of 261 tests failed. It then spent
+    # attempts 3 and 4 re-reading that file and ending "Task completed."
+    # without a single edit. A self-authored report outranked a tally
+    # buried in 8,000 characters of tracebacks.
+    #
+    # Stated, not editorialised, and identical for both arms: these are
+    # the grader's own counts from a suite that ran in Daytona after the
+    # turn ended, which is the one thing the agent cannot measure for
+    # itself. No instruction rides along with them.
+    if verdict:
+        base += f"\n\nThe independent grader measured your last attempt:\n{verdict}"
     if last_error:
         base += (
             f"\n\nThe test suite still fails:\n```\n{last_error}\n```"
@@ -798,6 +816,7 @@ def _stream_entries(stdout: str) -> list[dict]:
 def attempt_prompt(last_error: str | None, skill_name: str | None,
                    *, procedure: str | None = None,
                    memory: str | None = None,
+                   verdict: str | None = None,
                    mcp_tools: bool = False) -> str:
     """The prompt for one attempt. IDENTICAL BETWEEN THE ARMS except for
     warm's memory: the tools it is told it has, the procedure it wrote,
@@ -832,7 +851,8 @@ def attempt_prompt(last_error: str | None, skill_name: str | None,
     # is, for the caller's own bookkeeping.
     _ = skill_name
     return _task_prompt(last_error, memory_enabled=mcp_tools,
-                        procedure=procedure, memory=memory)
+                        procedure=procedure, memory=memory,
+                        verdict=verdict)
 
 
 def _entry_text(entry: dict) -> str:
@@ -1850,6 +1870,9 @@ async def migrate_codebase(
     # that puts the failure into the prompt, and telling the agent its first
     # error before it has looked would change the task.
     last_signature: str | None = baseline_signature
+    # NOT seeded, for the same reason `last_error` is not: on attempt 1 there
+    # is no attempt of the agent's own to have measured.
+    last_verdict: str | None = None
     # Zero, not None. The starting state is known, not unknown: pristine v1
     # under pydantic v2 dies at collection and passes 0 tests (verified
     # directly against the fixture). Seeding this as None made `advanced`
@@ -1918,6 +1941,18 @@ async def migrate_codebase(
                    skill_version=skill_version)
         attempt_started = time.monotonic()
         off_clock_at_start = off_clock
+        # THE CHECKOUT PERSISTS; THE AGENT'S OWN NOTES DO NOT. See
+        # AgentWorkspace.clear_stray_home_files: a self-written
+        # MIGRATION_SUMMARY.md declaring the migration complete cost run 5
+        # three attempts. Both arms, so it cannot skew the comparison.
+        # Absent on the local orchestrator's workspace, which gives each
+        # attempt a fresh directory anyway.
+        strays = getattr(workspace, "clear_stray_home_files", None)
+        if strays is not None and attempt > 1:
+            removed = strays()
+            if removed:
+                print(f"  [{agent_label}] cleared from home: "
+                      f"{', '.join(removed)}")
         # What this attempt is actually up against. Attempt 1 has nothing to
         # go on yet; from attempt 2 it is the previous attempt's real failure,
         # as read by the orchestrator off its own independent pytest run.
@@ -1999,6 +2034,7 @@ async def migrate_codebase(
                 last_error, skill_name,
                 procedure=procedure if mem is not None else None,
                 memory=retrieved or None,
+                verdict=last_verdict,
                 mcp_tools=bool(mem is not None and uses_mcp(mem.mode)),
             )
             _marks["task"] = task
@@ -2316,6 +2352,9 @@ async def migrate_codebase(
         # mistake that left `closeness` unused by the scorer for a whole
         # series.
         v1_remaining = surfaces.count(file_contents, within=package_path)
+        # HOISTED for the same reason, and for the verdict line below.
+        parse_ok, parse_total = surfaces.parses(file_contents,
+                                                within=package_path)
         # ONE READ of the hook's journal per attempt, before the events that
         # report it: `read_hook_journal` truncates the file, so a second
         # reader would find it empty and report a hook that never fired.
@@ -2343,8 +2382,8 @@ async def migrate_codebase(
             # surfaces, all parsing) -- which `tests_passed` scores 0 both
             # times. Measured mid-run on 2026-09-19: warm 16 surfaces at
             # 28/49 parsing, cold 63 at 49/49.
-            **dict(zip(("parse_ok", "parse_total"),
-                       surfaces.parses(file_contents, within=package_path))),
+            parse_ok=parse_ok,
+            parse_total=parse_total,
             # HOW FAR ALONG THE v1 -> v2 PATH, as a gradient. 0.0 is the
             # untouched checkout, 1.0 is the human's merged PR. Normalised
             # against the baseline because RAW similarity to the answer is
@@ -2814,6 +2853,17 @@ async def migrate_codebase(
             # file and legitimately improves read as a regression.
             last_closeness = closeness
         last_error = _trim_error_for_prompt(_localize_sandbox_paths(result.output, vibe_cwd))
+        # Every number the grader has, and no gloss on any of them. The v1
+        # count carries its starting value because a bare "47 remaining"
+        # does not say whether that is nearly done or barely begun.
+        last_verdict = (
+            f"- {passed} of {tests_total} tests passing\n"
+            f"- {v1_remaining} Pydantic v1 surfaces remaining in "
+            f"{package_path or 'the package'}"
+            + (f" (this checkout started at {baseline_v1})"
+               if baseline_v1 is not None else "")
+            + f"\n- {parse_ok} of {parse_total} source files parse"
+        )
 
     await emit("FILE_DONE", success=False, attempts=attempt)
     return MigrationResult(
