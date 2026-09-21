@@ -24,3 +24,15 @@ fixture/.pytest_cache/
 harness/neo4j-mcp-experiments/
 .mon*
 pod-artifacts/
+
+# make_fixture.py's scratch clones -- one shallow clone per screened
+# candidate, regenerable with `scripts/make_fixture.py` and 2.4 GB on disk.
+# They were untracked and unignored, so `git status` listed thirteen of them
+# on every run.
+fixtures/.*-build/
+# Per-attempt trees kept by run_experiment.sh for after-the-fact scoring.
+runs/*-artifacts/
+.backup/
+# enola's code-graph snapshot. `ingest_code_graph` writes it to a scratch
+# directory now; ignored so a stray one can never be committed into a fixture.
+.enola/

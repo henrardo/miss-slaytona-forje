@@ -41,6 +41,7 @@ import subprocess
 import sys
 import time
 import traceback
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -311,6 +312,78 @@ def local_cognee_mcp(port: int):
             proc.kill()
 
 
+@contextlib.contextmanager
+def local_cognee_api(port: int):
+    """Cognee's REST API on this machine, sharing the orchestrator's stores.
+
+    What the Vibe `post_tool` hook talks to. Same reason the MCP server runs
+    here rather than on the pod: a cognee process keeps its users, datasets
+    and vector index in LOCAL SQLite and LanceDB, so a second cognee over
+    there would be a second, empty memory writing into the same Neo4j.
+
+    Cognee's own documented deployment -- `uvicorn cognee.api.client:app` --
+    and unauthenticated on loopback only, which is what
+    `ENABLE_BACKEND_ACCESS_CONTROL=false` (set by `C.configure`) permits. The
+    Neo4j credential stays in this process's environment and never reaches
+    the pod: the hook is handed a URL, a dataset name and two node-set names.
+    """
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "cognee.api.client:app",
+         "--host", "127.0.0.1", "--port", str(port)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        env={**os.environ},
+    )
+    base = f"http://127.0.0.1:{port}"
+    try:
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                raise RuntimeError("cognee's REST API exited during startup")
+            try:
+                with urllib.request.urlopen(f"{base}/health", timeout=3) as r:
+                    if r.status == 200:
+                        break
+            except Exception:
+                time.sleep(2.0)
+        else:
+            raise RuntimeError(f"cognee's REST API was not ready on {port} "
+                               f"in 180s")
+        yield base
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def assert_hook_can_read(api_url: str, *, dataset: str,
+                         node_set: str) -> list[str]:
+    """Call the hook's own endpoint, with the hook's own payload.
+
+    Not "the API answers /health". The failure this catches is the one every
+    cheaper check passes: the server is up, the route exists, and the recall
+    returns a warming-up marker or someone else's dataset -- so the hook
+    silently appends nothing for the whole run and the log stays green.
+    """
+    body = json.dumps({"query": "pydantic v1 to v2 migration",
+                       "datasets": [dataset], "nodeName": [node_set],
+                       "searchType": "CHUNKS", "onlyContext": True,
+                       "topK": 3}).encode()
+    request = urllib.request.Request(
+        f"{api_url}/api/v1/recall", data=body,
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = json.loads(response.read().decode())
+    except Exception as exc:
+        return [f"the hook's recall endpoint is unusable: {exc!r}"]
+    if not isinstance(payload, list):
+        return [f"POST /api/v1/recall answered {type(payload).__name__}, "
+                f"not a list; the hook parses a list"]
+    return []
+
+
 async def assert_one_memory(url: str, *, dataset: str) -> list[str]:
     """Write through the harness, read through the AGENT'S server.
 
@@ -512,7 +585,7 @@ async def agent_worker(*, ws: AgentWorkspace, warm: bool, pool: SandboxPool,
                        results: list, skill_name: str | None = None,
                        package_path: str | None = None,
                        run_id: str | None = None,
-                       distiller: Any | None = None,
+                       tests_total: int = 0,
                        usage_probe: Any | None = None,
                        sync: Any | None = None,
                        budget: AttemptBudget | None = None,
@@ -539,7 +612,7 @@ async def agent_worker(*, ws: AgentWorkspace, warm: bool, pool: SandboxPool,
             baseline_signature=baseline_signature,
             baseline_passed=baseline_passed, results=results,
             skill_name=skill_name, package_path=package_path,
-            run_id=run_id, distiller=distiller,
+            run_id=run_id, tests_total=tests_total,
             usage_probe=usage_probe, sync=sync, best=best,
             consecutive_failures=consecutive_failures, budget=budget,
             on_attempt_tree=on_attempt_tree)
@@ -564,7 +637,7 @@ async def _attempt_until_done(*, ws, warm, pool, test_command, deadline, emit,
                               # migrate_codebase directly and never enters
                               # this wrapper. See test_swarm_signatures.
                               mem, baseline_signature, baseline_passed,
-                              results, skill_name, distiller, usage_probe,
+                              results, skill_name, tests_total, usage_probe,
                               sync, best, consecutive_failures, budget=None,
                               on_attempt_tree=None):
     while True:
@@ -610,7 +683,7 @@ async def _attempt_until_done(*, ws, warm, pool, test_command, deadline, emit,
                 agent_label=ws.label,
                 skill_name=skill_name,
                 package_path=package_path,
-                distiller=distiller,
+                tests_total=tests_total,
                 usage_probe=usage_probe,
                 sync=sync,
                 budget=budget,
@@ -786,31 +859,42 @@ async def main_async(args, watch=None) -> int:
     # no hash: Cognee rewrites `procedure` in place and keeps no
     # lineage, and warm is handed whatever it holds at the start of each
     # attempt.
-    procedure = await C.ensure_seeded(dataset=dataset)
+    procedure = await C.ensure_skill(dataset=dataset)
     print(f"skill: {len(procedure):,} chars in Cognee, dataset {dataset}")
     print(f"memory mode: {args.memory_mode}  "
           f"(mcp tools: {C.uses_mcp(args.memory_mode)}, "
           f"injected context: {C.uses_injection(args.memory_mode)})")
-    # THE CODEBASE AS A GRAPH, the one Cognee surface this harness has
-    # never used and the one aimed squarely at this task. Deterministic
-    # (no LLM, no key) and off the clock, but not free in wall-clock on a
-    # large fixture, so it is opt-in.
+    # THE CODEBASE AS A GRAPH. Deterministic (no LLM, no key), off the
+    # clock, and re-ingested every run: `get_code_graph_tasks` is
+    # incremental, and the fixture's tree is whatever the last experiment
+    # left it as. Warm reads it back through `code_brief`; cold never sees
+    # it. `--no-code-graph` turns it off for the runs that isolate the
+    # outcome memory from it.
+    code_dataset: str | None = None
+    code_root = repo / (load_manifest().get("package_path") or ".")
     if args.code_graph:
         graph_started = time.monotonic()
         try:
-            await C.add_code_graph(repo, dataset=f"{dataset}-code")
+            kinds = await C.ingest_code_graph(code_root,
+                                              dataset=f"{dataset}-code")
+            code_dataset = f"{dataset}-code"
             print(f"code graph: {repo.name} ingested in "
                   f"{time.monotonic() - graph_started:.1f}s "
-                  f"(dataset {dataset}-code)")
+                  f"(dataset {code_dataset}, {kinds})")
+            if not kinds:
+                print("  WARNING: the code graph holds no modules or "
+                      "symbols; warm's code block will be empty")
         except Exception as exc:
-            # Never fatal: it is an extra map of the codebase, not the
-            # memory under test.
+            # Never fatal: it is one of warm's three blocks, not the whole
+            # treatment.
             print(f"code graph: ingestion failed ({exc!r}); the run "
                   f"continues without it")
-    if args.no_distill:
-        print("distiller: disabled  (the skill cannot change during this run)")
     else:
-        print("distiller: cognee  (its own authoring model)")
+        print("code graph: off (--no-code-graph)")
+    if args.no_distill:
+        print("skill rewrite: disabled  (outcome memory still recorded)")
+    else:
+        print("skill rewrite: cognee improve_skill, from the grader's score")
 
     spaces: dict[str, AgentWorkspace] = {}
     for label, warm in labels:
@@ -839,6 +923,23 @@ async def main_async(args, watch=None) -> int:
                 loaded = ws.assert_memory_tools_loaded()
                 print(f"  {label} memory tools: {len(loaded)} loaded")
                 ws.clear_session_logs()   # drop the probe, not the run's
+
+            # THE DETERMINISTIC READ INSIDE THE ATTEMPT. Warm only; cold's
+            # config registers no hook and its environment carries no
+            # COGNEE_* variable, so it has no path to the graph from a tool
+            # call either.
+            hook_api = getattr(args, "hook_api_url", "")
+            if args.hook and hook_api:
+                ws.enable_hook(api_url=hook_api, dataset=dataset,
+                               node_sets=C.node_sets(FIXTURE_DIR.name))
+                problems = assert_hook_can_read(
+                    f"http://127.0.0.1:{args.cognee_api_local_port}",
+                    dataset=dataset,
+                    node_set=C.node_sets(FIXTURE_DIR.name)[1])
+                if problems:
+                    raise RuntimeError("; ".join(problems))
+                print(f"  {label} post_tool hook: registered on `bash`, "
+                      f"reading {dataset} through {hook_api}")
 
             # The distiller's own environment: separate VIBE_HOME (so the
             # memory MCP server exists nowhere near an attempt), separate
@@ -942,56 +1043,19 @@ async def main_async(args, watch=None) -> int:
             # once, so 98 runs of traces shared one session called
             # "warm-0" and everything that walked it got slower until it
             # stopped finishing inside its timeout at all.
-            return C.CogneeMemory(dataset=dataset, label=label,
-                                  # dataset-qualified: `lessons()` filters
-                                  # on this, and it is the only thing that
-                                  # keeps another fixture's lessons out of
-                                  # this prompt.
-                                  session_id=f"{dataset}:{run_id}:{label}",
-                                  mode=args.memory_mode)
-
-        def distiller_for(label: str, scoped):
-            """One distillation turn for this agent.
-
-            A quarter of what it was. Cognee records the graded run, drafts
-            a new procedure from the runs that scored badly, applies it and
-            hands the text back; the prompt building, AIP validation, the
-            two-turn repair loop and the progressive-disclosure pass are
-            all gone with the old layer -- along with the external-writer
-            table that used to live here, because Cognee's own model does
-            the authoring.
-
-            What is NOT gone, and must not be: the score is ours. It comes
-            from a real test suite in a Daytona sandbox no agent has
-            touched, which is the only reason any of this is measurement
-            rather than self-report.
-            """
-
-            async def run(*, attempt: int, tests_passed: int,
-                          suite_passed: bool, error: str | None,
-                          closeness: float | None = None):
-                outcome = await C.distil_after_attempt(
-                    tests_passed=tests_passed,
-                    tests_total=baseline_total,
-                    attempt=attempt, suite_passed=suite_passed, error=error,
-                    closeness=closeness,
-                    dataset=dataset, session_id=scoped.session_id)
-                # NOTHING TO INSTALL. The old loop wrote the accepted
-                # version to the pod here, because `propose` moved a
-                # pointer on THIS machine while the agent read a file on
-                # that one -- leave it out and attempt N+1 re-read the
-                # same procedure while the log claimed a new version.
-                # Cognee closes that loop itself: the procedure it
-                # rewrote is the procedure `recall` returns.
-                near = outcome.get("closeness")
-                print(f"  {label}: score {outcome['score']:.3f} "
-                      f"(closeness {near:.4f})" if near is not None else
-                      f"  {label}: score {outcome['score']:.3f} "
-                      f"(no answer key; scored on the suite)")
-                print(f"           {'applied' if outcome['applied'] else 'no proposal'}, "
-                      f"procedure now {outcome['procedure_chars']:,} chars")
-                return outcome
-            return run
+            return C.CogneeMemory(
+                dataset=dataset,
+                # The node sets warm reads and writes are named after the
+                # fixture, and node sets -- unlike datasets -- really do
+                # scope a recall.
+                fixture=FIXTURE_DIR.name,
+                label=label,
+                session_id=f"{dataset}:{run_id}:{label}",
+                mode=args.memory_mode,
+                code_dataset=code_dataset,
+                code_repo=code_root.name,
+                package=load_manifest().get("package_path"),
+                distil=not args.no_distill)
 
         scopes = {label: _scoped(label) for label, w in labels if w}
 
@@ -1014,10 +1078,9 @@ async def main_async(args, watch=None) -> int:
                 package_path=load_manifest().get("package_path"),
                 run_id=run_id,
                 skill_name=C.SKILL_NAME if warm else None,
-                # Cold never distils: it has no skill to improve and no
-                # graph to read. Verified every run by assert_arms_match.
-                distiller=(None if args.no_distill else
-                           (distiller_for(label, scopes[label]) if warm else None)),
+                # The denominator for the grader's score. Measured by
+                # running the answer key and recorded in the manifest.
+                tests_total=baseline_total,
                 # Sampled at each attempt boundary, and charged to
                 # off_clock -- the harness measuring, not the agent working.
                 usage_probe=(lambda url=(args.warm_proxy if warm
@@ -1412,9 +1475,34 @@ def main() -> int:
                    help="install this archived skill version instead of the "
                         "live one (skills/versions/vNNN-*.md).")
     p.add_argument("--no-distill", action="store_true",
-                   help="skip the distillation turn. Required when pinning "
-                        "a version, so the skill under test cannot change "
-                        "underneath the run.")
+                   help="leave the procedure alone. The outcome documents "
+                        "are still written and read; only Cognee's skill "
+                        "rewrite is skipped, so the skill under test cannot "
+                        "change underneath the run.")
+    # ON BY DEFAULT. A code graph of the repository under migration is
+    # plain Cognee, deterministic and keyless, and it is the one thing
+    # warm can know about the codebase that is not derived from its own
+    # past attempts. Off is the control.
+    p.add_argument("--no-code-graph", dest="code_graph", action="store_false",
+                   default=True,
+                   help="do not ingest the fixture as a code graph, so "
+                        "warm's memory is only its own graded attempts.")
+    # THE DETERMINISTIC READ INSIDE AN ATTEMPT, on by default.
+    #
+    # Warm's other two reads happen at the attempt boundary: the procedure
+    # and the brief go into the prompt. This one fires when the agent's own
+    # command fails, which is where the "do not repeat this" half is worth
+    # most -- and it is the only read that does not depend on the model
+    # choosing to call a tool. Over the last forty runs the agents made
+    # 4,767 `bash` calls and 9 `cognee_recall` calls.
+    p.add_argument("--no-hook", dest="hook", action="store_false", default=True,
+                   help="do not register the post_tool hook, so warm's only "
+                        "reads are the ones in its prompt.")
+    p.add_argument("--cognee-api-local-port", type=int, default=8815,
+                   help="port for the harness-side cognee REST API the hook "
+                        "reads through.")
+    p.add_argument("--cognee-api-pod-port", type=int, default=8815,
+                   help="port the pod dials for that API, reverse-tunnelled.")
     # WHO AUTHORS THE SKILL IS NO LONGER OURS TO CHOOSE.
     #
     # This used to select between the agent's own model and an external
@@ -1453,17 +1541,31 @@ def main() -> int:
     # agents' memory would be a different graph from the harness's --
     # while every log line still said ok.
     with contextlib.ExitStack() as stack:
-        if C.uses_mcp(args.memory_mode) and not args.cognee_on_pod:
+        pod = SwarmHost(host=args.ssh_host, port=args.ssh_port,
+                        identity=Path(args.ssh_key))
+        warm_memory = args.memory_mode != "off"
+        if warm_memory and not args.cognee_on_pod:
             C.configure(dataset=f"msf-{FIXTURE_DIR.name}")
+        if C.uses_mcp(args.memory_mode) and not args.cognee_on_pod:
             url = stack.enter_context(local_cognee_mcp(args.cognee_local_port))
             print(f"cognee-mcp: {url} (this machine, sharing the "
                   f"orchestrator's stores)")
             stack.enter_context(reverse_tunnel(
-                SwarmHost(host=args.ssh_host, port=args.ssh_port,
-                          identity=Path(args.ssh_key)),
-                _port_of(args.mcp_url), args.cognee_local_port))
+                pod, _port_of(args.mcp_url), args.cognee_local_port))
             print(f"reverse tunnel: pod 127.0.0.1:{_port_of(args.mcp_url)} "
                   f"-> harness 127.0.0.1:{args.cognee_local_port}")
+        # THE DETERMINISTIC READ'S TRANSPORT. Cognee's own REST API, here,
+        # reached from the pod through a second reverse tunnel -- so the
+        # `post_tool` hook and the harness read one memory, not two.
+        if args.hook and warm_memory and not args.cognee_on_pod:
+            api = stack.enter_context(local_cognee_api(args.cognee_api_local_port))
+            print(f"cognee REST API: {api} (this machine, for the post_tool "
+                  f"hook)")
+            stack.enter_context(reverse_tunnel(
+                pod, args.cognee_api_pod_port, args.cognee_api_local_port))
+            args.hook_api_url = f"http://127.0.0.1:{args.cognee_api_pod_port}"
+            print(f"reverse tunnel: pod {args.hook_api_url} -> harness "
+                  f"127.0.0.1:{args.cognee_api_local_port}")
         rc = asyncio.run(main_async(args, watch), debug=not args.no_loop_debug)
     return rc
 

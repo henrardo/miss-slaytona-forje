@@ -1,56 +1,33 @@
-"""Cognee as the memory layer, as shipped.
+"""Cognee as the memory layer. One Cognee call per function, no shadow store.
 
-Every function here is a thin, named passthrough to a documented Cognee
-call. If something in this file starts reshaping Cognee's output to fit
-this harness, that is the bug -- it happened once already and is worth
-recording:
+What a warm agent gets and a cold agent does not:
 
-    a first version of this module wrapped Cognee's `procedure` in YAML
-    frontmatter, gave it a version counter, and reconciled two different
-    hashes of it, so that a SKILL.md could be installed on the pod the
-    way the AIP layer used to. All of that was scaffolding for a delivery
-    mechanism Cognee does not use. Cognee keeps skills IN THE GRAPH and
-    agents reach them through its MCP server.
+    the code graph      the fixture ingested by `get_code_graph_tasks`, read
+                        back with SearchType.CODE. Deterministic, keyless.
+    the outcome memory  one document per graded attempt, written into the
+                        `<fixture>-worked` or `<fixture>-failed` node set and
+                        read back with recall(CHUNKS, only_context=True).
+    the procedure        a Cognee skill that `improve_skill` rewrites from the
+                        grader's score after every attempt.
+    the session trace    `agent_memory(save_session_traces=True)` writes it,
+                        `improve(session_ids=...)` bridges and distils it.
+    the MCP server       `cognee_recall` / `_remember` / `_search`, which the
+                        agent may call or not. That choice is a measurement.
 
-WARM'S TREATMENT HAS TWO HALVES, and the second one was missing.
+Measured against cognee 1.6.0, and the reason the reads are shaped this way:
 
-  VOLUNTARY -- the cognee MCP server. `cognee_recall`, `cognee_remember`,
-  `cognee_search` are in warm's tool list and whether it calls them is
-  the agent's decision, which is one of the things this experiment
-  measures.
-
-  DETERMINISTIC -- what the harness does with Cognee's own surfaces, on
-  every attempt, whether the model asks or not:
-
-      cognee.agent_memory(...)   wraps the attempt. Cognee retrieves
-                                 before the call and persists a session
-                                 trace (params, status, return, error)
-                                 after it. Its `/guides/agent-session-
-                                 traces` mechanism, not ours.
-      recall(only_context=True)  the retrieved text, rendered into the
-                                 attempt prompt.
-      remember(SkillRunEntry)    the graded attempt, carrying OUR score.
-      improve_skill(apply=True)  the rewritten procedure.
-      cognee.improve(sessions)   bridges the session traces into the
-                                 permanent graph so the NEXT attempt's
-                                 recall can see them.
-
-The first version of this migration shipped the voluntary half alone. On
-a 119B model that is a bet that the model will choose to call a tool it
-was never told it needs -- and the bet this project has already lost 40
-runs in a row on. A deterministic integration does not depend on the
-model's choice, which is what makes it usable by a small model; the MCP
-tools stay because "did it go and read for itself" is a different and
-also interesting question.
-
-The cost of the deterministic half is a real arm difference and is
-declared as one: it is prompt tokens warm reads and cold does not, it is
-reported per attempt (ATTEMPT_DONE.memory_chars) and it can be switched
-off with `--memory-mode mcp` to measure the voluntary half alone.
-
-What this harness still owns, and must: THE SCORE. It comes from a real
-test suite in a Daytona sandbox no agent has touched, and it is the only
-reason any of this is measurement rather than self-report.
+  * recall IGNORES the dataset for reads -- a marker written to dataset A came
+    back from a recall told to read only dataset B. NODE SETS do scope, so the
+    node set carries the fixture name and is the isolation boundary.
+  * SearchType.CHUNKS with only_context=True returns the stored text, byte
+    identical across repeat calls. GRAPH_SUMMARY_COMPLETION (what the decorator
+    uses when with_memory=True) re-summarises the subgraph per call: three
+    calls over one unchanged graph gave 291/329/239 characters describing graph
+    topology rather than a lesson. So the decorator writes and does not read.
+  * `remember` defaults to self_improvement=True, which fires a background
+    improve that races the explicit one. Off everywhere here.
+  * a cold dataset answers recall with a `source="system"` warming-up marker,
+    not an empty list. Markers are dropped, not rendered.
 """
 from __future__ import annotations
 
@@ -59,36 +36,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-# The dataset every skill, run and proposal for one fixture lives in.
-# Cognee scopes by dataset, so this is also the isolation boundary between
-# fixtures -- the job the `prov_fixture` trace property used to do, but
-# structural rather than a stamp that can be forgotten on a write.
 DEFAULT_DATASET = "msf"
-
 SKILL_NAME = "pydantic-v2-migration"
-
-# Where the starting procedure is read from, once, to seed Cognee. A file
-# because it is the EXPERIMENT'S CONTROL: a scaffold stating the shape of
-# the job and containing no migration knowledge, reviewed by a human.
-# Seeding from anything else -- a previous run, another fixture -- is the
-# contamination the whole design exists to rule out.
 SEED_SKILL_PATH = (Path(__file__).resolve().parent.parent
                    / "skills" / SKILL_NAME / "SKILL.md")
 
-# WHICH HALVES OF THE TREATMENT ARE LIVE. A flag rather than a constant
-# because the two halves answer different questions and a run has to be
-# able to ask one of them at a time.
-#
-#   hybrid         both. The default, and what a small model needs.
-#   mcp            the tools only. Nothing is retrieved on the agent's
-#                  behalf, so a retrieval in the transcript is the
-#                  model's own -- this is the arm that measures whether
-#                  it will go and look.
-#   deterministic  the injected context and the traces only, no MCP
-#                  server. Isolates the value of the memory from the
-#                  agent's willingness to use a tool.
-#   off            warm == cold. For proving the harness, not a result.
+# hybrid = both halves; mcp = the agent's own tools only; deterministic =
+# injection only; off = warm == cold, for proving the harness.
 MEMORY_MODES = ("hybrid", "mcp", "deterministic", "off")
+
+# Cap per block. The last uncapped retrieved-memory block this harness put in a
+# prompt reached 15,170 characters and warm spent three attempts reporting on it
+# instead of migrating anything.
+MAX_BLOCK_CHARS = 2500
+
+MEMORY_TOOLS_GUIDE = """\
+A memory server is available to you as MCP tools: `cognee_recall` to
+search what you or a previous attempt stored, `cognee_remember` to store
+something, `cognee_search` to query the knowledge graph. Whether to use
+them, and when, is your decision."""
 
 
 def uses_mcp(mode: str) -> bool:
@@ -99,49 +65,14 @@ def uses_injection(mode: str) -> bool:
     return mode in ("hybrid", "deterministic")
 
 
-# What warm is told it has. Cognee's MCP server returns
-# `instructions=None` -- measured -- so unlike the old layer there is
-# nothing to relay and the tool descriptions are all the model gets.
-#
-# The tools are NAMED, because Vibe publishes an MCP tool as
-# f"{server_alias}_{tool}" and a model told to "use your memory tools"
-# has to guess at `cognee_recall`. Naming them is not coaching; it is the
-# same fact the tool list already carries, stated where the model reads
-# instructions. Deliberately no advice on WHEN to call them: a prompt
-# that tells the agent how to use memory measures the prompt.
-MEMORY_TOOLS_GUIDE = """\
-A memory server is available to you as MCP tools: `cognee_recall` to
-search what you or a previous attempt stored, `cognee_remember` to store
-something, `cognee_search` to query the knowledge graph. Whether to use
-them, and when, is your decision."""
-
-# How much retrieved memory may be put in front of the model. A cap, not
-# a target: warm's prompt already differs from cold's and every character
-# here is a character of that difference, charged to warm's context
-# window. 2,000 is ~500 tokens, which is small beside a 5-6k prompt and
-# large enough for the three or four lessons a recall actually returns.
-MAX_CONTEXT_CHARS = 2000
-
-
 def configure(*, dataset: str = DEFAULT_DATASET) -> str:
-    """Map this repo's env vars onto Cognee's, per the Graph Stores doc.
+    """Map this repo's env onto Cognee's. MUST run before `import cognee`.
 
-    Must run before the first `import cognee`: cognee reads its config
-    from the environment at import time and runs relational migrations
-    on first import.
-
-    THE DEFAULTS THAT BITE, all found by running it:
-
-      * `authentication=required, multi_tenant=enabled` out of the box.
-        This is a single-operator harness; the permission system is not
-        what is being measured.
-      * vector and relational stores default to LOCAL LanceDB + SQLite.
-        Only the GRAPH is remote, so "the memory is in Aura" is false.
-      * session caching is on by default, and it must STAY on: the
-        deterministic half reads session memory back before the graph
-        has been distilled.
-      * APOC must exist on the instance or every node lands as a generic
-        `__Node__`. `assert_ready` checks rather than trusting it.
+    Without GRAPH_DATABASE_*, cognee falls back to its embedded Kuzu store and
+    the run's graph goes somewhere nobody is looking while every log says ok.
+    Vector and relational stay local (LanceDB + SQLite); only the graph is
+    remote, which is why every cognee process that has to see these writes --
+    the MCP server, the REST API the hooks call -- runs on this machine.
     """
     os.environ["GRAPH_DATABASE_PROVIDER"] = "neo4j"
     os.environ["GRAPH_DATABASE_URL"] = _require("NEO4J_URI")
@@ -150,27 +81,23 @@ def configure(*, dataset: str = DEFAULT_DATASET) -> str:
     os.environ["GRAPH_DATABASE_PASSWORD"] = _require("NEO4J_PASSWORD")
     os.environ["LLM_API_KEY"] = _require("OPENAI_API_KEY")
     os.environ.setdefault("ENABLE_BACKEND_ACCESS_CONTROL", "false")
+    # Skills ingestion writes skill nodes without logging a graph build, so
+    # recall's warm-up guard reads the dataset as empty and answers with a
+    # marker instead of the content (docs: Recall warm-up).
+    os.environ.setdefault("RECALL_WARMUP_SHORTCIRCUIT", "false")
     return dataset
 
 
 def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
-        raise RuntimeError(
-            f"{name} is not set. Cognee needs it to reach the graph, and it "
-            f"has no default on purpose: without it cognee falls back to its "
-            f"embedded Kuzu store, the run's graph goes somewhere nobody is "
-            f"looking, and every log line still says ok.")
+        raise RuntimeError(f"{name} is not set; cognee would silently use Kuzu")
     return value
 
 
 async def assert_ready() -> dict[str, Any]:
-    """Prove the graph is reachable AND typed before a run starts.
-
-    The APOC check is the load-bearing one: without APOC cognee still
-    writes -- it does not error -- so the failure mode is a run that
-    looks fine and produces a graph with one label in it.
-    """
+    """Reachable AND typed. Without APOC cognee still writes -- it does not
+    error -- and every node lands as `__Node__`."""
     from cognee.infrastructure.databases.graph import get_graph_engine
 
     engine = await get_graph_engine()
@@ -179,38 +106,225 @@ async def assert_ready() -> dict[str, Any]:
         "RETURN count(*) AS n", {})
     apoc = rows[0]["n"] if rows else 0
     if not apoc:
-        raise RuntimeError(
-            "No APOC on this Neo4j instance. Cognee will still write, but "
-            "every node lands as __Node__ and the typed model is lost.")
+        raise RuntimeError("no APOC on this instance; every node would be __Node__")
     counts = await engine.query("MATCH (n) RETURN count(n) AS n", {})
     return {"apoc_procedures": apoc, "nodes": counts[0]["n"] if counts else 0}
 
 
-# ---- skills: docs.cognee.ai/examples/self-improving-skills -------------
+def node_sets(fixture: str) -> tuple[str, str]:
+    """The two node sets one fixture's attempts write into. Node sets are the
+    read-scoping boundary, so the fixture name has to be in them."""
+    return f"{fixture}-worked", f"{fixture}-failed"
 
 
-async def seed_skill(text: str, *, name: str = SKILL_NAME,
-                     dataset: str = DEFAULT_DATASET) -> None:
-    """Put the starting procedure into Cognee."""
+# ---- the code graph --------------------------------------------------
+
+
+async def ingest_code_graph(repo: Path, *, dataset: str,
+                            scratch: Path | None = None) -> dict[str, Any]:
+    """The fixture as a code graph (guides/code-graph).
+
+    A custom pipeline, not `remember(content_type="code")`: deterministic, no
+    LLM or embedding call, and it needs the `enola` binary, which auto-installs
+    to ~/.cognee/bin on first run. Measured 1.6s on a three-file tree and 15s
+    on x12sdk.
+
+    INGESTED FROM A COPY, and that is not tidiness. enola writes its snapshot
+    to `<repo>/.enola/`, full stop: `snapshot_dir` on `get_code_graph_tasks`
+    is an INPUT -- pass it and enola is not run at all, the task just parses
+    what is already there. Pointing it at an empty scratch directory fails
+    with `No facts.jsonl found`. So the only way to keep the snapshot out of
+    the tree is to ingest a different tree.
+
+    Left in place, one ingest put 2.3 MB of `facts.jsonl`, `insights.json`
+    and an extractor cache INSIDE the package the grader scores and the agents
+    edit -- counted by `surfaces`, diffed by `closeness`, tarred to the pod
+    and uploaded to Daytona on every attempt.
+
+    The copy keeps the package's own directory name, because that name is
+    what enola stamps on every fact as `repo` and what scopes the read.
+
+    Returns the per-kind fact counts for the repo just ingested, so "the
+    pipeline said completed and the graph holds nothing" is visible at the
+    call site rather than two attempts later as an empty prompt block.
+    """
+    import shutil
+
     import cognee
+    from cognee.tasks.code_graph import get_code_graph_tasks
 
-    # `self_improvement=False`: the harness owns the bridge, through
-    # `improve_from_sessions`, at a point in the loop it controls. Left at
-    # its default (True) every write also fires a background improve,
-    # which races the explicit one and makes "what is in the graph when
-    # the next attempt reads" a question about timing.
-    await cognee.remember(text, dataset_name=dataset, content_type="skills",
-                          skill_name=name, skills_text=text,
-                          self_improvement=False)
+    repo = Path(repo)
+    root = Path(scratch or default_scratch(dataset))
+    copy = root / repo.name
+    if copy.exists():
+        shutil.rmtree(copy)
+    copy.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(repo, copy,
+                    ignore=shutil.ignore_patterns("__pycache__", ".*"))
+    await cognee.run_custom_pipeline(
+        tasks=get_code_graph_tasks(str(copy)), data=str(copy),
+        dataset=dataset, pipeline_name="code_graph_pipeline",
+        skip_connection_test=True)
+    return await code_graph_size(dataset=dataset, repo=copy.name)
+
+
+def default_scratch(dataset: str) -> Path:
+    """Where the copy enola indexes lives: never inside the repository."""
+    import tempfile
+
+    return Path(tempfile.gettempdir()) / "msf-code-graph" / dataset
+
+
+async def code_graph_size(*, dataset: str, repo: str) -> dict[str, Any]:
+    kinds: dict[str, int] = {}
+    for fact in await _code_query(dataset, {"operation": "query_facts",
+                                            "limit": 20000}, repo=repo):
+        kind = fact.get("kind", "?")
+        kinds[kind] = kinds.get(kind, 0) + 1
+    return kinds
+
+
+async def _code_query(dataset: str, code_query: dict, *,
+                      repo: str | None = None) -> list[dict]:
+    """One SearchType.CODE operation, unwrapped and scoped to one repository.
+
+    MEASURED 2026-09-21, and both halves cost a run's worth of empty prompt
+    block:
+
+      * the result is the operation payload itself -- `{"operation": ...,
+        "facts": [...]}` -- not the `{dataset_id, dataset_name,
+        search_result}` envelope the search docs describe. Reading
+        `search_result` returned None for every entry and the code brief came
+        back empty while the pipeline reported completed.
+      * the operation is NOT dataset-scoped: `query_facts` over a fresh
+        dataset returned five facts belonging to a repository ingested into a
+        different one an hour earlier. Facts carry `repo`, so that is the
+        filter -- same lesson as node sets on the document side.
+    """
+    import cognee
+    from cognee import SearchType
+
+    results = await cognee.search(
+        query_type=SearchType.CODE, query_text="", datasets=[dataset],
+        code_query=code_query)
+    return _scoped_to_repo(results, "facts", repo)
+
+
+def _scoped_to_repo(results: Any, key: str, repo: str | None) -> list[dict]:
+    """The items under `key` in a SearchType.CODE payload, for one repo only.
+
+    The payload arrives either bare or inside a `search_result` envelope
+    depending on the operation; reading only one of the two shapes is how the
+    code brief came back empty while the pipeline reported completed.
+    """
+    out: list[dict] = []
+    for entry in results or []:
+        payload = entry
+        if isinstance(entry, dict) and "search_result" in entry:
+            payload = entry["search_result"]
+        if isinstance(payload, list):
+            payload = payload[0] if payload else None
+        if not isinstance(payload, dict):
+            continue
+        for item in (payload.get(key) or []):
+            if repo is None or item.get("repo") == repo:
+                out.append(item)
+    return out
+
+
+async def code_brief(*, dataset: str, repo: str, package: str | None = None,
+                     limit: int = MAX_BLOCK_CHARS) -> str:
+    """What the code graph knows about this codebase, as text for a prompt.
+
+    Modules by how much depends on them, and the classes that carry the
+    migration. Deterministic: SearchType.CODE reads graph indexes only, with
+    no LLM and no embedding call.
+    """
+    facts = await _code_query(dataset, {"operation": "query_facts",
+                                        "limit": 20000}, repo=repo)
+    if not facts:
+        return ""
+    lines = []
+    if package:
+        lines.append(f"Package under migration: {package}")
+
+    # WHERE THE CLASSES ARE, not a list of them. Listing 40 classes spent the
+    # whole block on one file: x12sdk declares 238 classes and 200 of them are
+    # nested enums inside v4010/segments.py. Per-file counts fit, and they are
+    # what says which files carry the migration.
+    classes = [f for f in facts
+               if (f.get("properties") or {}).get("symbol_kind") == "class"]
+    if classes:
+        per_file: dict[str, int] = {}
+        data_per_file: dict[str, int] = {}
+        for s in classes:
+            name = str(s.get("file") or "?")
+            per_file[name] = per_file.get(name, 0) + 1
+            if (s.get("properties") or {}).get("data_class"):
+                data_per_file[name] = data_per_file.get(name, 0) + 1
+        ranked = sorted(per_file, key=lambda f: (-data_per_file.get(f, 0),
+                                                 -per_file[f], f))
+        lines.append(f"{len(classes)} class(es) across {len(per_file)} "
+                     f"file(s); most model-bearing first:")
+        for name in ranked[:25]:
+            lines.append(f"  {name}: {per_file[name]} class(es)"
+                         + (f", {data_per_file[name]} of them data classes"
+                            if data_per_file.get(name) else ""))
+
+    mods = [f for f in facts if f.get("kind") == "module"]
+    if mods:
+        def depended_on(f):
+            return int((f.get("properties") or {}).get("afferent") or 0)
+
+        ranked = sorted(mods, key=lambda f: (-depended_on(f), str(f.get("name"))))
+        if any(depended_on(f) for f in ranked):
+            lines.append(f"{len(mods)} module(s), most depended-on first:")
+            lines += [f"  {f.get('name')} (imported by {depended_on(f)})"
+                      for f in ranked[:20]]
+        else:
+            # Every count is zero: enola resolved no cross-module imports
+            # here, so printing "(imported by 0)" forty times is noise.
+            lines.append(f"{len(mods)} module(s): "
+                         + ", ".join(str(f.get("name")) for f in ranked[:20]))
+    return _cap("\n".join(lines), limit)
+
+
+async def code_insights(*, dataset: str, repo: str, limit: int = 8) -> str:
+    """enola's own architectural findings over the same graph.
+
+    Structural ones (cycles, declared-layer violations) score 1.0; heuristic
+    ones (hotspots, god-class, complexity outliers) below. Nothing here is
+    about Pydantic -- it is what the codebase is like, which is the half warm
+    cannot learn from its own attempts.
+    """
+    try:
+        import cognee
+        from cognee import SearchType
+
+        results = await cognee.search(
+            query_type=SearchType.CODE, query_text="", datasets=[dataset],
+            code_query={"operation": "insights", "min_confidence": 0.6,
+                        "limit": 200})
+    except Exception as exc:
+        print(f"  code_insights failed ({exc!r}); continuing without them")
+        return ""
+    ranked = sorted(
+        _scoped_to_repo(results, "insights", repo),
+        key=lambda i: -float((i.get("properties") or {}).get("confidence") or 0))
+    lines: list[str] = []
+    for item in ranked:
+        name = str(item.get("name") or "").strip()
+        if name and name not in lines:
+            lines.append(name)
+        if len(lines) >= limit:
+            break
+    return "\n".join(f"  {line}" for line in lines)
+
+
+# ---- the skill -------------------------------------------------------
 
 
 async def dataset_id(name: str) -> str | None:
-    """The UUID for a dataset name.
-
-    `get_skill` takes a UUID and silently returns None for a name, so
-    resolving this first is the difference between reading a procedure
-    and concluding the skill does not exist.
-    """
     import cognee
 
     for row in await cognee.datasets.list_datasets():
@@ -223,14 +337,9 @@ async def dataset_id(name: str) -> str | None:
 
 async def find_skill(name: str = SKILL_NAME, *,
                      dataset: str = DEFAULT_DATASET) -> dict | None:
-    """The skill row for `name` IN THIS DATASET.
-
-    ALWAYS RESOLVE THE UUID FIRST. `list_skills(dataset="some-name")`
-    does NOT scope to that dataset: measured, it returned two skills of
-    the same name belonging to two different datasets. Taking the first
-    row gives a foreign skill id, and `get_skill(foreign_id, this)`
-    correctly answers None -- which reads as "the skill did not land".
-    """
+    """`list_skills(dataset="a-name")` does not scope by name -- resolve the
+    UUID first, or a foreign skill id comes back and its None reads as "the
+    skill never landed"."""
     from cognee.api.v1.skills.list_skills import list_skills
 
     did = await dataset_id(dataset)
@@ -245,118 +354,159 @@ async def find_skill(name: str = SKILL_NAME, *,
 
 async def current_procedure(name: str = SKILL_NAME, *,
                             dataset: str = DEFAULT_DATASET) -> str | None:
-    """The procedure as Cognee currently holds it."""
     from cognee.api.v1.skills.list_skills import get_skill
 
     skill = await find_skill(name, dataset=dataset)
     did = await dataset_id(dataset)
     if skill is None or did is None:
         return None
-    return (await get_skill(skill["id"], did) or {}).get("procedure")
+    procedure = (await get_skill(skill["id"], did) or {}).get("procedure")
+    # `clean`, because this text was written by a model into a graph and is
+    # about to become a process argument. One rewrite carried a NUL.
+    return clean(procedure) if procedure else procedure
 
 
-async def ensure_seeded(*, dataset: str = DEFAULT_DATASET) -> str:
-    """Seed from the scaffold if this dataset has no skill yet.
+async def ensure_skill(*, dataset: str = DEFAULT_DATASET) -> str:
+    """Idempotent. A second run continues from the skill Cognee holds rather
+    than overwriting it with the scaffold."""
+    import cognee
 
-    Idempotent: an existing skill is returned as Cognee holds it,
-    improvements and all. A second run against the same dataset must
-    continue from the skill Cognee has rather than overwrite it with the
-    scaffold -- that reset-every-run mistake threw away a night's work
-    once already.
-    """
     text = await current_procedure(dataset=dataset)
     if text:
         return text
-    await seed_skill(SEED_SKILL_PATH.read_text(), dataset=dataset)
+    seed = SEED_SKILL_PATH.read_text()
+    await cognee.remember(seed, dataset_name=dataset, content_type="skills",
+                          skill_name=SKILL_NAME, skills_text=seed,
+                          self_improvement=False)
     return await current_procedure(dataset=dataset) or ""
+
+
+# ---- the graded attempt ----------------------------------------------
 
 
 def score_from_verdict(*, tests_passed: int, tests_total: int,
                        closeness: float | None = None) -> float:
-    """Our grader's verdict, in the range Cognee requires.
+    """THE FUZZY MEASURE IS THE SCORE.
 
-    THE FUZZY MEASURE IS THE SCORE. `closeness` is 0.0 for an untouched
-    checkout and 1.0 for the human's merged PR, normalised per file
-    against the baseline and compared after `ast.unparse` so layout is
-    not mistaken for divergence. It moves when an attempt migrates 12 of
-    40 sites, which is what the skill needs to be taught by.
+    `tests_passed` is a step function on these fixtures -- the package imports
+    or it does not -- so one correct edit moves it by hundreds while the
+    migration is barely begun. Measured on x12sdk: warm's best test score (60
+    of 261) came from its LEAST reference-like tree (closeness 0.0161), while
+    cold at 0 tests was at 0.0495.
 
-    WHY NOT `tests_passed`, which this used to be. On these fixtures it
-    is a step function: the package either imports or it does not, so one
-    correct edit takes it from 0 to hundreds while the migration itself
-    is barely begun. Measured on x12sdk, 2026-09-21: warm's attempt 3
-    scored 60 of 261 tests with a closeness of 0.0161 -- its LEAST
-    reference-like tree of three -- while cold, at 0 tests, was at
-    0.0495. Scoring on the suite taught the skill that the import fix was
-    the win. The operator's words, twice: *"an agent with shit code but a
-    good import goes from 0-300+. This is not a test."*
-
-    THE NORMALISATION, stated because the previous version of this
-    docstring used its absence as the reason not to do this:
-
-      * closeness is SIGNED. An attempt that damages the tree scores
-        below zero -- -1.9748 was recorded on this run when cold left a
-        syntax error. Clamped to 0.0, which is the honest reading: worse
-        than not trying, and there is nothing below "no credit".
-      * a GREEN SUITE IS 1.0 regardless. The suite is a bad gradient and
-        a perfect terminator: `tests_passed == tests_total` means solved,
-        however unlike the reference the solution looks. Closeness itself
-        cannot express this -- two arms that both passed all 445 tests on
-        oapi scored 0.86 and 0.91, because it ranks resemblance to one
-        implementation, never correctness.
-      * NO ANSWER KEY, no closeness (`None`). Then the suite ratio is all
-        there is, and it is used with the step-function caveat above --
-        a fixture without a reference cannot be scored well.
+    closeness is signed: -1.9748 was recorded when cold left a syntax error.
+    Clamped to 0. A green suite is 1.0 regardless, because closeness ranks
+    resemblance to one implementation, never correctness.
     """
     if tests_total > 0 and tests_passed >= tests_total:
         return 1.0
     if closeness is None:
-        if tests_total <= 0:
-            return 0.0
-        return max(0.0, min(1.0, tests_passed / tests_total))
+        return max(0.0, min(1.0, tests_passed / tests_total)) if tests_total > 0 else 0.0
     return max(0.0, min(1.0, float(closeness)))
 
 
-async def record_run(*, score: float, task: str, summary: str,
-                     skill: str = SKILL_NAME, error_message: str = "",
-                     latency_ms: int = 0, propose: bool = True,
-                     score_threshold: float = 0.5, max_runs: int = 5,
-                     dataset: str = DEFAULT_DATASET,
-                     session_id: str | None = None) -> tuple[Any, str | None]:
-    """One graded attempt, as a SkillRun, plus a proposal if it was poor.
+def outcome_document(*, fixture: str, attempt: int, agent: str,
+                     helped: bool, headline: str, evidence: str,
+                     tests_passed: int, tests_total: int,
+                     closeness: float | None, v1_remaining: int,
+                     error_signature: str | None, rejected_because: str = "",
+                     max_chars: int = 3000) -> str:
+    """The one document per attempt that carries what the agent actually did.
 
-    `skill` IS THE SKILL'S NAME, NOT ITS ID, despite landing in a field
-    called `selected_skill_id`: `resolve_skills` sends any `str` to
-    `find_skill_by_name`, so passing the UUID `list_skills` just gave you
-    raises "Skill '<uuid>' was not found or is not visible".
-
-    `skill_improvement` has to RIDE ON this call -- a bare
-    `remember("", skill_improvement=...)` is rejected outright.
-    Recording the run and drafting the proposal are one operation by
-    design, which is reasonable: the proposal is drawn from the runs.
+    Everything here is the GRADER's, not the model's: an independent pytest run
+    in a fresh sandbox, and a diff of the tree the harness took itself. Written
+    as prose with the diff inline, because that is what a later attempt reads
+    back and what `distill_sessions` draws its lesson from. Before this existed
+    the graph held `"attempt 3: vibe exited 0 after 12 assistant turn(s)"` and
+    distillation had nothing about Pydantic to distil.
     """
+    verdict = "WORKED" if helped else "DID NOT WORK"
+    head = [
+        f"{verdict} -- {fixture} attempt {attempt} by {agent}.",
+        headline.strip(),
+        (f"Graded independently: {tests_passed}/{tests_total} tests passing, "
+         f"{v1_remaining} pydantic v1 surfaces left in the package"
+         + (f", closeness to the reference migration {closeness:.4f}"
+            if closeness is not None else "") + "."),
+    ]
+    if error_signature:
+        head.append(f"First failure after this attempt: {error_signature}")
+    if rejected_because:
+        head.append(rejected_because.strip())
+    body = "\n".join(h for h in head if h)
+    room = max_chars - len(body) - 2
+    if evidence.strip() and room > 200:
+        body += "\n\n" + _cap(evidence.strip(), room)
+    return body
+
+
+async def record_attempt(*, fixture: str, attempt: int, agent: str,
+                         helped: bool, headline: str, evidence: str,
+                         tests_passed: int, tests_total: int,
+                         closeness: float | None, v1_remaining: int,
+                         error_signature: str | None,
+                         rejected_because: str = "",
+                         latency_ms: int = 0,
+                         dataset: str = DEFAULT_DATASET,
+                         session_id: str | None = None,
+                         improve_skill: bool = True,
+                         score_threshold: float = 0.9,
+                         max_runs: int = 5) -> dict[str, Any]:
+    """Two writes, both Cognee's own: the outcome document into the worked or
+    failed node set, and the graded run as a SkillRunEntry that drafts -- and
+    then applies -- a rewrite of the procedure."""
     import cognee
+
+    worked_set, failed_set = node_sets(fixture)
+    document = outcome_document(
+        fixture=fixture, attempt=attempt, agent=agent, helped=helped,
+        headline=headline, evidence=evidence, tests_passed=tests_passed,
+        tests_total=tests_total, closeness=closeness,
+        v1_remaining=v1_remaining, error_signature=error_signature,
+        rejected_because=rejected_because)
+    await cognee.remember(document, dataset_name=dataset,
+                          node_set=[worked_set if helped else failed_set],
+                          self_improvement=False)
+
+    score = score_from_verdict(tests_passed=tests_passed,
+                               tests_total=tests_total, closeness=closeness)
+    if not improve_skill:
+        return {"score": score, "document_chars": len(document),
+                "node_set": worked_set if helped else failed_set,
+                "proposal_id": None, "applied": False,
+                "procedure_chars": len(await current_procedure(
+                    dataset=dataset) or "")}
+
     from cognee.memory.entries import SkillRunEntry
 
     entry = SkillRunEntry(
-        selected_skill_id=skill, task_text=task, result_summary=summary,
-        success_score=score, error_message=error_message,
+        # Wants the skill's NAME, not its id.
+        selected_skill_id=SKILL_NAME,
+        task_text=f"attempt {attempt}: migrate {fixture} to Pydantic v2",
+        result_summary=document[:2000],
+        success_score=score,
+        feedback=1.0 if helped else -1.0,
+        error_message=(error_signature or "")[:500],
         latency_ms=latency_ms)
-    improvement = ({"skill_name": skill, "score_threshold": score_threshold,
-                    "max_runs": max_runs} if propose else None)
-    result = await cognee.remember(entry, dataset_name=dataset,
-                                   session_id=session_id,
-                                   skill_improvement=improvement,
-                                   # See seed_skill: the bridge is ours to
-                                   # time, not a background task's.
-                                   self_improvement=False)
-    return result, proposal_id_of(result)
+    # `skill_improvement` must ride on a SkillRunEntry; sent alone it is
+    # rejected.
+    result = await cognee.remember(
+        entry, dataset_name=dataset, session_id=session_id,
+        skill_improvement={"skill_name": SKILL_NAME,
+                           "score_threshold": score_threshold,
+                           "max_runs": max_runs},
+        self_improvement=False)
+    proposal_id = _proposal_id_of(result)
+    if proposal_id:
+        await _apply_improvement(proposal_id, dataset=dataset)
+    procedure = await current_procedure(dataset=dataset) or ""
+    return {"score": score, "document_chars": len(document),
+            "node_set": worked_set if helped else failed_set,
+            "proposal_id": proposal_id, "applied": bool(proposal_id),
+            "procedure_chars": len(procedure)}
 
 
-def proposal_id_of(result: Any) -> str | None:
-    """The proposal id out of a remember() result, or None when no run
-    scored below the threshold -- Cognee's way of saying there is
-    nothing to learn from yet."""
+def _proposal_id_of(result: Any) -> str | None:
     for item in (getattr(result, "items", None) or []):
         if isinstance(item, dict) and item.get("kind") == "skill_improvement_proposal":
             pid = item.get("proposal_id")
@@ -364,115 +514,94 @@ def proposal_id_of(result: Any) -> str | None:
     return None
 
 
-async def apply_improvement(proposal_id: str, *, skill: str = SKILL_NAME,
-                            dataset: str = DEFAULT_DATASET) -> Any:
-    """Accept a drafted procedure. Rewrites it in the graph, in place.
-
-    Calls `improve_skill` directly, as the docs' own example does. The
-    remember() route cannot express apply on its own: `skill_improvement`
-    must ride on a SkillRunEntry or a `content_type="skills"` ingest, and
-    both would mean inventing a spurious run or re-ingesting the skill
-    we are about to rewrite.
-    """
+async def _apply_improvement(proposal_id: str, *,
+                             dataset: str = DEFAULT_DATASET) -> Any:
+    """apply needs `improve_skill` directly, with a Dataset OBJECT."""
     from cognee.modules.memify.skill_improvement import improve_skill
-
-    return await improve_skill(skill, dataset=await _dataset_object(dataset),
-                               proposal_id=proposal_id, apply=True)
-
-
-async def _dataset_object(name: str):
-    """The Dataset row. `improve_skill` needs `.id` and `.owner_id`."""
     from cognee.modules.pipelines.layers.resolve_authorized_user_datasets import (
         resolve_authorized_user_datasets)
     from cognee.modules.users.methods import get_default_user
 
     _, datasets = await resolve_authorized_user_datasets(
-        name, await get_default_user())
+        dataset, await get_default_user())
     if not datasets:
-        raise RuntimeError(f"no dataset {name!r}")
-    return datasets[0]
+        raise RuntimeError(f"no dataset {dataset!r}")
+    return await improve_skill(SKILL_NAME, dataset=datasets[0],
+                               proposal_id=proposal_id, apply=True)
 
 
-async def distil_after_attempt(*, tests_passed: int, tests_total: int,
-                               attempt: int, suite_passed: bool,
-                               error: str | None,
-                               closeness: float | None = None,
-                               dataset: str = DEFAULT_DATASET,
-                               session_id: str | None = None) -> dict:
-    """Record the graded attempt; let Cognee rewrite the procedure.
+# ---- reads -----------------------------------------------------------
 
-    This is the whole of what `distill.py` did, and it is short because
-    the prompting, the validation, the repair loop and the disclosure
-    pass are Cognee's now. Nothing is written to disk: the procedure
-    Cognee rewrote is the procedure the next attempt is handed and the
-    procedure `recall` returns.
+
+async def recall_node_set(*, dataset: str, node_set: str, query: str,
+                          top_k: int = 8,
+                          limit: int = MAX_BLOCK_CHARS) -> str:
+    """The stored documents in one node set, ranked against `query`.
+
+    CHUNKS + only_context returns the text as stored, with no model in the way
+    and no reshuffling between attempts. Never fatal: this runs inside the
+    attempt body, so an unreachable graph must cost the memory and not the
+    attempt.
     """
-    import time
+    try:
+        import cognee
+        from cognee import SearchType
 
-    started = time.monotonic()
-    score = score_from_verdict(tests_passed=tests_passed,
-                               tests_total=tests_total,
-                               closeness=closeness)
-    # WHAT THE SKILL IS TOLD IT ACHIEVED. Closeness first, because that is
-    # what the score is; the suite second, with its denominator, because
-    # `tests_passed` alone is a step function and a proposal written
-    # against "56/261 passing" learns to chase the import.
-    summary = (f"closeness {closeness:.4f} to the reference migration"
-               if closeness is not None else "closeness not measurable")
-    summary += f"; {tests_passed}/{tests_total} tests passing"
-    if suite_passed:
-        summary += "; SUITE GREEN"
-    _run, proposal_id = await record_run(
-        score=score,
-        task=f"attempt {attempt}: migrate the repository to Pydantic v2",
-        summary=summary,
-        error_message=(error or "")[:2000],
-        dataset=dataset, session_id=session_id)
-
-    if proposal_id:
-        await apply_improvement(proposal_id, dataset=dataset)
-    text = await current_procedure(dataset=dataset) or ""
-    return {"score": score, "closeness": closeness, "proposal_id": proposal_id,
-            "applied": bool(proposal_id), "procedure_chars": len(text),
-            "seconds": time.monotonic() - started}
+        entries = await cognee.recall(
+            query or "pydantic v1 to v2 migration", datasets=[dataset],
+            node_name=[node_set], query_type=SearchType.CHUNKS,
+            only_context=True, top_k=top_k)
+    except Exception as exc:
+        print(f"  recall({node_set}) could not read the graph ({exc!r}); "
+              f"this attempt runs without that block")
+        return ""
+    seen: list[str] = []
+    for entry in entries or []:
+        # A cold dataset answers with a warming-up marker, not an empty list.
+        if getattr(entry, "source", None) == "system":
+            continue
+        text = (getattr(entry, "text", None) or "").strip()
+        for para in text.split("\n\n"):
+            para = para.strip()
+            if para and para not in seen:
+                seen.append(para)
+    return _cap("\n\n".join(seen), limit)
 
 
-# ---- the deterministic half -------------------------------------------
-#
-# docs.cognee.ai/guides/agent-session-traces (the decorator) and
-# /examples/agent-trace-lessons (improve's distillation stages).
+async def bridge(session_ids: list[str], *,
+                 dataset: str = DEFAULT_DATASET) -> dict:
+    """Session traces into the permanent graph, and lessons out of them.
+
+    Without this the traces are write-only: `recall` on the same session finds
+    them and nothing else ever does. The stages that matter are
+    persist_agent_traces, extract_agent_context and distill_sessions. Drains
+    cognee's background work afterwards so the next read cannot race it.
+    """
+    import cognee
+
+    result = await cognee.improve(dataset, session_ids=session_ids)
+    try:
+        await cognee.wait_for_background_tasks(timeout=120.0)
+    except Exception:
+        pass
+    stages = {}
+    for stage in (getattr(result, "stages", None) or []):
+        stages[getattr(stage, "stage", None) or "?"] = {
+            "status": getattr(stage, "status", None),
+            "reason": getattr(stage, "reason", None),
+            "counts": getattr(stage, "counts", None),
+        }
+    return {"status": getattr(result, "status", None), "stages": stages}
 
 
 def with_agent_memory(fn: Callable[..., Awaitable[Any]], *,
-                      dataset: str = DEFAULT_DATASET,
-                      session_id: str,
-                      agent_session_name: str,
-                      top_k: int = 5) -> Callable[..., Awaitable[Any]]:
-    """Wrap one attempt in Cognee's own agent-memory decorator.
+                      dataset: str, session_id: str,
+                      agent_session_name: str) -> Callable[..., Awaitable[Any]]:
+    """Cognee's decorator around one attempt: it WRITES the trace.
 
-    THE CANONICAL INTEGRATION, and the reason there is no hand-rolled
-    trace writing in this file any more. On each call Cognee:
-
-      * retrieves memory for the query named by `query_param` (this
-        attempt's previous error -- the thing that differs between
-        attempts, and therefore the thing worth embedding), and leaves
-        it on a contextvar the wrapped function reads with
-        `memory_context()`;
-      * persists a session trace afterwards carrying the function's
-        parameters, its status, its return value and any error.
-
-    `memory_only_context=True`: the retrieval must not spend an LLM call
-    synthesising an answer. The attempt prompt wants the evidence, and a
-    synthesised paragraph is a second model's opinion inserted into a
-    measurement of the first.
-
-    `save_session_traces=True` writes into SESSION memory, which is NOT
-    graph-queryable until something distils it -- see
-    `improve_from_sessions`, which is the other half of this and has to
-    run or the traces are written and never read.
-
-    APPLIED PER ATTEMPT, not at import: dataset and session are per run,
-    and the decorator's config is fixed at decoration time.
+    `with_memory=False` because the decorator's retrieval is hardwired to
+    GRAPH_SUMMARY_COMPLETION, which describes graph topology rather than a
+    lesson and is different on every call. Reads are `recall_node_set`.
     """
     import cognee
 
@@ -480,331 +609,25 @@ def with_agent_memory(fn: Callable[..., Awaitable[Any]], *,
         agent_session_name=agent_session_name,
         dataset_name=dataset,
         session_id=session_id,
-        # WRITES, NOT READS. `with_memory=True` made the decorator retrieve
-        # with `GRAPH_SUMMARY_COMPLETION`, which re-summarises the projected
-        # subgraph with an LLM on every call. Measured 2026-09-21, three
-        # calls against one unchanged graph:
-        #
-        #   291 / 329 / 239 characters, three different hashes, and the
-        #   content was graph TOPOLOGY -- "The `None` node has three
-        #   duplicate skill relationships to pydantic-v2-migration" --
-        #   not a lesson.
-        #
-        # So warm's "memory" was a stochastic description of the graph's
-        # shape, injected fresh each attempt. The distilled lessons that
-        # `improve()` had correctly written were sitting unread. Reads are
-        # now `lessons()`, which is stored text and byte-identical across
-        # calls.
         with_memory=False,
         with_session_memory=True,
         save_session_traces=True,
-        memory_top_k=top_k,
     )(fn)
 
 
-def memory_context() -> str:
-    """What the decorator retrieved for the call we are inside.
-
-    Empty string when there is no decorator on the stack (every cold
-    attempt) or when Cognee found nothing (every attempt 1). Both are
-    normal and neither is an error.
-    """
-    try:
-        from cognee.modules.agent_memory import get_current_agent_memory_context
-    except Exception:
-        return ""
-    context = get_current_agent_memory_context()
-    return getattr(context, "memory_context", "") or "" if context else ""
-
-
-async def recall_context(query: str, *, dataset: str = DEFAULT_DATASET,
-                         session_id: str | None = None,
-                         scope: str | list[str] = "session_first",
-                         top_k: int = 5,
-                         limit: int = MAX_CONTEXT_CHARS) -> str:
-    """Cognee's own retrieval, rendered as a block for the prompt.
-
-    `only_context=True` reads without spending a completion, and
-    `context_profile="agent"` is the profile Cognee's own trace-lesson
-    example uses for exactly this: what an agent should know before it
-    starts.
-
-    `scope="session_first"` because of a measured Cognee behaviour worth
-    stating plainly: a `remember(..., session_id=...)` lands in SESSION
-    memory and is not graph-queryable until `improve` distils it, so a
-    graph-only read straight after a write answers
-    `status='memory_warming_up'` -- which reads as a lost write and is
-    not one.
-    """
-    import cognee
-
-    entries = await cognee.recall(
-        query, datasets=[dataset], session_id=session_id, scope=scope,
-        context_profile="agent", top_k=top_k, only_context=True)
-    return render_recall(entries, limit=limit)
-
-
-def render_recall(entries: Any, *, limit: int = MAX_CONTEXT_CHARS) -> str:
-    """Recall's typed entries as plain text, truncated to `limit`.
-
-    Defensive about shape on purpose: `recall` returns a union of eight
-    response models discriminated on `source`, and which ones come back
-    depends on what has been distilled. Anything without text we can
-    read is skipped rather than str()'d -- a pydantic repr in the
-    prompt is noise the model has to pay for and cannot use.
-    """
-    lines: list[str] = []
-    for entry in (entries or []):
-        text = ""
-        for attribute in ("text", "content", "answer", "memory_context",
-                          "method_return_value", "session_feedback"):
-            value = (entry.get(attribute) if isinstance(entry, dict)
-                     else getattr(entry, attribute, None))
-            if isinstance(value, str) and value.strip():
-                text = value.strip()
-                break
-        if not text:
-            continue
-        if text not in lines:
-            lines.append(text)
-    block = "\n\n".join(lines).strip()
-    if len(block) > limit:
-        # Head, not tail: recall returns its best match first.
-        block = block[:limit].rsplit("\n", 1)[0] + "\n[...]"
-    return block
-
-
-# The marker `distill_sessions` writes at the head of every lesson it
-# produces. Matched on rather than guessed: read off a real lesson in
-# Aura after the 2026-09-21 pod run.
-LESSON_PREFIX = "# Session learning"
-
-
-async def lessons(*, dataset: str = DEFAULT_DATASET,
-                  limit: int = MAX_CONTEXT_CHARS) -> str:
-    """The distilled session learnings for this fixture, as stored text.
-
-    THE DETERMINISTIC READ, and the reason it is a Cypher query rather
-    than a `search()`: every search path in Cognee that returns prose
-    puts a model in the way. `GRAPH_SUMMARY_COMPLETION` re-summarises the
-    subgraph per call (measured: three different answers to three
-    identical calls), `RAG_COMPLETION` and the graph completions answer a
-    question, and even `only_context=True` returns the framing rather
-    than the text. What `improve()`'s `distill_sessions` stage writes is
-    a DOCUMENT, and reading the document back is both exact and
-    repeatable -- 697 characters, same sha256, three calls running.
-
-    SCOPED BY THE SESSION ID, which carries the dataset name (see
-    CogneeMemory.session_id). Cognee's graph search ignores the dataset
-    it is given -- see the note above `forget_everything` -- so a filter
-    on the lesson's own session marker is the only thing that actually
-    keeps one fixture's lessons out of another's prompt.
-
-    Ordered by session then text so the block is stable: an unordered
-    read would reshuffle the prompt between attempts and make warm's
-    context differ for no reason anyone could see.
-    """
-    from cognee.infrastructure.databases.graph import get_graph_engine
-
-    # NEVER FATAL. This is read from inside the attempt body, which is not
-    # wrapped in the loop's own guard -- so an unreachable graph, or a
-    # store whose nodes have no `text` property, would cost the agent its
-    # attempt rather than its memory. Loud, because warm running without
-    # its lessons looks exactly like warm running with useless ones.
-    try:
-        engine = await get_graph_engine()
-        rows = await engine.query(
-            "MATCH (n) WHERE n.text STARTS WITH $prefix AND n.text CONTAINS $scope "
-            "RETURN n.text AS text ORDER BY n.text",
-            {"prefix": LESSON_PREFIX, "scope": f"(session {dataset}:"})
-    except Exception as exc:
-        print(f"  lessons() could not read the graph ({exc!r}); this "
-              f"attempt runs without its distilled lessons")
-        return ""
-    seen: list[str] = []
-    for row in rows:
-        text = (row.get("text") or "").strip()
-        if text and text not in seen:
-            seen.append(text)
-    block = "\n\n".join(seen)
-    if len(block) > limit:
-        block = block[:limit].rsplit("\n", 1)[0] + "\n[...]"
-    return block
-
-
-async def improve_from_sessions(session_ids: list[str], *,
-                                dataset: str = DEFAULT_DATASET) -> dict:
-    """Bridge this run's session traces into the permanent graph.
-
-    Cognee's `improve` runs nine stages in a fixed order; the three that
-    matter here need `session_ids` and are why this call exists at all:
-    `persist_agent_traces` (the decorator's traces become graph nodes),
-    `extract_agent_context` and `distill_sessions` (the trace-lesson
-    distillation this project used to hand-write in `distill.py`).
-
-    WITHOUT THIS, THE TRACES ARE WRITE-ONLY. The decorator stores them in
-    session memory; `recall(scope="session_first")` finds them for the
-    same session, and nothing else ever does. A second run, a second
-    agent, or a graph query sees nothing.
-
-    Returns a per-stage summary rather than the ImproveResult object, so
-    the caller can print what ran without importing cognee's types. A
-    stage that declines work reports `skipped` with a reason -- that is
-    normal (several stages are opt-in) and is not a failure.
-    """
-    import cognee
-
-    result = await cognee.improve(dataset, session_ids=session_ids)
-    # DRAIN BEFORE ANYONE READS. `remember` defaults to
-    # `self_improvement=True` and launches improvement in the background
-    # -- cognee's own docstring for this function says so: "a background
-    # remember that fires an improve". Without the wait, the next
-    # attempt's read races writes from the last one, and which lessons
-    # exist depends on timing. Bounded, and never fatal: a drain that
-    # times out costs freshness, not the run.
-    try:
-        await cognee.wait_for_background_tasks(timeout=120.0)
-    except Exception:
-        pass
-    stages = {}
-    for stage in (getattr(result, "stages", None) or []):
-        name = getattr(stage, "stage", None) or "?"
-        stages[name] = {"status": getattr(stage, "status", None),
-                        "reason": getattr(stage, "reason", None),
-                        "counts": getattr(stage, "counts", None)}
-    return {"status": getattr(result, "status", None)
-                      or getattr(result, "finished", None),
-            "stages": stages}
-
-
-# ---- the repo under migration: docs.cognee.ai/guides/code-graph --------
-
-
-async def add_code_graph(repo: Path, *,
-                         dataset: str = "code_graph") -> Any:
-    """Ingest a repo as a code graph, per `guides/code-graph`.
-
-    A CUSTOM PIPELINE, not `remember`. The first version of this called
-    `remember(str(repo), content_type="code")`, which is plausible and
-    wrong -- written from the docs index's one-line description of a
-    page I had not opened. The shipped path is
-    `run_custom_pipeline(get_code_graph_tasks(...))`.
-
-    Two properties of it worth knowing before using it here:
-
-      * it needs the `enola` binary, which auto-installs to
-        `~/.cognee/bin` on first run (`ENOLA_AUTO_INSTALL=false` to
-        disable, `ENOLA_PATH` to point at your own);
-      * it is ENTIRELY DETERMINISTIC and needs no API key. That makes it
-        a different kind of thing from the rest of this module -- no
-        model reads the repo, so nothing about the fixture leaks into an
-        LLM, and a code graph costs nothing to rebuild.
-
-    Its own dataset by default: the code graph is a map of the codebase,
-    not a memory of attempts at it, and mixing them makes "what does
-    warm know" unanswerable.
-    """
-    import cognee
-    from cognee.tasks.code_graph import get_code_graph_tasks
-
-    return await cognee.run_custom_pipeline(
-        tasks=get_code_graph_tasks(str(repo)), data=str(repo),
-        dataset=dataset, pipeline_name="code_graph_pipeline",
-        skip_connection_test=True)
-
-
-async def query_code_graph(operation: str = "query_facts", *,
-                           dataset: str = "code_graph", **params) -> Any:
-    """Ask the code graph a structured question.
-
-    `SearchType.CODE` takes a `code_query` dict rather than a text
-    query, and the operations are deterministic graph traversals, not
-    similarity ranking: `query_facts`, `architecture`, `insights`,
-    `explore`, `traverse`, `find_path`, `impact_analysis`.
-
-    `impact_analysis` is the one to reach for on a migration -- "what
-    breaks if this model changes" is the question the agent keeps
-    getting wrong.
-    """
-    import cognee
-    from cognee import SearchType
-
-    return await cognee.search(
-        query_type=SearchType.CODE, query_text="", datasets=[dataset],
-        code_query={"operation": operation, **params})
-
-
-# THE DATASET IS NOT AN ISOLATION BOUNDARY FOR GRAPH SEARCH. MEASURED.
-#
-# The rest of this module scopes everything by dataset, and the previous
-# design note said that made fixture isolation structural -- the job
-# `prov_fixture` used to do with a stamp on every trace, done instead by
-# a name that cannot be forgotten on a write.
-#
-# It is not true of `SearchType.GRAPH_SUMMARY_COMPLETION`, which is the
-# retrieval `cognee.agent_memory` performs. Reproduced on 2026-09-20,
-# cognee 1.6.0 against Aura:
-#
-#     add("Zorblatt Quixnar <stamp> is the secret migration rule.") -> A
-#     add("Unrelated filler text.")                                 -> B
-#     cognify A; cognify B
-#     search(..., datasets=[B], query="What is Zorblatt Quixnar?")
-#       -> "Zorblatt Quixnar <stamp> contains the secret migration rule"
-#
-# Dataset B never saw the marker and returned it. Writes ARE scoped;
-# graph reads are not, because every dataset lives in one Neo4j database
-# and the traversal does not filter on the dataset the caller named.
-#
-# WHAT IT MEANS FOR A RUN. Warm on one fixture can retrieve a lesson
-# distilled on another, which is exactly the contamination this project
-# added `prov_fixture` to stop after a distiller learned from 25 traces
-# belonging to a different codebase. It also means `--reset-memory`,
-# which forgets one dataset, does not give a clean graph on an instance
-# that has ever held another.
-#
-# WHAT TO DO ABOUT IT, in order of how much it actually buys:
-#
-#   * one Neo4j instance (or database) per fixture -- the only complete
-#     answer, and not available on an Aura tier that gives one database;
-#   * `forget_everything(everything=True)` before a series, which is what
-#     `--reset-memory-everything` is for: a genuinely empty graph, at the
-#     cost of every earlier experiment's memory;
-#   * state it in the run's output and read every cross-fixture result
-#     with it in mind. That is the minimum, and it is not optional.
-#
-# Not papered over here: a filter this module applied on the way out
-# would look like isolation while the retrieval it wraps stayed unscoped.
-
-
 async def forget_everything(*, dataset: str = DEFAULT_DATASET,
-                            everything: bool = False) -> int:
-    """Cognee's own `forget`, for `--reset-memory`.
-
-    Scoped to the dataset by default. The old `reset_graph()` was
-    `MATCH (n) DETACH DELETE n` -- every node for every fixture -- which
-    is wider than the flag ever meant.
-
-    `everything=True` is that wider thing, back, deliberately: graph
-    search is not dataset-scoped (see above), so forgetting one dataset
-    leaves a run able to retrieve another fixture's lessons. When a
-    series needs a genuinely empty graph, this is the only way to get
-    one on a single instance.
-    """
+                            everything: bool = False) -> None:
+    """`everything=True` is the only clean reset available on one instance,
+    because recall is not dataset-scoped."""
     import cognee
 
     if everything:
         await cognee.forget(everything=True)
     else:
         await cognee.forget(dataset=dataset)
-    return 0
 
 
 async def datasets_in_graph() -> list[str]:
-    """Every dataset name the graph holds, for the isolation warning.
-
-    A run on a shared instance should say what else is in there, because
-    graph retrieval can reach all of it -- see the note above.
-    """
     import cognee
 
     names = []
@@ -816,137 +639,181 @@ async def datasets_in_graph() -> list[str]:
     return sorted(names)
 
 
+# Control characters that cannot survive the trip to the model: the prompt is
+# passed to Vibe as a process argument, and `subprocess` rejects a NUL in argv
+# outright. Tab, newline and carriage return are kept.
+_CONTROL = {c: None for c in range(0x20) if c not in (0x09, 0x0A, 0x0D)}
+_CONTROL[0x7F] = None
+
+
+def clean(text: str) -> str:
+    """Strip what cannot be passed to a process argument.
+
+    MEASURED 2026-09-21: a procedure Cognee had rewritten came back with an
+    embedded NUL, and the attempt died in `subprocess.Popen` with
+    `ValueError: embedded null byte` -- inside the decorator, so it read as
+    "cognee could not open this attempt's memory" and the attempt ran with no
+    memory at all. Everything this module hands the prompt goes through here,
+    because all of it is text some model wrote into a graph.
+    """
+    return (text or "").translate(_CONTROL)
+
+
+async def _bounded(coro, seconds: float, what: str, default):
+    """Await `coro` with a deadline, or return `default` loudly.
+
+    Cognee has no deadline of its own on the provider calls under `improve`
+    and `improve_skill`, and neither did this harness: a rehearsal sat for two
+    hours in one SSL read with the event loop otherwise idle, mid-attempt,
+    after the GPU had been paid for. Nothing distinguished it from work.
+    """
+    import asyncio
+
+    try:
+        return await asyncio.wait_for(coro, timeout=seconds)
+    except asyncio.TimeoutError:
+        print(f"  MEMORY TIMED OUT after {seconds:.0f}s in {what}; "
+              f"continuing without it")
+        return default
+
+
+def _cap(text: str, limit: int) -> str:
+    """Never longer than `limit`, marker included. Prefers a line boundary,
+    but not at the cost of most of the text."""
+    text = clean(text)
+    if len(text) <= limit:
+        return text
+    marker = "\n[...]"
+    head = text[:max(0, limit - len(marker))]
+    cut = head.rfind("\n")
+    if cut > len(head) * 0.8:
+        head = head[:cut]
+    return head + marker
+
+
+# ---- one warm agent's handle -----------------------------------------
+
+
+# EVERY MEMORY CALL IS BOUNDED, and none of these is a guess at a normal
+# duration -- they are the point past which a hung provider is costing the run
+# rather than doing work.
+#
+# MEASURED 2026-09-21: a rehearsal sat for two hours in one `_ssl_SSLSocket_
+# read` with the event loop otherwise idle. Neither Cognee nor the harness had
+# a deadline anywhere on the path, so a provider that accepts a connection and
+# never answers stops the experiment dead -- silently, mid-attempt, after the
+# GPU has been paid for.
+READ_TIMEOUT_S = 120.0          # inside the attempt; costs the agent's clock
+WRITE_TIMEOUT_S = 420.0         # off the clock, but bounded all the same
+BRIEF_WORKED = "What WORKED on earlier attempts at this codebase"
+BRIEF_FAILED = "What DID NOT WORK on earlier attempts at this codebase"
+BRIEF_CODE = "This codebase, from its code graph"
+
+
 @dataclass
 class CogneeMemory:
-    """One warm agent's handle on Cognee. Warm gets one; cold gets None.
-
-    The attempt loop still branches on `mem is not None` to tell the
-    arms apart, and this is what warm is handed.
-
-    ITS METHODS ARE THE DETERMINISTIC HALF, and each one is a single
-    documented Cognee call. Its predecessor under this name, `WarmMemory`,
-    had none at all, on the argument that anything the harness writes on
-    the agent's behalf is the harness measuring itself. That argument is
-    right about WRITING THE AGENT'S MEMORY FOR IT -- the harness does not
-    decide what the agent chose to remember, and `remember` stays the
-    agent's own tool -- and wrong about the rest: retrieving before an
-    attempt and recording a graded outcome are the integration Cognee
-    ships, they do not depend on the model's choice, and without them
-    warm is cold plus a tool list.
-
-    Its predecessor before THAT, `ScopedMemory`, had thirteen methods and
-    a hand-rolled trace model. The test is not "how many methods" but
-    "is there a Cognee call underneath each one": if a method here ever
-    starts reshaping, versioning or hashing what Cognee returned, that is
-    the thing to stop.
-    """
+    """Warm gets one; cold gets None. Every method is one Cognee call."""
 
     dataset: str = DEFAULT_DATASET
+    fixture: str = "fixture"
     label: str = "warm-0"
-    # PER RUN, PER AGENT, AND CARRYING THE DATASET. Once the constant
-    # "warm-0", so 98 runs wrote into one session and anything that walked
-    # it got slower every time until it stopped finishing at all.
-    #
-    # The dataset prefix is load-bearing for reads: Cognee's graph search
-    # ignores the dataset it is given, so the session id embedded in each
-    # distilled lesson is the only thing that keeps one fixture's lessons
-    # out of another fixture's prompt. `lessons()` filters on it.
+    # Per run, per agent. Once the constant "warm-0", so 98 runs wrote into one
+    # session -- and `forget` does not prune the session cache, so a REUSED id
+    # distils nothing ever again (measured: 0 documents on three attempts, 1
+    # per attempt the moment the id changed).
     session_id: str = "warm-0"
     mode: str = "hybrid"
-    # Counted, printed, and carried into the event log: how much
-    # retrieved text warm was handed and how often. "Warm read nothing"
-    # and "warm read and it was empty" are different findings.
+    code_dataset: str | None = None
+    # The directory name enola stamped on every fact. SearchType.CODE is not
+    # dataset-scoped, so without it one fixture's code graph reaches another's
+    # prompt -- measured.
+    code_repo: str | None = None
+    package: str | None = None
+    # `--no-distill`: still record the outcome document (that is the memory
+    # under test), but leave the procedure alone so the skill cannot change
+    # mid-run. Without the split, turning the skill off turned the memory off.
+    distil: bool = True
     reads: int = field(default=0, init=False)
     chars: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         if self.mode not in MEMORY_MODES:
-            raise ValueError(f"memory mode {self.mode!r} is not one of "
-                             f"{MEMORY_MODES}")
+            raise ValueError(f"memory mode {self.mode!r} is not one of {MEMORY_MODES}")
 
     async def procedure(self) -> str:
-        """The skill, as Cognee currently holds it, when the mode injects it.
+        if not uses_injection(self.mode):
+            return ""
+        return await _bounded(current_procedure(dataset=self.dataset),
+                              READ_TIMEOUT_S, "procedure()", "") or ""
 
-        EMPTY UNDER `mcp`, and that is the whole point of that mode: the
-        procedure is in the graph, the agent has `cognee_recall`, and
-        whether it arrives in the prompt is then the model's decision
-        rather than the harness's. Handing it over anyway would make
-        `mcp` and `hybrid` the same experiment with different labels.
+    async def brief(self, query: str) -> str:
+        """What this attempt is handed as memory, with the two halves labelled.
 
-        Cognee keeps no lineage -- it rewrites `procedure` in place -- so
-        this is read once per attempt. Reading it after the attempt would
-        attribute the result to whatever distillation wrote next.
+        The labels are the point. `distill_sessions` writes lessons and
+        `recall` ranks documents, but neither says which of two retrieved
+        paragraphs is the one to copy and which is the one to avoid. The node
+        set does, because the grader decided it.
         """
         if not uses_injection(self.mode):
             return ""
-        return await current_procedure(dataset=self.dataset) or ""
+        worked_set, failed_set = node_sets(self.fixture)
+        worked = await _bounded(
+            recall_node_set(dataset=self.dataset, node_set=worked_set,
+                            query=query), READ_TIMEOUT_S, "brief/worked", "")
+        failed = await _bounded(
+            recall_node_set(dataset=self.dataset, node_set=failed_set,
+                            query=query), READ_TIMEOUT_S, "brief/failed", "")
+        code = ""
+        if self.code_dataset and self.code_repo:
+            try:
+                code = await _bounded(
+                    code_brief(dataset=self.code_dataset, repo=self.code_repo,
+                               package=self.package),
+                    READ_TIMEOUT_S, "code_brief", "")
+                insights = await _bounded(
+                    code_insights(dataset=self.code_dataset,
+                                  repo=self.code_repo),
+                    READ_TIMEOUT_S, "code_insights", "")
+                if insights:
+                    code += f"\nWhat its structure looks like:\n{insights}"
+            except Exception as exc:
+                print(f"  code_brief failed ({exc!r}); continuing without it")
+        blocks = []
+        if code:
+            blocks.append(f"### {BRIEF_CODE}\n{code}")
+        if worked:
+            blocks.append(f"### {BRIEF_WORKED}\n{worked}")
+        if failed:
+            blocks.append(f"### {BRIEF_FAILED}\nDo not repeat these.\n{failed}")
+        block = "\n\n".join(blocks)
+        if block:
+            self.reads += 1
+            self.chars += len(block)
+        return block
 
     def wrap_attempt(self, fn: Callable[..., Awaitable[Any]],
                      **kwargs) -> Callable[..., Awaitable[Any]]:
-        """Cognee's decorator around one attempt.
-
-        STILL WRAPPED UNDER `mcp`, deliberately. The retrieval it does is
-        not injected in that mode, but the TRACE it writes is what fills
-        the graph -- and an agent given `cognee_recall` over an empty
-        graph is being measured on its willingness to read nothing.
-        `off` is the only mode that skips it, because `off` means warm ==
-        cold.
-        """
         if self.mode == "off":
             return fn
         return with_agent_memory(
             fn, dataset=self.dataset, session_id=self.session_id,
             agent_session_name=f"msf:{self.label}", **kwargs)
 
-    async def retrieved(self) -> str:
-        """What this attempt is handed as memory: the distilled lessons.
-
-        ASYNC AND DETERMINISTIC, and both are deliberate. It used to read
-        the decorator's contextvar, which held an LLM re-summary of the
-        graph produced fresh on every call -- so warm's treatment varied
-        between two attempts with an identical graph, and the experiment
-        could not attribute a difference to memory rather than to the
-        summariser. `lessons()` returns stored text.
-        """
-        if not uses_injection(self.mode):
-            return ""
-        block = await lessons(dataset=self.dataset)
-        if block:
-            self.reads += 1
-            self.chars += len(block)
-        return block
-
-    async def context(self, query: str) -> str:
-        """An explicit recall, for when there is no decorator context.
-
-        The decorator covers the attempt; this covers everything else --
-        a preflight warm-up, a distillation turn, an operator asking the
-        graph what it holds.
-        """
-        if not uses_injection(self.mode):
-            return ""
-        block = await recall_context(query, dataset=self.dataset,
-                                     session_id=self.session_id)
-        if block:
-            self.reads += 1
-            self.chars += len(block)
-        return block
+    async def record(self, **kwargs) -> dict[str, Any]:
+        if self.mode == "off":
+            return {}
+        return await _bounded(
+            record_attempt(fixture=self.fixture, agent=self.label,
+                           dataset=self.dataset, session_id=self.session_id,
+                           improve_skill=self.distil, **kwargs),
+            WRITE_TIMEOUT_S, "record()", {})
 
     async def improve(self) -> dict:
-        """Distil this agent's session traces into the graph.
-
-        Nothing to bridge under `off`: no decorator ran, so the session
-        holds no traces and calling `improve` would spend round trips to
-        be told so.
-        """
         if self.mode == "off":
             return {"status": "skipped", "stages": {}}
-        return await improve_from_sessions([self.session_id],
-                                           dataset=self.dataset)
+        return await _bounded(bridge([self.session_id], dataset=self.dataset),
+                              WRITE_TIMEOUT_S, "improve()",
+                              {"status": "timed_out", "stages": {}})
 
 
-# The name the first pass of the Cognee migration used. Kept so a call
-# site that has not been visited yet still constructs something that
-# works, rather than failing at the one point in a pod run where the
-# error costs the most.
 WarmMemory = CogneeMemory

@@ -139,19 +139,20 @@ def test_the_emit_sweep_finds_something() -> None:
     assert _emitted_event_names(vibe_agent), "no emit() literals found"
 
 
-def test_the_memory_answers_both_halves_of_the_treatment() -> None:
-    """Warm's treatment is a mix, and each half has a named method.
+def test_the_memory_answers_every_half_of_the_treatment() -> None:
+    """Warm's treatment is a mix, and each part has a named method.
 
-    `wrap_attempt`/`retrieved` are the deterministic half -- Cognee's own
-    `agent_memory` decorator around the attempt, and the text it
-    retrieved. `procedure` is the skill the harness puts in the prompt.
-    `improve` is the bridge from session memory into the graph, without
-    which every trace written is visible to its own session and to
-    nothing else. The MCP server is the voluntary half and needs no
-    method here: the agent calls it itself.
+    `brief` is the read: the code graph plus the earlier attempts the grader
+    filed as WORKED and as failed. `record` is the write that makes the next
+    attempt better than a cold one -- the graded outcome document, and the
+    SkillRunEntry that makes Cognee rewrite the procedure. `wrap_attempt` is
+    Cognee's own decorator, which writes the session trace. `improve` is the
+    bridge from session memory into the graph, without which every trace
+    written is visible to its own session and to nothing else. `procedure`
+    is the skill the harness puts in the prompt. The MCP server is the
+    voluntary half and needs no method here: the agent calls it itself.
     """
-    for name in ("procedure", "wrap_attempt", "retrieved", "context",
-                 "improve"):
+    for name in ("procedure", "brief", "wrap_attempt", "record", "improve"):
         assert hasattr(CogneeMemory, name), name
 
 

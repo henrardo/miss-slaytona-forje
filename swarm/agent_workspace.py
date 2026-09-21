@@ -225,6 +225,27 @@ transport = "streamable-http"
 url = "{url}"
 """
 
+# THE DETERMINISTIC READ, as Vibe's own declarative hook config.
+#
+# `match = "bash"` is the tool the agents actually use: over the last forty
+# runs, 4,767 `bash` calls against 9 `cognee_recall` calls. A hook on it fires
+# whether or not the model thought to ask.
+#
+# `strict = false` (the default) on purpose: a hook that exits non-zero must
+# not fail the tool call. The timeout is short for the same reason -- this runs
+# inside the agent's clock, and warm paying latency cold does not is a
+# confound in every number the run produces.
+_HOOKS_TEMPLATE = """\
+[[hooks]]
+name = "cognee-on-failure"
+type = "post_tool"
+match = "bash"
+command = "{command}"
+timeout = 10.0
+description = "On a failed command, append what earlier graded attempts \
+did about that failure."
+"""
+
 
 @dataclass
 class SwarmHost:
@@ -477,6 +498,11 @@ class AgentWorkspace:
                                                 repr=False, compare=False)
     installed_skill_sha: str | None = field(default=None, init=False,
                                             repr=False, compare=False)
+    # What the `post_tool` hook reads out of its environment. Empty for
+    # cold, which registers no hook, so an inherited variable cannot hand it
+    # a path to the graph. Set by enable_memory().
+    _hook_env: dict[str, str] = field(default_factory=dict, init=False,
+                                      repr=False, compare=False)
 
     host: SwarmHost
     label: str                      # e.g. "warm-0"
@@ -914,6 +940,84 @@ class AgentWorkspace:
                     pass
         return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
+    @property
+    def hook_journal(self) -> str:
+        """Where the `post_tool` hook records what it did. Read by the harness
+        after each attempt, and folded into that attempt's outcome document --
+        so "the hook fired N times and recalled M characters" is countable
+        rather than inferred."""
+        return f"{self.home}/.vibe/cognee-journal.jsonl"
+
+    def agent_path(self, path: str) -> str:
+        """The same path as VIBE will see it.
+
+        On the pod these are identical, and on the pod this is a no-op. The
+        rehearsal runs the "pod" as a subtree of a temp directory and rewrites
+        pod paths on the way through `host.run`; the hook command and the
+        journal path do NOT go through `host.run` -- VIBE executes them -- so
+        they have to be rewritten here instead.
+
+        This exact class of bug already killed a rehearsal: `MSF_HOOK_PATH`
+        pointed at an unmapped path, Vibe could not start the hook, and the
+        rehearsal reported a working hook for as long as it was left alone.
+        """
+        return path
+
+    def enable_hook(self, *, api_url: str, dataset: str,
+                    node_sets: tuple[str, str]) -> None:
+        """Register the deterministic read. Warm only.
+
+        A Vibe `post_tool` hook on `bash`: when the agent's own command
+        fails, it recalls what earlier graded attempts did about that failure
+        and Vibe appends the result to the tool output the model sees.
+
+        This exists because the voluntary half does not fire. Over the last
+        forty runs the agents made 4,767 `bash` calls and 9 `cognee_recall`
+        calls -- the server live, the tools registered, the model simply
+        never reaching for them. A hook is not a nudge: it is the read
+        happening whether or not the model thought of it.
+
+        It costs one python start per FAILED bash call and nothing on a
+        successful one, with an 8s ceiling on the whole hook, because this
+        runs inside the agent's clock and warm paying latency cold does not
+        is a confound in every number the run produces.
+        """
+        vibe_home = f"{self.home}/.vibe"
+        hook = (HARNESS_DIR / "hooks" / "cognee_on_failure.py").read_bytes()
+        self.host.put(hook, f"{vibe_home}/cognee_on_failure.py", mode="500",
+                      owner=f"{self.user}:{self.user}")
+        script = self.agent_path(f"{vibe_home}/cognee_on_failure.py")
+        self.host.put(_HOOKS_TEMPLATE.format(
+            command=f"{HOOK_PYTHON} {script}").encode(),
+            f"{vibe_home}/hooks.toml", mode="400",
+            owner=f"{self.user}:{self.user}")
+        self._hook_env = {
+            "COGNEE_API": api_url,
+            "COGNEE_DATASET": dataset,
+            "COGNEE_NODE_SET_WORKED": node_sets[0],
+            "COGNEE_NODE_SET_FAILED": node_sets[1],
+            "COGNEE_JOURNAL": self.agent_path(self.hook_journal),
+        }
+
+    def read_hook_journal(self, *, clear: bool = True) -> list[dict]:
+        """One entry per `bash` call the hook saw, newest last."""
+        import json
+
+        raw = self.host.run_as(self.user, f"cat {self.hook_journal} 2>/dev/null",
+                               check=False).stdout or ""
+        if clear:
+            self.host.run_as(self.user, f": > {self.hook_journal} 2>/dev/null",
+                             check=False)
+        out = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return out
+
     def enable_memory(self, *, mcp_url: str) -> None:
         """Give this agent the cognee MCP server. Warm only.
 
@@ -1008,6 +1112,13 @@ class AgentWorkspace:
             f"VIBE_HOME={vibe_home or self.home + '/.vibe'}",
             f"PATH={self.venv}/bin:{TOOLCHAIN}/bin:/usr/local/bin:/usr/bin:/bin",
             f"VIRTUAL_ENV={self.venv}",
+            # WHAT THE HOOK NEEDS, and nothing else: a loopback URL, a
+            # dataset name, two node-set names and a path to write a
+            # journal. No credential. Empty for cold, whose config
+            # registers no hook at all -- so an inherited variable cannot
+            # give it a path to the graph.
+            *(f"{k}={shlex.quote(v)}" for k, v in
+              sorted(self._hook_env.items())),
         ])
         resume_arg = " --continue" if resume else ""
         vibe = (f"env {env} {TOOLCHAIN}/bin/vibe "

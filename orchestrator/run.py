@@ -387,6 +387,8 @@ async def agent_worker(
     results: list,
     baseline_signature: str | None = None,
     baseline_passed: int = 0,
+    tests_total: int = 0,
+    package_path: str | None = None,
 ) -> MigrationResult:
     """One agent, one whole-codebase task -- no queue, nothing to claim: all
     N agents in a swarm are given the identical prompt ("migrate this
@@ -438,6 +440,9 @@ async def agent_worker(
                 baseline_signature=baseline_signature,
                 baseline_passed=baseline_passed,
                 agent_label=session_id,
+                tests_total=tests_total,
+                package_path=package_path,
+                skill_name=C.SKILL_NAME if mem is not None else None,
             )
             results.append((swarm, agent_id, result))
             return result
@@ -613,8 +618,19 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         print(f"  --reset-memory: forgot dataset {dataset}")
     before_counts = await C.assert_ready()
     print(f"  graph at start: {before_counts or '(empty)'}")
-    procedure = await C.ensure_seeded(dataset=dataset)
+    procedure = await C.ensure_skill(dataset=dataset)
     print(f"  skill: {len(procedure):,} chars in Cognee, dataset {dataset}")
+    # THE CODEBASE AS A GRAPH, read back by warm through `code_brief`.
+    # Deterministic, keyless, and re-ingested each run because the fixture's
+    # tree is whatever the last experiment left it as.
+    code_dataset: str | None = f"{dataset}-code"
+    code_root = FIXTURE_DIR / manifest["package_path"]
+    try:
+        kinds = await C.ingest_code_graph(code_root, dataset=code_dataset)
+        print(f"  code graph: {code_root.name} -> {code_dataset} {kinds}")
+    except Exception as exc:
+        code_dataset = None
+        print(f"  code graph: ingestion failed ({exc!r}); continuing without it")
 
     results: list[tuple[str, int, MigrationResult]] = []
     test_command = manifest["test_command"]
@@ -648,12 +664,12 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         # chain, written into the warm arm's memory on every run and
         # nowhere in cold's. The thing that was only supposed to load a
         # model was handing warm part of the answer.
-        warmup_mem = C.CogneeMemory(dataset=dataset, label="warmup",
-                                    session_id="warmup", mode=memory_mode)
         try:
-            await warmup_mem.context(
-                "Priya Raman met Tomas Nowak in Lisbon on Tuesday to discuss "
-                "the quarterly logistics review at Acme Freight.")
+            await C.recall_node_set(
+                dataset=dataset, node_set="warmup-nothing-is-here",
+                query="Priya Raman met Tomas Nowak in Lisbon on Tuesday to "
+                      "discuss the quarterly logistics review at Acme "
+                      "Freight.")
         except Exception as exc:
             print(f"  cognee warmup failed ({exc!r}); the first warm attempt "
                   f"will pay it instead")
@@ -706,9 +722,12 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
         # 98 runs of it, and everything that walked that session got
         # slower until it stopped finishing.
         warm_mems = {
-            i: C.CogneeMemory(dataset=dataset, label=f"warm-{i}",
+            i: C.CogneeMemory(dataset=dataset, fixture=FIXTURE_DIR.name,
+                              label=f"warm-{i}",
                               session_id=f"{dataset}:{run_id}:warm-{i}",
-                              mode=memory_mode)
+                              mode=memory_mode, code_dataset=code_dataset,
+                              code_repo=code_root.name,
+                              package=manifest["package_path"])
             for i in range(SWARM_SIZE)
         }
 
@@ -720,6 +739,8 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
                 repo_dir=repo_dir_for("warm", i, package_path),
                 test_command=test_command, deadline=deadline, bus=bus, results=results,
                 baseline_signature=baseline_signature, baseline_passed=baseline_passed,
+                tests_total=int(manifest.get("test_total") or 0),
+                package_path=manifest["package_path"],
             ))
             for i in range(SWARM_SIZE)
         ]
@@ -733,6 +754,8 @@ async def main_async(hard_deadline_s: float, model: str, reset_memory: bool = Fa
                 repo_dir=repo_dir_for("cold", i, package_path),
                 test_command=test_command, deadline=deadline, bus=bus, results=results,
                 baseline_signature=baseline_signature, baseline_passed=baseline_passed,
+                tests_total=int(manifest.get("test_total") or 0),
+                package_path=manifest["package_path"],
             ))
             for i in range(SWARM_SIZE)
         ]

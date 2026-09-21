@@ -27,6 +27,7 @@ import shlex
 import subprocess
 import sys
 import time
+import traceback
 from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -720,11 +721,13 @@ def _task_prompt(
     # chooses to go and fetch it -- which is not a memory experiment, it
     # is a tool-use experiment with the skill as the prize.
     #
-    # `memory` is what Cognee retrieved for this attempt (see
-    # cognee_layer.with_agent_memory). Capped at MAX_CONTEXT_CHARS,
-    # because the last version of a retrieved-memory block in this prompt
-    # reached 15,170 characters and warm spent three attempts reporting
-    # on it instead of migrating anything.
+    # `memory` is CogneeMemory.brief(): the code graph of this codebase, the
+    # attempts the grader judged to have WORKED, and the attempts it judged to
+    # have failed -- each under its own heading, because "here is some
+    # retrieved prose" does not tell a model which paragraph to copy and which
+    # to avoid. Capped per block, because the last uncapped version of this
+    # reached 15,170 characters and warm spent three attempts reporting on it
+    # instead of migrating anything.
     #
     # Both are reported per attempt (ATTEMPT_DONE.memory_chars) and both
     # are switchable off (`--memory-mode mcp`), because they are prompt
@@ -734,9 +737,12 @@ def _task_prompt(
         base += ("\n\nYour procedure for this task, as you last revised it:"
                  f"\n```\n{procedure.strip()}\n```")
     if memory:
-        base += ("\n\nWhat you and other agents learned on earlier attempts:"
-                 f"\n```\n{memory.strip()}\n```\n"
-                 "You do not have to follow any of it.")
+        base += ("\n\n## Your memory of this codebase\n\n"
+                 "Written by an independent grader that ran the real test "
+                 "suite before and after each earlier attempt. The WORKED "
+                 "section is verified progress; repeat it. The DID NOT WORK "
+                 "section is verified waste; do something else.\n\n"
+                 f"{memory.strip()}")
     # The one thing the agent genuinely cannot see for itself: the verdict from
     # a suite that ran somewhere else, in Daytona, after its turn ended. Stated
     # and not editorialised -- the advice that used to follow it ("keep going
@@ -1264,6 +1270,15 @@ def _collect_file_contents(repo_dir: Path) -> dict[str, bytes]:
         # on every single attempt regardless.
         if "__pycache__" in rel.parts or rel.suffix == ".pyc":
             continue
+        # NO DOT-DIRECTORIES. `.pytest_cache` was upload weight; `.enola`
+        # was worse -- the code-graph pipeline writes its snapshot to
+        # `<repo>/.enola/` by default, and one ingest put 2.3 MB of
+        # `facts.jsonl` and an extractor cache inside the tree the grader
+        # scores, where `surfaces` counted it and `closeness` diffed it.
+        # The snapshot now goes to a scratch directory; this is the second
+        # line of defence, because nothing else notices.
+        if any(part.startswith(".") for part in rel.parts[1:]):
+            continue
         contents[f"/repo/{rel.as_posix()}"] = path.read_bytes()
     return contents
 
@@ -1630,6 +1645,67 @@ def observed_fix(
     )
 
 
+def hook_activity(workspace) -> dict[str, Any]:
+    """What the `post_tool` hook did during this attempt, from its journal.
+
+    Optional on the Workspace: the local orchestrator and every cold agent
+    have no hook, and a missing journal is normal rather than an error. The
+    counts go on ATTEMPT_DONE and MEMORY_WRITE, because "the hook is
+    registered" and "the hook did something" are different claims and a run
+    where the second is false looks healthy in every other number.
+    """
+    reader = getattr(workspace, "read_hook_journal", None)
+    if reader is None:
+        return {}
+    try:
+        entries = reader()
+    except Exception:
+        return {}
+    failed = [e for e in entries if e.get("status") != "success"]
+    return {
+        "hook_commands": len(entries),
+        "hook_failures": len(failed),
+        "hook_chars": sum(int(e.get("recalled") or 0) for e in entries),
+        "hook_last_error": str((failed[-1].get("error") or ""))[:200]
+                           if failed else "",
+    }
+
+
+def hook_sentence(activity: dict[str, Any]) -> str:
+    """The same counts as one line for the outcome document: it is the only
+    record of what the agent ran for itself, and a later attempt reads it."""
+    if not activity or not activity.get("hook_commands"):
+        return ""
+    line = (f"This attempt ran {activity['hook_commands']} command(s) of its "
+            f"own; {activity['hook_failures']} failed.")
+    if activity.get("hook_last_error"):
+        line += f" The last one failed with: {activity['hook_last_error']}"
+    if activity.get("hook_chars"):
+        line += (f" It was handed {activity['hook_chars']} characters of "
+                 f"memory at those failures.")
+    return line
+
+
+def _attempt_headline(*, helped: bool, success: bool, advanced: bool,
+                      rejected: bool, passed: int, last_passed: int) -> str:
+    """One sentence saying what the grader concluded, for the top of the
+    outcome document. The document's first line is what ranks in retrieval and
+    what a reader skims, so it states the verdict rather than the metrics."""
+    if success:
+        return "The full test suite passed after this attempt."
+    if rejected:
+        return ("The suite was gamed rather than migrated, so this attempt "
+                "was rejected whatever pytest reported.")
+    if advanced:
+        return (f"More of the suite passes than before this attempt "
+                f"({last_passed} -> {passed}), so the changes below are "
+                f"verified progress.")
+    if helped:
+        return "The grader judged this attempt to have helped."
+    return ("The suite is no better than before this attempt, so the changes "
+            "below bought nothing.")
+
+
 def ensure_agent_venv(requirements: Path) -> list[str]:
     """Build AGENT_VENV from the fixture's own v2 requirements, once.
 
@@ -1825,7 +1901,9 @@ async def migrate_codebase(
     baseline_passed: int = 0,
     agent_label: str | None = None,
     skill_name: str | None = None,
-    distiller: Any | None = None,
+    # The denominator the grader's score is a proportion of. Read from the
+    # fixture's manifest (`test_total`); 56 passing means nothing without it.
+    tests_total: int = 0,
     usage_probe: Any | None = None,
     sync: Any | None = None,
     # Which directory the migration is IN. Scopes the progress count: the
@@ -1865,12 +1943,19 @@ async def migrate_codebase(
     not happen for cold, and all four are Cognee's own surfaces:
 
         mem.procedure()     the skill as Cognee holds it, into the prompt
+        mem.brief(error)    the code graph of this codebase, plus the
+                            earlier attempts the grader judged to have
+                            WORKED and those it judged to have failed,
+                            each recalled from its own node set
         mem.wrap_attempt()  the attempt runs inside `cognee.agent_memory`,
-                            which retrieves before it and writes a session
-                            trace -- params, status, return, error -- after
-        mem.retrieved()     what that retrieval found, into the prompt
-        mem.improve()       bridges the session trace into the graph, after
-                            the verdict and off the agent's clock
+                            which writes a session trace -- params, status,
+                            return, error
+        mem.record(...)     the graded outcome: one document into the
+                            worked or failed node set, and a SkillRunEntry
+                            that makes Cognee rewrite the procedure
+        mem.improve()       bridges the session trace into the graph and
+                            distils its lessons, after the verdict and off
+                            the agent's clock
 
     None of them is the model's choice, which is the point: the MCP server
     is the half that is, and a run can have either or both
@@ -2037,11 +2122,13 @@ async def migrate_codebase(
         async def _attempt_turn(last_error: str | None = None,
                                 *, attempt: int = 0) -> str:
             _marks["fn_started"] = time.monotonic()
-            # Read INSIDE the wrapped call: the decorator leaves what it
-            # retrieved on a contextvar that only exists for the duration
-            # of this frame. Empty for cold (no decorator), empty under
-            # `--memory-mode mcp`, and empty on attempt 1.
-            retrieved = await mem.retrieved() if mem is not None else ""
+            # THE BRIEF, ranked against what this attempt is actually up
+            # against: the previous attempt's first failure, or the task
+            # itself on attempt 1. Empty for cold (no `mem`), empty under
+            # `--memory-mode mcp`, and empty on attempt 1 of the first run
+            # on a fixture -- nothing has been graded yet.
+            retrieved = (await mem.brief(last_signature or task_desc)
+                         if mem is not None else "")
             task = attempt_prompt(
                 last_error, skill_name,
                 procedure=procedure if mem is not None else None,
@@ -2172,9 +2259,13 @@ async def migrate_codebase(
                           f"the attempt ran; keeping the attempt: {exc!r}")
                     vibe_exit_code, vibe_output = _marks["result"]
                 else:
+                    # WITH THE TRACEBACK. `ValueError('embedded null byte')`
+                    # reached this branch once and the repr alone said
+                    # nothing about which call raised it.
                     print(f"  [{agent_label}] cognee could not open this "
                           f"attempt's memory ({exc!r}); running it without "
                           f"retrieval or a trace")
+                    traceback.print_exc()
                     await _attempt_turn(last_error, attempt=attempt)
                     vibe_exit_code, vibe_output = _marks["result"]
             # WHAT COGNEE SPENT, charged to the harness rather than to the
@@ -2354,6 +2445,10 @@ async def migrate_codebase(
         # measure that tracks the actual migration sat unused one line
         # away. See cognee_layer.score_from_verdict.
         closeness = _closeness(file_contents, package_path)
+        # ONE READ of the hook's journal per attempt, before the events that
+        # report it: `read_hook_journal` truncates the file, so a second
+        # reader would find it empty and report a hook that never fired.
+        hook_activity_seen = hook_activity(workspace)
 
         await emit(
             "ATTEMPT_DONE",
@@ -2437,6 +2532,10 @@ async def migrate_codebase(
             # prompt has invalidated a run series before.
             memory_chars=memory_chars,
             procedure_chars=len(procedure),
+            # WHAT THE DETERMINISTIC READ DID INSIDE THIS ATTEMPT. Zero for
+            # cold, which has no hook, and zero for warm when nothing the
+            # agent ran failed. Absent entirely where there is no journal.
+            **hook_activity_seen,
         )
 
 
@@ -2464,9 +2563,9 @@ async def migrate_codebase(
         # instead of disguised as a pytest result.
         shimmed = v1_shim_files(file_contents)
         gutted = gutted_files(file_contents)
+        notes: list[str] = []
         if shimmed or gutted:
             success = False
-            notes = []
             if shimmed:
                 notes.append(
                     f"MIGRATION NOT COMPLETE: these files still import pydantic's v1 "
@@ -2581,27 +2680,84 @@ async def migrate_codebase(
         # applied to the memory calls that are awaited inline.
         try:
             if mem is not None:
-                # THE HARNESS NO LONGER WRITES THE AGENT'S MEMORY.
+                # WHAT THIS ATTEMPT DID, AND WHETHER IT HELPED, INTO THE
+                # GRAPH. The one write that makes the next attempt better
+                # than a cold one, and the one that was missing.
                 #
-                # This wrote a TraceOutcome at the end of every attempt --
-                # `error_kind` as an indexed property so an identical
-                # failure signature matched exactly, `summary` carrying
-                # the diff that cleared it, `metrics` on the node, and
-                # `success` meaning the FULL SUITE PASSED (it once meant
-                # "passed or advanced", so traces claimed success at
-                # tests_passed=32 and memory reported failures as wins).
+                # Everything in it is the grader's: an independent pytest
+                # run in a fresh sandbox before and after, and a diff the
+                # harness took itself off the tree. `observed_fix` states
+                # it no more strongly than the evidence supports -- an
+                # earlier revision said "verified" for every attempt that
+                # produced a diff, and taught every warm agent a
+                # hallucinated `from pydantic import Model`.
                 #
-                # All of it was the harness deciding what the agent
-                # should remember. Cognee's model is that the agent
-                # decides, through `remember` on its MCP server, and
-                # whether it does so is one of the things this
-                # experiment is now able to measure. The verdict still
-                # reaches Cognee -- as the SkillRun score, from the
-                # grader, which is the one judgement that must not come
-                # from the agent.
-                if success or advanced:
-                    await emit("MEMORY_WRITE", error_kind=trace_task[:60],
-                               on=("pass" if success else "progress"))
+                # `helped` is what decides which node set it lands in, and
+                # the node set is what lets the next attempt's prompt say
+                # "repeat this" over one block and "do not" over the other.
+                # A rejected attempt (shim, gutted validator) never counts
+                # as helping, whatever pytest said.
+                write_started = time.monotonic()
+                written: dict[str, Any] = {}
+                write_seconds = 0.0
+                helped = bool(success or advanced)
+                evidence = observed_fix(
+                    before_snapshot, source_tree(workspace),
+                    prior_error=last_signature,
+                    next_error=signature,
+                    suite_passed=bool(success),
+                    tests_delta=passed - last_passed,
+                ) or "The tree is unchanged: this attempt edited nothing."
+                # WHAT THE AGENT DID FOR ITSELF, from the `post_tool` hook's
+                # journal. One line, ahead of the diff: it is the only record
+                # of whether the agent ran anything of its own and whether the
+                # deterministic read fired, and without it "the hook is
+                # registered" and "the hook did something" look identical.
+                hook = hook_sentence(hook_activity_seen)
+                if hook:
+                    evidence = f"{hook}\n\n{evidence}"
+                try:
+                    written = await mem.record(
+                        attempt=attempt,
+                        helped=helped,
+                        headline=_attempt_headline(
+                            helped=helped, success=bool(success),
+                            advanced=advanced, rejected=rejected,
+                            passed=passed, last_passed=last_passed),
+                        evidence=evidence,
+                        tests_passed=passed,
+                        tests_total=tests_total,
+                        closeness=closeness,
+                        v1_remaining=surfaces.count(file_contents,
+                                                    within=package_path),
+                        error_signature=signature,
+                        rejected_because=(
+                            "\n".join(notes) if rejected else ""),
+                        latency_ms=int(attempt_seconds * 1000),
+                    )
+                    write_seconds = time.monotonic() - write_started
+                    await emit(
+                        "MEMORY_WRITE", attempt=attempt,
+                        error_kind=(signature or trace_task)[:60],
+                        on=("pass" if success else
+                            "progress" if advanced else "no-progress"),
+                        node_set=written.get("node_set"),
+                        chars=written.get("document_chars"),
+                        **hook_activity_seen,
+                        score=written.get("score"),
+                        applied=written.get("applied"),
+                        procedure_chars=written.get("procedure_chars"),
+                    )
+                except Exception as exc:
+                    # Loud. A deterministic half that writes nothing leaves
+                    # warm == cold with extra latency, and every number in
+                    # the summary still looks healthy.
+                    print(f"  [{agent_label}] could not record attempt "
+                          f"{attempt} in memory: {exc!r}")
+                    await emit("MEMORY_WRITE", attempt=attempt,
+                               error_kind=(signature or trace_task)[:60],
+                               on="failed", node_set=None, chars=0)
+                off_clock += time.monotonic() - write_started
 
                 # SESSION TRACES -> THE GRAPH, which is what `improve` is
                 # for and the reason this call is not optional.
@@ -2661,40 +2817,28 @@ async def migrate_codebase(
                                source="cognee.improve")
                 off_clock += time.monotonic() - ingest_started
 
-                # DISTILLATION, also off the clock, also after the verdict.
-                #
-                # Once per attempt -- never per model turn. The agent has just
-                # been told by an independent grader whether its work passed,
-                # which is the only moment it has something new and true to
-                # write down. Doing it per turn would have it revising a
-                # procedure against its own unverified belief.
-                if distiller is not None:
-                    distil_started = time.monotonic()
-                    try:
-                        outcome = await distiller(
-                            attempt=attempt, tests_passed=passed,
-                            suite_passed=bool(success), error=last_error,
-                            closeness=closeness,
-                        )
-                        # A PLAIN DICT, and fewer fields than before.
-                        # `version`/`repairs`/`reason_detail` described
-                        # AIP's registry and its two-turn validator
-                        # repair loop -- Cognee has neither. What is
-                        # left is what actually happened: the score the
-                        # GRADER gave, whether Cognee drafted a proposal
-                        # from it, and whether that proposal was applied.
-                        await emit(
-                            "DISTILLED", attempt=attempt,
-                            version=None,
-                            accepted=bool(outcome.get("applied")),
-                            score=outcome.get("score"),
-                            proposal_id=outcome.get("proposal_id"),
-                            procedure_chars=outcome.get("procedure_chars"),
-                            seconds=round(outcome.get("seconds", 0.0), 1),
-                        )
-                    except Exception as exc:
-                        print(f"  [{agent_label}] distillation failed: {exc!r}")
-                    off_clock += time.monotonic() - distil_started
+                # THE SKILL, as `mem.record` left it. Cognee drafts the
+                # rewrite from the SkillRunEntry's score and applies it in
+                # place, so there is nothing to install and no version to
+                # pin: the procedure Cognee returns next attempt IS the
+                # rewritten one. Reported here rather than inside the write
+                # so DISTILLED stays the event the metrics read.
+                if written:
+                    await emit(
+                        "DISTILLED", attempt=attempt, version=None,
+                        accepted=bool(written.get("applied")),
+                        score=written.get("score"),
+                        proposal_id=written.get("proposal_id"),
+                        procedure_chars=written.get("procedure_chars"),
+                        # The rewrite happens inside `mem.record`, so this is
+                        # the whole write: the outcome document, the
+                        # SkillRunEntry, and Cognee's proposal and its
+                        # application. Reported so the summary can keep
+                        # attempt time and bookkeeping time apart -- warm
+                        # does more work per round than cold and an
+                        # unattributed difference lands in the comparison.
+                        seconds=round(write_seconds, 1),
+                    )
 
         except Exception as exc:
             # Loud, and not fatal. The attempt stands, the verdict stands,

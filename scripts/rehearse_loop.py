@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import atexit
 import contextlib
 import json
 import os
@@ -45,6 +46,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,10 +64,16 @@ from orchestrator.events import EventBus
 from orchestrator.sync import AttemptSync
 from orchestrator.vibe_agent import AttemptBudget, migrate_codebase
 from swarm.agent_workspace import AgentWorkspace, SwarmHost
+from swarm.run import assert_hook_can_read
 from tests.fake_model_server import FakeModelServer, Turn
 
 # Set per run in main(); every Cognee call in this file is scoped to it.
 DATASET = "msf-rehearsal"
+# The node-set prefix warm's documents are written under and read back from.
+# Per rehearsal, like the dataset: node sets are the read-scoping boundary, so
+# sharing one with a real experiment would put rehearsal fictions in a real
+# agent's prompt.
+FIXTURE = "rehearsal"
 
 
 async def _cypher(query: str, params: dict | None = None):
@@ -172,6 +180,13 @@ class LocalHost(SwarmHost):
 class LocalWorkspace(AgentWorkspace):
     """AgentWorkspace pointed at a local tree and a local Vibe."""
 
+    def agent_path(self, path: str) -> str:
+        """Vibe runs the hook itself, so the hook command and the journal
+        path never pass through `host.run`'s pod-path rewrite. Without this
+        the hook was installed and verified, Vibe could not start it, and the
+        rehearsal reported a working hook."""
+        return self.host._map(path)
+
     def _vibe_command(self, prompt: str, *, resume: bool,
                       vibe_home: str | None = None,
                       cwd: str | None = None) -> str:
@@ -179,13 +194,18 @@ class LocalWorkspace(AgentWorkspace):
         workdir = cwd or self.repo_path
         vibe = (f"{self.host.vibe} --prompt {shlex.quote(prompt)} "
                 f"--auto-approve --trust --output streaming < /dev/null")
+        # THE HOOK'S ENVIRONMENT, exactly as production passes it. Left out
+        # of this override once and the hook ran with no COGNEE_API, so it
+        # exited 0 with no output and the rehearsal reported a working hook.
+        hook_env = " ".join(f"{k}={shlex.quote(v)}"
+                            for k, v in sorted(self._hook_env.items()))
         # NOTHING IS PIPED, exactly as production no longer splices it.
         # This used to tee Vibe's stream through the reasoning relay,
         # because with no relay the post_tool hook had no reasoning to
         # attach and fell back to the tool's arguments -- 988 of 993 steps
         # in one series. Hook and relay are both retired; the stream is
         # read in-process.
-        return f"cd {workdir} && VIBE_HOME={home} {vibe}"
+        return f"cd {workdir} && env VIBE_HOME={home} {hook_env} {vibe}"
 
     def install_dependencies(self, install_command: str, **kw):
         return subprocess.CompletedProcess([], 0, "", "")
@@ -263,6 +283,12 @@ def attempt_turns(*, edit: bool, finish_text: str,
         Turn(text="The repo fails to import. I should see what is in it "
                   "before changing anything.",
              tools=[("bash", {"command": "ls -la"})]),
+        # A COMMAND THAT FAILS, so the `post_tool` hook's failure branch
+        # actually runs. Without one the hook is installed, registered,
+        # verified and never invoked -- which is indistinguishable, in
+        # every number the rehearsal reports, from a hook that works.
+        Turn(text="Let me run the suite and see the error.",
+             tools=[("bash", {"command": "python -m pytest -q; exit 1"})]),
     ]
     if recall:
         # THE VOLUNTARY HALF, exercised. Warm has the cognee MCP server and
@@ -346,6 +372,11 @@ def _tamper_is_caught(aw, host, script: Path) -> bool:
         script.write_bytes(original)
 
 
+def _kill_quietly(proc) -> None:
+    with contextlib.suppress(Exception):
+        proc.kill()
+
+
 async def rehearse(vibe: Path, root: Path, model_url: str,
                    server: FakeModelServer) -> int:
     host = LocalHost(root, vibe, vibe.parent, model_url)
@@ -355,7 +386,7 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # the attempt loop uses -- `{run_id}:{label}`, per run and per agent.
     # A memory whose session does not match the loop's retrieves from one
     # place and writes to another, and every check still passes.
-    mem = C.CogneeMemory(dataset=DATASET, label="warm-0",
+    mem = C.CogneeMemory(dataset=DATASET, fixture=FIXTURE, label="warm-0",
                          session_id=f"{DATASET}:{bus.run_id}:warm-0",
                          mode="hybrid")
 
@@ -491,7 +522,7 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # Cognee keeps the procedure in the graph. Nothing is installed, so
     # the question is simply whether the procedure is there to be
     # recalled.
-    procedure = await C.ensure_seeded(dataset=DATASET)
+    procedure = await C.ensure_skill(dataset=DATASET)
     check("the starting procedure is in Cognee", len(procedure) > 0,
           f"{len(procedure):,} chars")
     check("cold has NO skills directory",
@@ -521,6 +552,11 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
         "--transport", "http", "--host", "127.0.0.1", "--port", str(mcp_port),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         env={**os.environ})
+    # KILLED ON EXIT. Without this every rehearsal left a cognee-mcp behind:
+    # eighteen of them had accumulated, each holding an Aura session and a
+    # handle on the same local SQLite, and the nineteenth run blocked on a
+    # write for as long as it was left alone.
+    atexit.register(_kill_quietly, mcp_proc)
     for _ in range(90):
         await asyncio.sleep(1.0)
         with contextlib.suppress(OSError):
@@ -529,11 +565,63 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     check("the cognee MCP server is listening",
           mcp_proc.returncode is None, f"port {mcp_port}")
     spaces["warm-0"].enable_memory(mcp_url=f"http://127.0.0.1:{mcp_port}/mcp")
-    # NO HOOKS TO CHECK. This asserted that warm got a `hooks.toml`,
-    # that the interpreter named in the hook command existed, and that
-    # the hook script was where Vibe would look for it -- three separate
-    # silent failures, each of which produced a clean run with an empty
-    # graph. There is no hook now: the agent writes its own memory.
+
+    # THE DETERMINISTIC READ, installed for warm exactly as the pod
+    # installs it: a `post_tool` hook on `bash` that recalls what earlier
+    # graded attempts did about a failure, through Cognee's REST API.
+    #
+    # THREE SILENT FAILURES LIVE HERE, each of which produced a clean run
+    # with an empty prompt block: a hooks.toml Vibe does not read, an
+    # interpreter that does not exist in the hook command, and a hook
+    # script that is not where the command says. All three are checked
+    # below rather than assumed.
+    print("... starting cognee's REST API for the hook", flush=True)
+    with _socket.socket() as _s:
+        _s.bind(("127.0.0.1", 0))
+        api_port = _s.getsockname()[1]
+    api_proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "cognee.api.client:app",
+         "--host", "127.0.0.1", "--port", str(api_port)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        env={**os.environ})
+    atexit.register(api_proc.terminate)
+    api_url = f"http://127.0.0.1:{api_port}"
+    for _ in range(120):
+        await asyncio.sleep(1.0)
+        with contextlib.suppress(Exception):
+            with urllib.request.urlopen(f"{api_url}/health", timeout=2) as r:
+                if r.status == 200:
+                    break
+    check("cognee's REST API answers the hook's endpoint",
+          not assert_hook_can_read(api_url, dataset=DATASET,
+                                   node_set=C.node_sets(FIXTURE)[1]),
+          api_url)
+    spaces["warm-0"].enable_hook(api_url=api_url, dataset=DATASET,
+                                 node_sets=C.node_sets(FIXTURE))
+    warm_home = spaces["warm-0"].home
+    check("warm got a hooks.toml where Vibe looks for it",
+          spaces["warm-0"].host.run_as(
+              spaces["warm-0"].user,
+              f"test -f {warm_home}/.vibe/hooks.toml && echo yes || echo no",
+              check=False).stdout.strip().endswith("yes"))
+    check("the hook script is where the hook command names it",
+          spaces["warm-0"].host.run_as(
+              spaces["warm-0"].user,
+              f"test -r {warm_home}/.vibe/cognee_on_failure.py "
+              f"&& echo yes || echo no",
+              check=False).stdout.strip().endswith("yes"))
+    # AND THE COMMAND IS RUNNABLE, as written, by the user that will run it.
+    # `command` in hooks.toml is executed by VIBE, so it never passes through
+    # the rehearsal's pod-path rewrite -- the first version named an unmapped
+    # path, Vibe could not start it, and every other check still passed.
+    hook_cmd = re.search(
+        r'command = "([^"]+)"',
+        (Path(spaces["warm-0"].host._map(f"{warm_home}/.vibe/hooks.toml"))
+         ).read_text()).group(1)
+    check("the hook command in hooks.toml actually runs",
+          subprocess.run(shlex.split(hook_cmd), input="{}", text=True,
+                         capture_output=True, timeout=60).returncode == 0,
+          hook_cmd)
     check("cold got NO hooks.toml",
           spaces["cold-0"].host.run_as(
               spaces["cold-0"].user,
@@ -585,12 +673,13 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
           bool(extra) and not non_memory and not missing,
           f"extra={sorted(extra)} unexpected={sorted(non_memory)} "
           f"missing_from_warm={sorted(missing)}")
-    # The hook was warm's SECOND difference from cold, and it had to be
-    # declared as a confound in every warm-vs-cold number. It is gone, so
-    # the arms now differ in the MCP server and the skill alone -- which
-    # is a cleaner experiment than the old layer ever managed.
-    check("NEITHER arm has a post_tool hook any more",
-          not warm_fp["hook_files"] and not cold_fp["hook_files"],
+    # THE HOOK IS WARM'S SECOND DIFFERENCE FROM COLD, and it is declared
+    # rather than hidden: it is latency warm pays and cold does not, on
+    # every failed command, out of a shared deadline. It fires only on a
+    # FAILURE and has an 8s ceiling for that reason, and ATTEMPT_DONE
+    # carries the count either way.
+    check("warm has the post_tool hook and cold has none",
+          warm_fp["hook_files"] == ["hooks.toml"] and not cold_fp["hook_files"],
           f"warm={warm_fp['hook_files']} cold={cold_fp['hook_files']}")
 
     # ---- 3. the real attempt loop ----------------------------------------
@@ -624,7 +713,6 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # asserted against 98 runs of history -- including the Qwen era.
     # The harness opens no traces now; the dataset is the scope.
 
-    distilled: list = []
 
     # THE REAL COGNEE DISTILLATION, against the real graph.
     #
@@ -637,21 +725,6 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     #
     # It costs an OpenAI call and some Aura writes per rehearsal. Both
     # are cheap and neither is the spend that matters; the GPU is.
-
-    async def distiller(*, attempt, tests_passed, suite_passed, error,
-                        closeness=None):
-        mark("distil-start", "warm-0")
-        outcome = await C.distil_after_attempt(
-            tests_passed=tests_passed, tests_total=33, attempt=attempt,
-            suite_passed=suite_passed, error=error, closeness=closeness,
-            dataset=DATASET, session_id=mem.session_id)
-        distilled.append(outcome)
-        # NOTHING TO INSTALL. The old loop wrote the accepted version to
-        # the pod here, because `propose` moved a pointer on this machine
-        # while the agent read a file on that one. Cognee closes that
-        # loop itself: what it rewrote is what `recall` returns.
-        mark("distil-end", "warm-0")
-        return outcome
 
     def emit_for(arm: str, label: str):
         async def emit(event_type, **kw):
@@ -802,7 +875,7 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
                 baseline_signature="ImportError: BaseSettings",
                 baseline_passed=0, agent_label=label,
                 skill_name=C.SKILL_NAME if warm else None,
-                distiller=distiller if warm else None,
+                tests_total=33,
                 sync=sync,
                 # THE EXPERIMENT'S SHAPE, exercised rather than assumed.
                 # An experiment is N attempts on one checkout; before this
@@ -1104,10 +1177,34 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # What still has to hold is that the distillation saw something. A
     # skill rewritten from no evidence is the same failure wearing a
     # different mask.
-    check("the distiller had evidence to work from",
-          all(d.get("score") is not None for d in distilled),
-          f"scores={[d.get('score') for d in distilled]} -- the grader's "
-          f"verdict is what Cognee draws a proposal from")
+    # WHAT WARM WROTE, read off the event log rather than off a list the
+    # rehearsal filled in itself. The old version asserted against its own
+    # closure's accumulator, so it could pass with an attempt loop that
+    # recorded nothing.
+    written = [e for e in bus.events
+               if e["type"] == "MEMORY_WRITE" and e.get("swarm") == "warm"]
+    check("every warm attempt wrote an outcome document",
+          len(written) == 2 and all(w.get("chars") for w in written),
+          f"{[(w.get('node_set'), w.get('chars')) for w in written]}")
+    check("the document was filed under the grader's verdict",
+          all((w.get("node_set") or "").startswith(FIXTURE) for w in written),
+          f"{[w.get('node_set') for w in written]} -- node sets are the only "
+          f"scoping a recall honours")
+    check("the skill rewrite had the grader's score to work from",
+          all(w.get("score") is not None for w in written),
+          f"scores={[w.get('score') for w in written]}")
+    # DID THE HOOK ACTUALLY FIRE? A hook that is installed, registered and
+    # never invoked reads identically to one that works, in every number
+    # this rehearsal otherwise reports. The scripted model runs one command
+    # that cannot succeed, so the failure branch has to have run.
+    check("the post_tool hook ran on the agent's failed command",
+          any("command(s) of its own" in (w.get("evidence") or "")
+              for w in written)
+          or any("ran 2 command(s)" in str(w) for w in written)
+          or any(w.get("hook_failures") for w in written),
+          f"commands={[w.get('hook_commands') for w in written]} "
+          f"failures={[w.get('hook_failures') for w in written]} "
+          f"recalled={[w.get('hook_chars') for w in written]}")
     # NOTHING ROLLS BACK. The loop just ran for real; if a checkpoint/
     # restore ever returns, this is where it shows up.
     check("no attempt was rolled back",
@@ -1149,13 +1246,15 @@ async def rehearse(vibe: Path, root: Path, model_url: str,
     # The old one ran an OpenAI round trip per message and one run sat
     # blocked in SSL for 18 minutes after its agent work had finished.
 
-    # ---- 7. distillation: rejection, repair, versioning -------------------
-    check("distillation ran after each attempt", len(distilled) == 2,
+    # ---- 7. the skill Cognee rewrote -------------------------------------
+    distilled = [e for e in bus.events
+                 if e["type"] == "DISTILLED" and e.get("swarm") == "warm"]
+    check("the skill was considered after each attempt", len(distilled) == 2,
           f"{len(distilled)}")
     for i, d in enumerate(distilled):
-        print(f"    distillation {i}: score {d.get('score'):.3f}, "
-              f"{'applied' if d.get('applied') else 'no proposal'}, "
-              f"procedure {d.get('procedure_chars'):,} chars")
+        print(f"    attempt {i + 1}: score {d.get('score')}, "
+              f"{'applied' if d.get('accepted') else 'no proposal'}, "
+              f"procedure {d.get('procedure_chars')} chars")
     # NO REPAIR LOOP TO CHECK. AIP's validator rejected a malformed
     # skill and the distiller got two turns to fix it, with the
     # validator's own diagnostics handed back each time. Cognee
@@ -1275,8 +1374,10 @@ def main() -> int:
     # the same guarantee structurally. Named by clock so two rehearsals
     # never collide, and left behind rather than deleted: when one fails,
     # the graph it built is the evidence.
-    global DATASET
-    DATASET = f"msf-rehearsal-{int(time.time())}"
+    global DATASET, FIXTURE
+    stamp = int(time.time())
+    DATASET = f"msf-rehearsal-{stamp}"
+    FIXTURE = f"rehearsal-{stamp}"
     print(f"dataset: {DATASET}")
 
     print(f"rehearsal root: {root}")

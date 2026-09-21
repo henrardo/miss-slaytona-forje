@@ -1,1 +1,0 @@
-{"path": "/var/folders/r9/py7xygs97mdfz1lxk_gyfmlw0000gp/T/aip-stage-ouhikuea/pydantic-v2-migration/SKILL.md", "kind": "missing_frontmatter", "message": "SKILL.md must begin with YAML frontmatter delimited by `---`"}
