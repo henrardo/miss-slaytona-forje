@@ -448,8 +448,16 @@ export function useRacers(armed: boolean): {
         // max, never latest: a racer does not go backwards because one
         // attempt happened to break more than it fixed.
         best[arm] = Math.max(best[arm], e.tests_passed ?? 0)
+        // LATEST, not max, and this one has to be. `Math.max` here put a
+        // racer at its best-ever position and left it there: on
+        // swarm-1789998106 cold cleared all 383 surfaces at attempt 4 with
+        // 18 files unimportable, then REVERTED to 365 remaining at attempt
+        // 9 to make the package compile -- and the track still showed it
+        // parked at the finish line, lapping away into the distance. The
+        // run's own story is that it gave the migration back; a race that
+        // cannot show that is not showing the data.
         if (typeof e.v1_remaining === 'number') {
-          cleared[arm] = Math.max(cleared[arm], baseline - e.v1_remaining)
+          cleared[arm] = baseline - e.v1_remaining
         }
         // Closeness is kept LATEST, not best, and that is the point of it:
         // it is where the tree stands now, and an attempt that made things
@@ -466,16 +474,32 @@ export function useRacers(armed: boolean): {
 
     const base = floor ?? 0
     const span = Math.max(1, target - base)
-    const shareOf = (arm: Arm) =>
-      Math.max(
-        0,
-        Math.min(
-          1,
-          measure.kind === 'surfaces'
-            ? cleared[arm] / measure.baseline
-            : (best[arm] - base) / span,
-        ),
-      )
+    /**
+     * How far along the track an arm is, in ONE unit for both of them.
+     *
+     * Surfaces cleared, DISCOUNTED BY WHAT IS BROKEN -- the same
+     * composition the harness scores a skill run on
+     * (cognee_layer.score_from_verdict). Each half alone was gamed today
+     * and the track showed it:
+     *
+     *   surfaces alone   cold reached 0 of 383 with 18 files unimportable
+     *                    and sat at the finish line, lapping, while its
+     *                    package could not be imported at all.
+     *   parsing alone    an untouched v1 tree scores 65/65 having migrated
+     *                    nothing.
+     *
+     * Multiplied, a racer only advances by work that leaves the code
+     * standing, which is what both arms are actually being asked to do.
+     */
+    const shareOf = (arm: Arm) => {
+      if (measure.kind !== 'surfaces') {
+        return Math.max(0, Math.min(1, (best[arm] - base) / span))
+      }
+      const done = cleared[arm] / measure.baseline
+      const p = parse[arm]
+      const intact = p && p.total > 0 ? p.ok / p.total : 1
+      return Math.max(0, Math.min(1, done * intact))
+    }
     const leader = Math.max(shareOf('warm'), shareOf('cold'))
 
     /** Seconds per lap, signed. The model, and then the two fallbacks. */
