@@ -1,0 +1,53 @@
+{
+  "run_id": "swarm-1789998106",
+  "fixture": "x12sdk",
+  "events": 228,
+  "event_types": {
+    "ATTEMPT_ABORTED": 33,
+    "ATTEMPT_CONTINUED": 39,
+    "ATTEMPT_DONE": 20,
+    "ATTEMPT_START": 54,
+    "DISTILLED": 11,
+    "FILE_DONE": 1,
+    "INGESTED": 11,
+    "MEMORY_READ": 16,
+    "MEMORY_WRITE": 11,
+    "SANDBOX_CREATED": 32
+  },
+  "attempts": 20,
+  "files": {
+    "attempts.csv": "the same table, flat.",
+    "attempts.json": "one row per graded attempt, with the memory write, the rewrite, any rejection and the ingest folded in. Derived from the jsonl; nothing new.",
+    "console.log": "stdout of the run, if it was captured.",
+    "experiment.json": "what the experiment was and how to read it.",
+    "skill-final.md": "the procedure Cognee held when the run ended.",
+    "swarm-1789998106-metrics.json": "the per-run summary the cross-run table is built from.",
+    "swarm-1789998106-series.json": "the harness's own chart document: panels, annotations, axis decisions and a caveat per panel. deck/src/charts/Panel.tsx renders this and decides nothing itself.",
+    "swarm-1789998106.jsonl": "every event, in order, with a `t` in seconds since the run started. The replayable record.",
+    "trees/": "the package tree after every attempt, one tarball each. `closeness` and the v1 count can be recomputed from these.",
+    "DEMO-NOTES.md": "what the run shows and what it does not: the comparison window (attempts 1-9, both arms equal), the warm-only continuation (10-11), why cold's arm ended and why that is fair, and the arm-asymmetry caveat."
+  },
+  "windows": {
+    "comparison": {
+      "attempts": [
+        1,
+        9
+      ],
+      "arms": [
+        "warm",
+        "cold"
+      ],
+      "note": "both arms had equal attempts; every head-to-head claim comes from here"
+    },
+    "continuation": {
+      "attempts": [
+        10,
+        11
+      ],
+      "arms": [
+        "warm"
+      ],
+      "note": "cold's arm ended at a9 on a transport failure; these are uncontested and are not evidence about cold"
+    }
+  }
+}

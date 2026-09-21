@@ -22,6 +22,15 @@
     "swarm-1789987670-metrics.json": "the per-run summary the cross-run table is built from.",
     "swarm-1789987670-series.json": "the harness's own chart document: panels, annotations, axis decisions and a caveat per panel. deck/src/charts/Panel.tsx renders this and decides nothing itself.",
     "swarm-1789987670.jsonl": "every event, in order, with a `t` in seconds since the run started. The replayable record.",
-    "trees/": "the package tree after every attempt, one tarball each. `closeness` and the v1 count can be recomputed from these."
+    "trees/": "the package tree after every attempt, one tarball each. `closeness` and the v1 count can be recomputed from these.",
+    "DEMO-NOTES.md": "THE DEMO RUN. Why this run, the full attempt table, why the racers are correct on it without intervention, and the four caveats that must not be papered over."
+  },
+  "demo": {
+    "pin": "?run=swarm-1789987670&source=swarm",
+    "attempts_per_arm": 10,
+    "both_arms_complete": true,
+    "warm_leads_from_attempt": 2,
+    "headline": "warm cleared 337 of 383 v1 surfaces with all 65 files compiling; cold cleared 160 and left 13 unimportable",
+    "closeness_sign": "warm positive on 9 of 10 attempts, cold negative on all 10 -- negative means further from the merged PR than the untouched checkout"
   }
 }
