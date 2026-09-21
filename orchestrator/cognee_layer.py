@@ -50,6 +50,13 @@ MEMORY_MODES = ("hybrid", "mcp", "deterministic", "off")
 # instead of migrating anything.
 MAX_BLOCK_CHARS = 2500
 
+# The page size cognee's code retriever enforces, and how many pages a code
+# read will follow. 500 is its own `maximum=`, not a preference: a larger
+# `limit` is clamped without an error. 40 pages is 20,000 facts, against
+# x12sdk's 2,247 -- a runaway guard, not a budget.
+CODE_PAGE_SIZE = 500
+CODE_MAX_PAGES = 40
+
 MEMORY_TOOLS_GUIDE = """\
 A memory server is available to you as MCP tools: `cognee_recall` to
 search what you or a previous attempt stored, `cognee_remember` to store
@@ -191,8 +198,9 @@ def default_scratch(dataset: str) -> Path:
 
 async def code_graph_size(*, dataset: str, repo: str) -> dict[str, Any]:
     kinds: dict[str, int] = {}
-    for fact in await _code_query(dataset, {"operation": "query_facts",
-                                            "limit": 20000}, repo=repo):
+    # NO `limit`: every page, which is what "how big is the graph" means.
+    for fact in await _code_query(dataset, {"operation": "query_facts"},
+                                  repo=repo):
         kind = fact.get("kind", "?")
         kinds[kind] = kinds.get(kind, 0) + 1
     return kinds
@@ -214,18 +222,50 @@ async def _code_query(dataset: str, code_query: dict, *,
         dataset returned five facts belonging to a repository ingested into a
         different one an hour earlier. Facts carry `repo`, so that is the
         filter -- same lesson as node sets on the document side.
+
+    AND IT IS PAGED, which is the third. `limit` is clamped to
+    CODE_PAGE_SIZE server-side (code_retriever `_bounded_int(...,
+    maximum=500)`), silently: ask for 20,000 and you get one page and no
+    error. Measured 2026-09-21 -- Aura held 2,247 nodes for x12sdk, the
+    ingest having dropped nothing, and a single call returned exactly 500,
+    of which 482 were x12sdk's and 18 belonged to two stale probe repos.
+    The code brief was therefore built from the first page in node-sort
+    order: 9 of 54 files. `v5010/segments.py`, holding 18 of the 42 v1
+    surfaces warm could not find in run 5, was not in it.
+
+    The payload says so itself -- `total`, `offset`, `has_more` -- so this
+    follows them. Bounded by CODE_MAX_PAGES, and it says when it stops
+    early rather than returning a truncated set that looks whole.
     """
     import cognee
     from cognee import SearchType
 
-    results = await cognee.search(
-        query_type=SearchType.CODE, query_text="", datasets=[dataset],
-        code_query=code_query)
-    return _scoped_to_repo(results, "facts", repo)
+    wanted = code_query.get("limit")
+    wanted = int(wanted) if wanted else None
+    out: list[dict] = []
+    offset = int(code_query.get("offset") or 0)
+    for page in range(CODE_MAX_PAGES):
+        results = await cognee.search(
+            query_type=SearchType.CODE, query_text="", datasets=[dataset],
+            code_query={**code_query, "limit": CODE_PAGE_SIZE,
+                        "offset": offset})
+        out.extend(_scoped_to_repo(results, "facts", repo))
+        payloads = _payloads(results)
+        returned = sum(len(p.get("facts") or []) for p in payloads)
+        if (not any(p.get("has_more") for p in payloads)
+                or returned == 0
+                or (wanted is not None and len(out) >= wanted)):
+            break
+        offset += returned
+    else:
+        total = max((p.get("total") or 0) for p in _payloads(results)) or 0
+        print(f"  code graph read stopped at {CODE_MAX_PAGES} pages "
+              f"({len(out)} fact(s) of {total}); raise CODE_MAX_PAGES")
+    return out if wanted is None else out[:wanted]
 
 
-def _scoped_to_repo(results: Any, key: str, repo: str | None) -> list[dict]:
-    """The items under `key` in a SearchType.CODE payload, for one repo only.
+def _payloads(results: Any) -> list[dict]:
+    """The operation payloads in a SearchType.CODE result.
 
     The payload arrives either bare or inside a `search_result` envelope
     depending on the operation; reading only one of the two shapes is how the
@@ -238,12 +278,17 @@ def _scoped_to_repo(results: Any, key: str, repo: str | None) -> list[dict]:
             payload = entry["search_result"]
         if isinstance(payload, list):
             payload = payload[0] if payload else None
-        if not isinstance(payload, dict):
-            continue
-        for item in (payload.get(key) or []):
-            if repo is None or item.get("repo") == repo:
-                out.append(item)
+        if isinstance(payload, dict):
+            out.append(payload)
     return out
+
+
+def _scoped_to_repo(results: Any, key: str, repo: str | None) -> list[dict]:
+    """The items under `key`, for one repo only."""
+    return [item
+            for payload in _payloads(results)
+            for item in (payload.get(key) or [])
+            if repo is None or item.get("repo") == repo]
 
 
 async def code_brief(*, dataset: str, repo: str, package: str | None = None,
@@ -254,8 +299,10 @@ async def code_brief(*, dataset: str, repo: str, package: str | None = None,
     migration. Deterministic: SearchType.CODE reads graph indexes only, with
     no LLM and no embedding call.
     """
-    facts = await _code_query(dataset, {"operation": "query_facts",
-                                        "limit": 20000}, repo=repo)
+    # NO `limit`: every page. A `limit` of 20,000 read as "everything" and
+    # meant one page of 500, because the server clamps it without an error.
+    facts = await _code_query(dataset, {"operation": "query_facts"},
+                              repo=repo)
     if not facts:
         return ""
     lines = []

@@ -907,3 +907,86 @@ def _async_value(value):
     async def f(*a, **kw):
         return value
     return f
+
+
+# --- 9. the code read is paged ---------------------------------------------
+
+
+def test_the_code_read_follows_every_page(monkeypatch) -> None:
+    """`limit` is clamped to 500 SERVER-SIDE, without an error.
+
+    code_retriever `_query_facts` ends
+    `_bounded_int(self.config.get("limit"), field="limit", default=100,
+    maximum=500)`, so a request for 20,000 returns one page of 500 and a
+    `has_more: true` nobody read. Measured 2026-09-21: Aura held 2,247
+    nodes for x12sdk -- the ingest had dropped nothing -- and one call
+    returned exactly 500, of which 482 were x12sdk's and 18 belonged to
+    two stale probe repos. The code brief was built from 9 of 54 files,
+    and `v5010/segments.py`, holding 18 of the 42 v1 surfaces warm could
+    not find in run 5, was not among them.
+    """
+    import asyncio
+    import types
+
+    from orchestrator import cognee_layer as C
+
+    # A mixed graph, as the live one was: foreign-repo facts sit INSIDE the
+    # page, not appended to it -- 500 returned, 482 of them x12sdk's.
+    total = 1150
+    facts = [{"kind": "symbol", "name": f"s{i}",
+              "repo": "probe" if i % 100 == 7 else "x12sdk"}
+             for i in range(total)]
+    mine = [f for f in facts if f["repo"] == "x12sdk"]
+    calls = []
+
+    class Paged:
+        SearchType = types.SimpleNamespace(CODE="CODE")
+
+        async def search(self, **kwargs):
+            q = kwargs["code_query"]
+            offset = int(q.get("offset") or 0)
+            # THE CLAMP, reproduced. Asking for more than 500 gets 500.
+            limit = min(int(q.get("limit") or 100), 500)
+            calls.append((offset, limit))
+            page = facts[offset:offset + limit]
+            return [{"operation": "query_facts", "facts": page,
+                     "total": total, "offset": offset, "limit": limit,
+                     "has_more": offset + len(page) < total}]
+
+    monkeypatch.setitem(sys.modules, "cognee", Paged())
+    got = asyncio.run(C._code_query("ds", {"operation": "query_facts"},
+                                    repo="x12sdk"))
+
+    assert len(got) == len(mine), f"one page only: {len(got)} of {len(mine)}"
+    assert [f["name"] for f in got] == [f["name"] for f in mine]
+    assert not any(f["repo"] != "x12sdk" for f in got)
+    # Three pages, each asking for the server's own maximum, offsets
+    # advancing by the page the server actually returned.
+    assert calls == [(0, 500), (500, 500), (1000, 500)], calls
+
+
+def test_a_code_read_with_a_limit_stops_at_it(monkeypatch) -> None:
+    """`limit` still means what it says to a caller that passes one --
+    `code_insights` wants the top few, not the whole graph."""
+    import asyncio
+    import types
+
+    from orchestrator import cognee_layer as C
+
+    facts = [{"kind": "symbol", "name": f"s{i}", "repo": "r"}
+             for i in range(1200)]
+
+    class Paged:
+        SearchType = types.SimpleNamespace(CODE="CODE")
+
+        async def search(self, **kwargs):
+            q = kwargs["code_query"]
+            offset = int(q.get("offset") or 0)
+            page = facts[offset:offset + 500]
+            return [{"facts": page, "total": len(facts), "offset": offset,
+                     "has_more": offset + len(page) < len(facts)}]
+
+    monkeypatch.setitem(sys.modules, "cognee", Paged())
+    got = asyncio.run(C._code_query("ds", {"operation": "query_facts",
+                                           "limit": 600}, repo="r"))
+    assert len(got) == 600
