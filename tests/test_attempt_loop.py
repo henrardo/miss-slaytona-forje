@@ -278,8 +278,10 @@ def test_the_prompt_is_the_users_request_and_not_our_coaching() -> None:
     )
     # The operator's list, minus the three steps that name tools cold has not
     # got. Numbering is contiguous, so cold is never told to skip a step.
-    assert "\n11. Continue iteratively until the migration is complete." in cold
-    assert "12." not in cold
+    assert ("\n11. If you become stuck, look in places you have not looked "
+            "before.") in cold
+    assert "\n12. Continue iteratively until the migration is complete." in cold
+    assert "13." not in cold
     assert "memory" not in cold.lower(), "cold has no memory tools to be told about"
     # "keep going until" came off this list on 2026-09-16 and went back on
     # when the instruction that needed it was reverted: it bought 1 pytest run
@@ -326,8 +328,8 @@ def test_warm_gets_the_memory_steps_and_the_packages_own_instructions() -> None:
     for coaching in ("ALWAYS", "You should", "Make sure to", "first call"):
         assert coaching not in MEMORY_TOOLS_GUIDE, (
             f"{coaching!r} is instruction, not description")
-    assert "\n14. Continue iteratively until the migration is complete." in warm
-    assert "15." not in warm
+    assert "\n15. Continue iteratively until the migration is complete." in warm
+    assert "16." not in warm
     # The three memory steps, and the closing note that they are optional.
     assert warm.count("memory tools") == 2
     assert "You do not have to follow them." in warm
@@ -827,3 +829,56 @@ def test_stray_home_files_go_and_the_checkout_stays(tmp_path: Path) -> None:
     assert not (home / "MIGRATION_SUMMARY.md").exists()
     # Idempotent: a home with nothing stray in it reports nothing removed.
     assert ws.clear_stray_home_files() == []
+
+
+def test_the_verdict_names_the_surfaces_it_counts() -> None:
+    """A count is not a work list.
+
+    Run 5's warm cleared 337 of 383 v1 surfaces on attempt 2 and then
+    moved ONE in eight attempts. The 46 it kept were invisible to every
+    signal it had: 42 were `condecimal(gt=...)`, which is valid working
+    Pydantic v2 and raises nothing, so no error signature named them, so
+    `improve_skill` never had the word, so the final procedure had no step
+    for constrained types. The harness knew where they were the whole
+    time.
+    """
+    from orchestrator import surfaces
+
+    tree = {
+        "x12sdk/v4010/segments.py": b"x: condecimal(gt=0)\ny: conint(ge=1)\n",
+        "x12sdk/v5010/segments.py": b"z: condecimal(gt=0)\n",
+        "x12sdk/models.py": b"from pydantic.fields import ModelField\n",
+        # Outside the package, and post-migration: must not be counted.
+        "tests/test_x.py": b"a: condecimal(gt=0)\n",
+    }
+    lines = surfaces.as_work_list(tree, within="x12sdk")
+    assert lines[0].startswith("3 x conint/constr/etc -- "), lines
+    assert "x12sdk/v4010/segments.py (2)" in lines[0]
+    assert "x12sdk/v5010/segments.py (1)" in lines[0]
+    assert any("ModelField" in line for line in lines)
+    assert not any("tests/test_x.py" in line for line in lines)
+
+
+def test_the_work_list_says_what_it_dropped() -> None:
+    """A silent top-N reads as "that is all of it" -- the same mistake as
+    reporting a surface count with no floor beside it."""
+    from orchestrator import surfaces
+
+    tree = {"x12sdk/a.py": (b"class Config:\n Extra.allow\n"
+                            b"update_forward_refs\nparse_obj\n.dict()\n"
+                            b"@validator\n@root_validator\n__fields__\n")}
+    lines = surfaces.as_work_list(tree, within="x12sdk", max_surfaces=2)
+    assert len(lines) == 3
+    assert lines[-1].startswith("6 more across 6 other surface kind(s)")
+
+
+def test_the_stuck_step_goes_to_both_arms() -> None:
+    """Warm has a code graph and cold does not, so warm can act on this
+    more cheaply -- but it needs no memory to follow, and a warm-only
+    sentence would be a second undeclared asymmetry on top of the memory
+    steps. A warm win after that is not attributable to memory."""
+    from orchestrator.vibe_agent import _task_prompt
+
+    line = "If you become stuck, look in places you have not looked before."
+    assert line in _task_prompt(None, memory_enabled=True)
+    assert line in _task_prompt(None, memory_enabled=False)

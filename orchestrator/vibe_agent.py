@@ -685,6 +685,17 @@ def _task_prompt(
     steps += [
         "Review the codebase again.",
         "Make a new plan to fix only these errors.",
+        # BOTH ARMS, by decision. Warm has a code graph and cold does not,
+        # so this is the step warm can act on more cheaply -- but it is
+        # not an instruction that needs memory to follow, and a warm-only
+        # sentence would be a second undeclared asymmetry on top of the
+        # memory steps above. Any warm win after that would not be
+        # attributable to memory, which is the only thing this measures.
+        #
+        # Earned by run 5: warm held the same 46 v1 surfaces for eight
+        # attempts, 18 of them in a file its own code-graph block never
+        # named, while re-reading the two files it already knew.
+        "If you become stuck, look in places you have not looked before.",
         "Continue iteratively until the migration is complete.",
     ]
     base = (
@@ -2856,12 +2867,18 @@ async def migrate_codebase(
         # Every number the grader has, and no gloss on any of them. The v1
         # count carries its starting value because a bare "47 remaining"
         # does not say whether that is nearly done or barely begun.
+        # NAMED, not just counted. "46 surfaces remaining" is a number no
+        # agent can act on; run 5's warm sat on the same 46 for eight
+        # attempts. The breakdown is the same measurement, read out.
+        work_list = surfaces.as_work_list(file_contents, within=package_path)
         last_verdict = (
             f"- {passed} of {tests_total} tests passing\n"
             f"- {v1_remaining} Pydantic v1 surfaces remaining in "
             f"{package_path or 'the package'}"
             + (f" (this checkout started at {baseline_v1})"
                if baseline_v1 is not None else "")
+            + (":\n" + "\n".join(f"    {line}" for line in work_list)
+               if work_list else "")
             + f"\n- {parse_ok} of {parse_total} source files parse"
         )
 

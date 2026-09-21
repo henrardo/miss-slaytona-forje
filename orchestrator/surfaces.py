@@ -108,6 +108,61 @@ def breakdown(files: dict[str, bytes], *,
     return out
 
 
+def locations(files: dict[str, bytes], *,
+              within: str | None = None) -> dict[str, dict[str, int]]:
+    """Per-surface counts BY FILE, so the number becomes a work list.
+
+    `breakdown` says an attempt left 42 constrained-type calls;
+    this says 24 of them are in v4010/segments.py and 18 in
+    v5010/segments.py. Run 5 is why the difference matters: warm cleared
+    337 of 383 surfaces on attempt 2 and then moved one in eight
+    attempts, because nothing named the 46 that were left. Its suite
+    could not -- `condecimal(gt=...)` is valid, working v2 and raises
+    nothing -- so no error signature named them, so Cognee never had the
+    word to distil, and the final procedure had no step for constrained
+    types at all.
+    """
+    out: dict[str, dict[str, int]] = {}
+    for path, blob in files.items():
+        if not path.endswith(".py"):
+            continue
+        if within and within not in path:
+            continue
+        try:
+            text = blob.decode("utf-8", "replace")
+        except Exception:
+            continue
+        for name, pattern in _COMPILED.items():
+            hits = len(pattern.findall(text))
+            if hits:
+                out.setdefault(name, {})[path] = hits
+    return out
+
+
+def as_work_list(files: dict[str, bytes], *, within: str | None = None,
+                 max_surfaces: int = 6, max_files: int = 3) -> list[str]:
+    """`locations` as lines for a prompt, commonest surface first.
+
+    Bounded, and it says what it dropped: a silent top-N reads as "that
+    is all of it", which is the same mistake as reporting a count with no
+    floor beside it.
+    """
+    found = locations(files, within=within)
+    ranked = sorted(found.items(), key=lambda kv: -sum(kv[1].values()))
+    lines = []
+    for name, per_file in ranked[:max_surfaces]:
+        shown = sorted(per_file.items(), key=lambda kv: -kv[1])
+        where = ", ".join(f"{path} ({n})" for path, n in shown[:max_files])
+        if len(shown) > max_files:
+            where += f", and {len(shown) - max_files} more file(s)"
+        lines.append(f"{sum(per_file.values())} x {name} -- {where}")
+    if len(ranked) > max_surfaces:
+        dropped = sum(sum(v.values()) for _, v in ranked[max_surfaces:])
+        lines.append(f"{dropped} more across "
+                     f"{len(ranked) - max_surfaces} other surface kind(s)")
+    return lines
+
+
 def parses(files: dict[str, bytes], *,
            within: str | None = None) -> tuple[int, int]:
     """(files that compile, files looked at). Source-level, never runs it.
