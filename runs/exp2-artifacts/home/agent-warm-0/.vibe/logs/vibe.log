@@ -1,5 +1,0 @@
-2026-09-20T11:27:03.059493+00:00 3468 3470 WARNING Tool call failed tool=read_file tool_call_id=9ZcTiJdlY outcome=error error=ToolError
-2026-09-20T11:29:09.625080+00:00 3468 3470 WARNING Tool call failed tool=bash tool_call_id=CyztPdxKd outcome=error error=ToolError
-2026-09-20T11:29:11.921980+00:00 3468 3470 WARNING Tool call failed tool=bash tool_call_id=1WkthTni3 outcome=error error=ToolError
-2026-09-20T11:29:12.598601+00:00 3468 3470 WARNING Tool call failed tool=bash tool_call_id=E9oIICllK outcome=error error=ToolError
-2026-09-20T11:36:20.298623+00:00 4364 4366 WARNING Tool call failed tool=bash tool_call_id=h4YnZEGQh outcome=error error=ToolError

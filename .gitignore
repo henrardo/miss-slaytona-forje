@@ -36,3 +36,76 @@ runs/*-artifacts/
 # enola's code-graph snapshot. `ingest_code_graph` writes it to a scratch
 # directory now; ignored so a stray one can never be committed into a fixture.
 .enola/
+
+# ---- everything below is about this being a PUBLIC repository ----------
+#
+# Audited 2026-09-21: no secret has ever been committed, at HEAD or in any
+# reachable commit. `.env` -- which holds the Aura password, the OpenAI key,
+# the Daytona key and the Mistral key -- has been ignored since the first
+# commit. The one history hit for `neo4j+s://` was a placeholder in a
+# document that no longer exists. What follows keeps it that way and keeps
+# the repository small.
+
+# CREDENTIALS, in every spelling. `.env` alone was the rule; a single
+# `.env.local` or a key dropped next to it would have been committed.
+.env*
+!.env.example
+*.pem
+*.key
+!**/*.pub
+id_rsa
+id_rsa.*
+!id_rsa*.pub
+id_ed25519
+id_ed25519.*
+!id_ed25519*.pub
+*.p12
+*.pfx
+.netrc
+*credentials*.json
+*service-account*.json
+
+# THE AGENTS' OWN CONSOLE OUTPUT. Every prompt, every tool result and every
+# traceback of a run, tens of megabytes each, and regenerable by rerunning.
+# The event log is the record that matters and it is already ignored above.
+runs/experiment-*.log
+runs/*.log
+# ...and at any depth: runs/contaminated/oapi-01.log was missed by the
+# single-level glob above.
+runs/**/*.log
+
+# TREE TARBALLS. One snapshot of the agent's whole checkout per attempt --
+# 770 KB each, twenty per run, and `runs/packages/<id>.tgz` is a second copy
+# of the lot. The derived documents beside them (series, metrics, attempts,
+# the final procedure, MANIFEST) are small, are what a deck reads, and stay
+# tracked.
+runs/**/*.tgz
+runs/**/trees/
+
+# Scratch and editor state.
+.DS_Store
+**/.DS_Store
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+*.swp
+.ipynb_checkpoints/
+
+# Local Cognee state: SQLite users and datasets, the LanceDB vector index,
+# and its logs. Machine-local, large, and it is the store the graph is
+# joined against -- a copy in the repository would be a second, divergent
+# memory.
+.cognee/
+.cognee_system/
+**/.cognee_system/
+*.lance/
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Archived experiment directories, kept out of the way by hand.
+archive/

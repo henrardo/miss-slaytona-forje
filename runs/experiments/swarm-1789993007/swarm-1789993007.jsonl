@@ -1,0 +1,300 @@
+{"t": 110.806, "type": "ATTEMPT_START", "swarm": "warm", "agent": "warm-0", "attempt": 1, "skill_version": null}
+{"t": 110.809, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 1, "skill_version": null}
+{"t": 322.944, "type": "SANDBOX_CREATED", "swarm": "cold", "agent": "cold-0", "create_ms": 2738.4814999531955}
+{"t": 324.547, "type": "ATTEMPT_DONE", "swarm": "cold", "agent": "cold-0", "attempt": 1, "tests_passed": 0, "v1_remaining": 302, "parse_ok": 65, "parse_total": 65, "closeness": 0.0534, "error_signature": "pydantic.errors.PydanticUserError: Field 'segment_name' defined on a base class was overridden by a non-annotated attribute. All field definitions, including overrides, require a type annotation.", "broke_syntax": false, "exit_code": 2, "vibe_exit_code": 0, "vibe_stop": "(no stop event) last entry message: Good! The core models import successfully. The error in the segments file is a pre-existin", "turns_used": 136, "attempt_seconds": 211.3, "attempt_prompt_tokens": 5648100, "attempt_completion_tokens": 15604, "skill_version": null, "resumed": false, "ended_cleanly": true, "tools": {"bash": 64, "read_file": 36, "grep": 1, "web_lookup": 5, "edit": 28}, "memory_calls": 0, "memory_chars": 0, "procedure_chars": 0, "hook_commands": 0, "hook_failures": 0, "hook_chars": 0, "hook_last_error": ""}
+{"t": 353.378, "type": "SANDBOX_CREATED", "swarm": "warm", "agent": "warm-0", "create_ms": 1603.943917201832}
+{"t": 353.379, "type": "MEMORY_READ", "swarm": "warm", "agent": "warm-0", "attempt": 1, "hits": 1, "sources": ["cognee_recall"], "chars": 0, "query": "pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#"}
+{"t": 353.379, "type": "MEMORY_READ", "swarm": "warm", "agent": "warm-0", "attempt": 1, "hits": 1, "sources": ["cognee.agent_memory"], "chars": 2302, "query": "pydantic.errors.PydanticImportError: `BaseSettings` has been moved to the `pydantic-settings` package. See https:<path>#"}
+{"t": 354.959, "type": "ATTEMPT_DONE", "swarm": "warm", "agent": "warm-0", "attempt": 1, "tests_passed": 0, "v1_remaining": 296, "parse_ok": 65, "parse_total": 65, "closeness": 0.0158, "error_signature": "ImportError: cannot import name '_is_list_field' from 'x12sdk.models' (<path>)", "broke_syntax": false, "exit_code": 2, "vibe_exit_code": 0, "vibe_stop": "(no stop event) last entry message: I see - the segment_name class attributes were removed. Let me add them back using a scrip", "turns_used": 105, "attempt_seconds": 207.8, "attempt_prompt_tokens": 4334885, "attempt_completion_tokens": 13016, "skill_version": null, "resumed": false, "ended_cleanly": true, "tools": {"bash": 56, "read_file": 15, "web_lookup": 5, "cognee_recall": 1, "todo": 5, "edit": 20, "write_file": 1}, "memory_calls": 1, "memory_chars": 2302, "procedure_chars": 1684, "hook_commands": 56, "hook_failures": 10, "hook_chars": 0, "hook_last_error": "Command failed: 'cd /home/agent-warm-0/repo && python -c \"from x12sdk.v4010.segments import AaaSegment; print(\\'Import successful\\')\" 2>&1'\nReturn code: 1\nStdout: Traceback (most recent call last):\n  "}
+{"t": 398.751, "type": "MEMORY_WRITE", "swarm": "warm", "agent": "warm-0", "attempt": 1, "error_kind": "ImportError: cannot import name '_is_list_field' from 'x12sd", "on": "progress", "score": 0.0158, "applied": true, "procedure_chars": 4291, "hook_commands": 56, "hook_failures": 10, "hook_chars": 0, "hook_last_error": "Command failed: 'cd /home/agent-warm-0/repo && python -c \"from x12sdk.v4010.segments import AaaSegment; print(\\'Import successful\\')\" 2>&1'\nReturn code: 1\nStdout: Traceback (most recent call last):\n  "}
+{"t": 421.491, "type": "INGESTED", "swarm": "warm", "agent": "warm-0", "attempt": 1, "steps": 0, "with_reasoning": 0, "tool_calls": 0, "failed_tool_calls": 0, "skill_loaded": true, "source": "cognee.improve", "stages": {"feedback_weights": "completed", "persist_session_qa": "already_completed", "persist_agent_traces": "already_completed", "extract_agent_context": "completed", "distill_sessions": "completed", "update_user_preferences": "skipped", "build_truth_subspace": "skipped", "triplet_enrichment": "skipped", "global_context_index": "skipped"}}
+{"t": 421.491, "type": "DISTILLED", "swarm": "warm", "agent": "warm-0", "attempt": 1, "version": null, "accepted": true, "score": 0.0158, "proposal_id": "8ec7a954-584e-4366-a57d-a4a9dbaa40d1", "procedure_chars": 4291, "seconds": 43.5}
+{"t": 421.601, "type": "ATTEMPT_START", "swarm": "warm", "agent": "warm-0", "attempt": 2, "skill_version": null}
+{"t": 422.022, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 2, "skill_version": null}
+{"t": 590.902, "type": "SANDBOX_CREATED", "swarm": "warm", "agent": "warm-0", "create_ms": 1692.7919171284884}
+{"t": 590.903, "type": "MEMORY_READ", "swarm": "warm", "agent": "warm-0", "attempt": 2, "hits": 3, "sources": ["cognee_recall"], "chars": 0, "query": "ImportError: cannot import name '_is_list_field' from 'x12sdk.models' (<path>)"}
+{"t": 590.904, "type": "MEMORY_READ", "swarm": "warm", "agent": "warm-0", "attempt": 2, "hits": 1, "sources": ["cognee.agent_memory"], "chars": 3201, "query": "\n==================================== ERRORS ====================================\n_______________ ERROR collecting tests"}
+{"t": 592.69, "type": "ATTEMPT_DONE", "swarm": "warm", "agent": "warm-0", "attempt": 2, "tests_passed": 34, "v1_remaining": 0, "parse_ok": 65, "parse_total": 65, "closeness": 0.051, "error_signature": "KeyError: 'ST'", "broke_syntax": false, "exit_code": 1, "vibe_exit_code": 0, "vibe_stop": "(no stop event) last entry message: Task completed.", "turns_used": 70, "attempt_seconds": 142.3, "attempt_prompt_tokens": 2498305, "attempt_completion_tokens": 6927, "skill_version": null, "resumed": false, "ended_cleanly": true, "tools": {"web_lookup": 5, "cognee_recall": 3, "bash": 51, "read_file": 16, "edit": 6}, "memory_calls": 3, "memory_chars": 3201, "procedure_chars": 4291, "hook_commands": 51, "hook_failures": 4, "hook_chars": 3368, "hook_last_error": "Command failed: 'grep -rn \"max_items\\\\|min_items\" /home/agent-warm-0/repo/x12sdk/ --include=\"*.py\"'\nReturn code: 1"}
+{"t": 602.315, "type": "SANDBOX_CREATED", "swarm": "cold", "agent": "cold-0", "create_ms": 1556.2285829801112}
+{"t": 604.084, "type": "ATTEMPT_DONE", "swarm": "cold", "agent": "cold-0", "attempt": 2, "tests_passed": 0, "v1_remaining": 271, "parse_ok": 64, "parse_total": 65, "closeness": -0.4375, "error_signature": "TypeError: constr() got an unexpected keyword argument 'regex'", "broke_syntax": false, "exit_code": 2, "vibe_exit_code": 0, "vibe_stop": "(no stop event) last entry message: Task completed.", "turns_used": 108, "attempt_seconds": 179.3, "attempt_prompt_tokens": 4216948, "attempt_completion_tokens": 15063, "skill_version": null, "resumed": false, "ended_cleanly": true, "tools": {"web_lookup": 3, "bash": 55, "read_file": 30, "edit": 18}, "memory_calls": 0, "memory_chars": 0, "procedure_chars": 0, "hook_commands": 0, "hook_failures": 0, "hook_chars": 0, "hook_last_error": ""}
+{"t": 646.857, "type": "MEMORY_WRITE", "swarm": "warm", "agent": "warm-0", "attempt": 2, "error_kind": "KeyError: 'ST'", "on": "progress", "score": 0.051, "applied": true, "procedure_chars": 3948, "hook_commands": 51, "hook_failures": 4, "hook_chars": 3368, "hook_last_error": "Command failed: 'grep -rn \"max_items\\\\|min_items\" /home/agent-warm-0/repo/x12sdk/ --include=\"*.py\"'\nReturn code: 1"}
+{"t": 664.311, "type": "INGESTED", "swarm": "warm", "agent": "warm-0", "attempt": 2, "steps": 0, "with_reasoning": 0, "tool_calls": 0, "failed_tool_calls": 0, "skill_loaded": true, "source": "cognee.improve", "stages": {"feedback_weights": "completed", "persist_session_qa": "already_completed", "persist_agent_traces": "already_completed", "extract_agent_context": "completed", "distill_sessions": "completed", "update_user_preferences": "skipped", "build_truth_subspace": "skipped", "triplet_enrichment": "skipped", "global_context_index": "skipped"}}
+{"t": 664.312, "type": "DISTILLED", "swarm": "warm", "agent": "warm-0", "attempt": 2, "version": null, "accepted": true, "score": 0.051, "proposal_id": "97e8e861-f62d-415e-b462-862118b71daf", "procedure_chars": 3948, "seconds": 42.6}
+{"t": 664.424, "type": "ATTEMPT_START", "swarm": "warm", "agent": "warm-0", "attempt": 3, "skill_version": null}
+{"t": 664.844, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 667.571, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 672.572, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 675.488, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 680.488, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 683.599, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 688.599, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 691.298, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 696.3, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 698.575, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 703.577, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 706.064, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 711.065, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 713.361, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 718.362, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 720.643, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 725.645, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 727.963, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 732.964, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 735.536, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 740.538, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 743.367, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 748.369, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 750.809, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 755.812, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 758.19, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 763.192, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 766.299, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 771.301, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 773.443, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 778.445, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 780.834, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 785.835, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 788.115, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 793.116, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 795.597, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 800.598, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 802.779, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 807.781, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 809.465, "type": "SANDBOX_CREATED", "swarm": "warm", "agent": "warm-0", "create_ms": 2752.200416987762}
+{"t": 809.465, "type": "MEMORY_READ", "swarm": "warm", "agent": "warm-0", "attempt": 3, "hits": 1, "sources": ["cognee_recall"], "chars": 0, "query": "KeyError: 'ST'"}
+{"t": 809.465, "type": "MEMORY_READ", "swarm": "warm", "agent": "warm-0", "attempt": 3, "hits": 1, "sources": ["cognee.agent_memory"], "chars": 3755, "query": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF [ 27%]\nFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"}
+{"t": 811.633, "type": "ATTEMPT_DONE", "swarm": "warm", "agent": "warm-0", "attempt": 3, "tests_passed": 0, "v1_remaining": 0, "parse_ok": 64, "parse_total": 65, "closeness": -0.6312, "error_signature": "IndentationError: expected an indented block after class definition on line <n>", "broke_syntax": true, "exit_code": 2, "vibe_exit_code": 0, "vibe_stop": "(no stop event) last entry message: Task completed.", "turns_used": 43, "attempt_seconds": 114.5, "attempt_prompt_tokens": 1429414, "attempt_completion_tokens": 5219, "skill_version": null, "resumed": false, "ended_cleanly": true, "tools": {"bash": 23, "read_file": 12, "web_lookup": 2, "cognee_recall": 1, "write_file": 3}, "memory_calls": 1, "memory_chars": 3755, "procedure_chars": 3948, "hook_commands": 23, "hook_failures": 2, "hook_chars": 2400, "hook_last_error": "Command failed: 'grep -r \"@validator\\\\|@root_validator\" /home/agent-warm-0/repo/x12sdk --include=\"*.py\"'\nReturn code: 1"}
+{"t": 812.476, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 817.477, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 819.787, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 824.789, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 828.123, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 833.124, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 835.535, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 840.536, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 842.78, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 847.782, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 850.179, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 855.18, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 857.446, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 862.447, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 864.627, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 869.629, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 871.869, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 876.871, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 879.503, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 884.504, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 886.843, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 891.845, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 894.519, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 899.521, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 901.773, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 906.775, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 909.487, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 914.488, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 916.946, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 921.948, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 924.163, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 929.165, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 931.601, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 936.602, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 938.709, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 943.71, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 945.943, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 950.945, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 953.297, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 958.299, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 960.421, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 965.423, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 967.851, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 972.852, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 975.06, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 980.062, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 982.447, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 987.449, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 990.137, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 995.139, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 998.085, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1003.087, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1005.819, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1010.821, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1013.186, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1018.188, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1020.874, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1025.876, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1028.345, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1033.347, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1035.584, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1040.586, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1043.311, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1048.311, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1050.831, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1055.832, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1058.015, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1063.017, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1065.271, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1070.272, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1072.951, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1077.952, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1080.21, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1085.212, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1087.669, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1092.671, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1094.864, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1099.866, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1102.145, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1107.146, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1109.315, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1114.317, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1116.891, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1121.892, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1124.244, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1129.246, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1131.573, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1136.575, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1138.789, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1143.791, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1146.102, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1151.103, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1153.499, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1158.501, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1160.905, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1165.906, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1168.196, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1173.198, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1175.75, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1180.751, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1183.105, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1188.107, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1190.52, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1195.522, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1197.811, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1202.812, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1205.398, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1210.401, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1212.741, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1217.743, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1220.466, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1225.467, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1227.777, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1232.779, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1235.084, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1240.09, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1242.639, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1247.641, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1250.151, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1255.153, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1258.022, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1263.023, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1265.668, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1270.669, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1273.335, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1278.337, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1280.828, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1285.83, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1288.423, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1293.425, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1296.449, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1301.452, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1304.094, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1309.095, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1311.443, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1316.444, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1318.976, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1323.978, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1326.351, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1331.353, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1333.982, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1338.983, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1341.456, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1346.458, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1349.539, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1354.542, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1357.454, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1362.456, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1364.911, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1369.913, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1374.194, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1379.196, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1382.079, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1387.08, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1389.327, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1394.329, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1396.735, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1401.737, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1404.113, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1409.115, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1411.485, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1416.487, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1418.868, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1423.869, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1426.162, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1431.164, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1433.417, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1438.419, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1440.702, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1445.704, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1448.079, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1453.081, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1455.511, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1460.513, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1462.869, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1467.87, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1470.327, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1475.329, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1477.579, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1482.581, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1484.97, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1489.973, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1492.372, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1497.374, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1499.725, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1504.727, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1507.151, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1512.153, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1514.655, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1519.657, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1521.91, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1526.911, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1529.344, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1534.346, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1536.752, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1541.755, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1544.045, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1549.047, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1551.625, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1556.627, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1558.995, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1563.996, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1566.379, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1571.381, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1573.689, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1578.692, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1580.915, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1585.916, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1588.297, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1593.299, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1595.672, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1600.674, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1603.057, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1608.059, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1610.447, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1615.449, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1617.793, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1622.795, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1625.159, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1630.162, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1632.55, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1637.551, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1639.913, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1644.915, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1647.152, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1652.153, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1654.578, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1659.578, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1662.147, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1667.148, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1669.396, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1674.398, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
+{"t": 1676.644, "type": "ATTEMPT_ABORTED", "swarm": "cold", "agent": "cold-0", "attempt": 3, "reason": "vibe completed no assistant turn", "vibe_exit_code": 255, "vibe_stop": "(no stop event) mux_client_request_session: send fds failed"}
+{"t": 1681.645, "type": "ATTEMPT_START", "swarm": "cold", "agent": "cold-0", "attempt": 3, "skill_version": null}
