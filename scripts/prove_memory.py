@@ -120,11 +120,38 @@ async def main(args) -> int:
     check("the seed procedure landed", len(procedure) > 200,
           f"{len(procedure):,} chars")
 
+    # THE SESSION IS PER INVOCATION even when the dataset and the node sets
+    # are reused, which is the whole point of the second run. `forget` does
+    # not prune the session cache, so a REUSED session id distils nothing
+    # ever again -- measured: 0 documents on three attempts, 1 per attempt
+    # the moment the id changed.
     mem = C.CogneeMemory(dataset=dataset, fixture=fixture, label="warm-0",
-                         session_id=f"{dataset}:{fixture}:warm-0",
+                         session_id=f"{dataset}:{fixture}:{args.run}:warm-0",
                          mode="hybrid", code_dataset=code_dataset,
                          code_repo=code_root.name, package=package,
                          distil=not args.no_distill)
+
+    # IS THIS A FIRST RUN ON THIS FIXTURE, OR A CONTINUATION?
+    #
+    # Read before anything is written. Every earlier version of this script
+    # minted a fresh dataset and node-set prefix per invocation, so warm only
+    # ever read back what that same invocation had written -- which proves
+    # attempt N+1 reads attempt N and says nothing about run 2 reading run 1.
+    # That second claim is the one the project rests on.
+    worked_set, failed_set = C.node_sets(fixture)
+    carried = {
+        "worked": await C.recall_node_set(dataset=dataset,
+                                          node_set=worked_set,
+                                          query="pydantic v2 migration"),
+        "failed": await C.recall_node_set(dataset=dataset,
+                                          node_set=failed_set,
+                                          query="pydantic v2 migration"),
+    }
+    continuation = bool(carried["worked"] or carried["failed"])
+    print(f"  prior memory in these node sets: "
+          f"worked {len(carried['worked'])} chars, "
+          f"failed {len(carried['failed'])} chars "
+          f"-> {'CONTINUATION run' if continuation else 'FIRST run'}")
 
     briefs: list[str] = []
     for i, attempt in enumerate(ATTEMPTS[:args.attempts], start=1):
@@ -138,11 +165,28 @@ async def main(args) -> int:
               f"recalled against {query!r}")
         for line in brief.splitlines():
             print(f"  | {line}")
-        if i == 1:
-            check("attempt 1 has no outcome memory to read",
+        if i == 1 and not continuation:
+            check("attempt 1 of a FIRST run has no outcome memory to read",
                   C.BRIEF_WORKED not in brief and C.BRIEF_FAILED not in brief)
             check("attempt 1 still gets the code graph",
                   C.BRIEF_CODE in brief)
+        if i == 1 and continuation:
+            # THE CLAIM THE PROJECT RESTS ON: a later RUN opens with the
+            # earlier run's graded verdicts already in front of it, before it
+            # has done anything itself. Warm's advantage on run 2 is not
+            # "it will accumulate one" -- it is present in attempt 1.
+            check("attempt 1 of a LATER run opens with the earlier run's "
+                  "WORKED half", C.BRIEF_WORKED in brief)
+            check("attempt 1 of a LATER run opens with the earlier run's "
+                  "FAILED half", C.BRIEF_FAILED in brief)
+            check("what it carries across is the diff, not a summary",
+                  "pattern=" in brief or "field_validator" in brief
+                  or "pydantic.v1" in brief)
+            check("the procedure it opens with is the rewritten one, not the "
+                  "seed scaffold",
+                  "VERSION 0 IS DELIBERATELY EMPTY" not in
+                  (await mem.procedure()),
+                  f"{len(await mem.procedure()):,} chars")
 
         # THE WRITE, after the verdict.
         written = await mem.record(attempt=i, **attempt)
@@ -165,9 +209,23 @@ async def main(args) -> int:
           "pattern=" in later or "field_validator" in later)
     check("the rejected shim is in the brief",
           "pydantic.v1" in later or "MIGRATION NOT COMPLETE" in later)
-    check("the brief grows as attempts accumulate",
-          len(briefs[-1]) > len(briefs[0]),
-          " -> ".join(str(len(b)) for b in briefs))
+    sizes = " -> ".join(str(len(b)) for b in briefs)
+    if continuation:
+        # SATURATED, BY DESIGN, and worth stating rather than discovering.
+        # By a second run each half is already at MAX_BLOCK_CHARS, so the
+        # brief cannot grow -- new documents DISPLACE old ones by relevance
+        # to the failure this attempt is working on. The cap is there because
+        # one uncapped version of this block reached 15,170 characters and
+        # warm spent three attempts reporting on it.
+        budget = 3 * C.MAX_BLOCK_CHARS
+        check("the brief stays inside its budget as runs accumulate",
+              all(len(b) <= budget for b in briefs), f"{sizes} (cap {budget})")
+        check("it is still full on a later run, not emptied by displacement",
+              all(C.BRIEF_WORKED in b and C.BRIEF_FAILED in b
+                  for b in briefs), sizes)
+    else:
+        check("the brief grows as attempts accumulate",
+              len(briefs[-1]) > len(briefs[0]), sizes)
 
     rule("5. is the read deterministic?")
     a = await mem.brief(ATTEMPTS[0]["error_signature"])
@@ -228,6 +286,9 @@ if __name__ == "__main__":
     p.add_argument("--fixture", default=None,
                    help="node-set prefix; defaults to a fresh one per run")
     p.add_argument("--attempts", type=int, default=3)
+    p.add_argument("--run", default=str(int(time.time())),
+                   help="label for this invocation; goes in the session id so "
+                        "two runs over the same dataset do not share one")
     p.add_argument("--no-distill", action="store_true")
     p.add_argument("--keep", action="store_true",
                    help="do not forget the proof's datasets afterwards")
