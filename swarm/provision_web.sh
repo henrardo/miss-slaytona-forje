@@ -28,9 +28,47 @@ set -euo pipefail
 
 WEB_DIR=/opt/swarm/web
 PORT="${1:-8813}"
+ENV_FILE=/opt/swarm/env
 
 mkdir -p "$WEB_DIR"
 chmod 711 /opt/swarm
+
+# THE CREDENTIAL FILE, WRITTEN HERE IF IT DOES NOT EXIST YET.
+#
+# `SwarmHost.write_env_file` exists and is called by nothing, so on a cold
+# pod this script died at `. /opt/swarm/env` with "No such file or
+# directory" -- after building its venv, so it looked like a venv problem.
+# The harness writes the file too, but not until a run starts, and this
+# script is documented as running BEFORE that. So it writes its own, from
+# the environment, and refuses to start without the key rather than serving
+# a web tool that answers every call with an auth error.
+if [ ! -f "$ENV_FILE" ]; then
+    : "${OPENAI_API_KEY:?set OPENAI_API_KEY (or write /opt/swarm/env) before provisioning the web tool}"
+    printf 'export OPENAI_API_KEY=%q\n' "$OPENAI_API_KEY" > "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    echo "  wrote $ENV_FILE from the environment"
+fi
+
+# THE SERVER SOURCE, from wherever bring-up left it.
+#
+# `host_scripts()` installs this to $WEB_DIR -- but only once a RUN starts,
+# which is after this script. On a cold pod it died with "File not found:
+# /opt/swarm/web/server.py", which is the same class of fault as the
+# credential file: a step that assumes something earlier put a file there
+# and no earlier step does.
+if [ ! -f "$WEB_DIR/server.py" ]; then
+    for candidate in /root/harness/web-tools /root/web-tools; do
+        if [ -f "$candidate/server.py" ]; then
+            cp "$candidate/server.py" "$candidate/requirements.txt" "$WEB_DIR/"
+            echo "  copied the web server from $candidate"
+            break
+        fi
+    done
+fi
+[ -f "$WEB_DIR/server.py" ] || {
+    echo "FAIL: no web server source. Upload harness/web-tools/ to /root/harness/web-tools first."
+    exit 1
+}
 if [ ! -x "$WEB_DIR/.venv/bin/python" ]; then
     python3 -m venv "$WEB_DIR/.venv"
     "$WEB_DIR/.venv/bin/pip" install -q --upgrade pip

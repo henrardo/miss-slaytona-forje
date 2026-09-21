@@ -134,13 +134,31 @@ cannot succeed, and checks the hook fired.
 
 ## Running it
 
-```bash
-# On the pod: SGLang, the agent users, the toolchain, the counting proxies.
-swarm/provision.sh ; swarm/provision_web.sh
+A pod needs an H200-class card (the FP8 weights are ~113 GB, and
+`--load-format mistral` fetches a second consolidated copy, so allow 300 GB
+of disk) and `gpu.allowedCudaVersions: ["13.0"]` — an exact set, not a floor.
+A `minCudaVersion: "12.8"` floor got a 12.8 host, and `torch.cuda` then
+reported no accelerator while `nvidia-smi` looked healthy.
 
-# One experiment: N attempts on one checkout, then archive, then stop.
-scripts/run_experiment.sh <ssh-host> <ssh-port> 3 both
+```bash
+# On the pod, in this order. The model download is the long pole (40-60 min),
+# so start it first and provision underneath it.
+scp harness/web-tools/{server.py,requirements.txt} root@POD:/root/harness/web-tools/
+ssh root@POD 'nohup setsid bash launch_sglang.sh > /root/sglang.log 2>&1 &'
+ssh root@POD 'bash provision.sh 2'
+ssh root@POD 'OPENAI_API_KEY=sk-... bash provision_web.sh'
+
+# Wait for the model, then one experiment: N attempts on one checkout,
+# then archive, then stop.
+curl -s http://POD:30000/v1/models          # must answer first
+scripts/run_experiment.sh <ssh-host> <ssh-port> 5 both
 ```
+
+`provision_web.sh` writes `/opt/swarm/env` from its own environment and
+copies the web server out of `/root/harness/web-tools` if bring-up has not
+already placed them. Both were assumed by an earlier step that does not
+exist: `SwarmHost.write_env_file` is called by nothing, and `host_scripts()`
+installs the server only once a run starts, which is after this script.
 
 One experiment is N attempts on **one** checkout. There is no outer loop:
 every invocation re-seeds the agents' trees, so calling it repeatedly throws
