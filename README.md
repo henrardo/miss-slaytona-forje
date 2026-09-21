@@ -72,7 +72,7 @@ Each of these was measured against cognee 1.6.0 and each one cost a run:
 `get_tool_choice()` from `"auto"` to `"required"`, which made the agent loop
 unable to terminate and produced twelve consecutive 0/4 runs. `hooks.toml`,
 `config.toml` and `--output streaming` are Vibe's own documented surfaces and
-are not patches. Full account: [NOTES-hard-won.md](NOTES-hard-won.md).
+are not patches.
 
 **The model must call tools under plain `tool_choice: "auto"`** and must be
 able to end a turn with a text-only message. That is the one hard constraint
@@ -193,11 +193,20 @@ The counts that matter more than the summary:
   or stubbed a validator out. Both score 32 of 33 on the old fixture and
   neither is a migration.
 
-## Documents
+## Where the reasoning lives
 
-- **[NOTES-hard-won.md](NOTES-hard-won.md)** — the things that cost a run to
-  learn, each with its measurement. Code comments point here rather than
-  carrying the story. Read it before simplifying any guard.
-- **[NOTES.md](NOTES.md)** — the running lab notebook, newest last.
-- `miss-slaytona-forje-spec.md` is **historical** and describes a fixture that
-  no longer exists. This README is the accurate document.
+This README is the only document here, and it is the accurate one. The lab
+notebook, the dated audits and an obsolete spec are not in this repository:
+they are the record of experiments already run, and what you need is what
+runs one.
+
+The reasoning that matters is **in the code, at the line it applies to**.
+Nearly every guard in `orchestrator/` and `swarm/` carries the measurement
+that put it there — which run, what it cost, and what breaks if it is
+removed. `_trim_error_for_prompt` names the 43,054-character prompt;
+`argv(multiplex=False)` names the three runs an arm died on;
+`score_from_verdict` quotes the six consecutive attempts that scored 0.0.
+Read the comment before simplifying the guard.
+
+A few comments cite `NOTES-hard-won.md`. That file is the author's own and
+is not published; the comment beside the code says enough to act on.

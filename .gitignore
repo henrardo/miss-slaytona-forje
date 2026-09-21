@@ -132,3 +132,31 @@ runs/demo-export/
 # above, named here so the intent is not an accident of that rule
 runs/exp2-artifacts/
 runs/exp3-artifacts/
+
+# ---- the lab notebook, and the lab's own output --------------------------
+#
+# This repository is what someone needs to CLONE AND RUN AN EXPERIMENT. It is
+# not the record of the experiments already run here. Everything below stays
+# on disk and out of the public tree.
+#
+# The notes and specs: a day-by-day lab notebook, the hard-won list, two
+# dated audits and a spec describing a fixture that no longer exists. The
+# README carries what a user actually needs; code comments still cite
+# NOTES-hard-won.md by name, and that is a pointer into the author's own
+# copy rather than a promise the file is here.
+NOTES.md
+NOTES-hard-won.md
+FIXES-*.md
+AUDIT-*.md
+REDESIGN-*.md
+miss-slaytona-forje-spec.md
+
+# Every run this harness has produced: event logs, archives, packaged
+# demos, per-attempt trees, the cross-run table and the plots. A user's own
+# runs land here and are theirs, not ours.
+runs/
+
+# Skills distilled BY past runs, kept for comparison. The seed skill that a
+# run actually needs -- skills/pydantic-v2-migration/SKILL.md, read by
+# cognee_layer.SEED_SKILL_PATH -- stays tracked.
+skills/live-archive-*/
